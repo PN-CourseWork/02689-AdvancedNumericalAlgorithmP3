@@ -107,12 +107,15 @@ html_show_sourcelink = False  # Hide "Show Source" link
 html_css_files = ["custom.css"]  # Custom CSS for hiding download buttons
 
 html_theme_options = {
-    "github_url": "https://github.com/yourusername/yourproject",
-    "show_nav_level": 1,  # Only show top-level items expanded in sidebar
-    "navigation_depth": 2,  # Allow 2 levels but don't expand by default
-    "show_toc_level": 3,  # Show 3 levels in the page TOC (includes subsections)
+    "github_url": "https://github.com/s214960/AdvancedNumericalAlgorithms-Project3",
     "navbar_align": "left",
     "header_links_before_dropdown": 5,
-    "collapse_navigation": True,  # Start with collapsed navigation
-    "secondary_sidebar_items": ["page-toc"],  # Only show page TOC, not section nav
+    "show_toc_level": 2,  # Only show 2 levels in the page TOC
+    "primary_sidebar_end": [],  # Remove everything from left sidebar end
+    "secondary_sidebar_items": ["page-toc"],  # Only show page TOC in right sidebar
+}
+
+# Hide the left sidebar completely on all pages
+html_sidebars = {
+    "**": [],  # No left sidebar components
 }
