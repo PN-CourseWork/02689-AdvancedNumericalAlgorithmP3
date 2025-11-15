@@ -1,24 +1,13 @@
 """Public API for Assignment 2 utilities."""
 
-# Auto-apply matplotlib style
-import matplotlib.pyplot as plt
-from importlib.resources import files
-import seaborn as sns
-
-sns.set_style("darkgrid")
-
-style_path = files("spectral").joinpath("styles/ana.mplstyle")
-plt.style.use(str(style_path))
-
-# Imports must come after matplotlib style is loaded
-from .bvp import (  # noqa: E402
+from .bvp import (
     BvpProblem,
     solve_legendre_collocation,
     solve_legendre_tau,
     solve_polar_bvp,
     solve_bvp,
 )
-from .spectral import (  # noqa: E402
+from .spectral import (
     FourierEquispacedBasis,
     LegendreLobattoBasis,
     fourier_diff_matrix_cotangent,
@@ -27,7 +16,7 @@ from .spectral import (  # noqa: E402
     legendre_diff_matrix,
     legendre_mass_matrix,
 )
-from .tdp import (  # noqa: E402
+from .tdp import (
     KdVSolver,
     soliton,
     two_soliton_initial,
@@ -37,7 +26,7 @@ from .tdp import (  # noqa: E402
     RK3,
     RK4,
 )
-from .utils.plotting import get_repo_root  # noqa: E402
+from .utils.plotting import get_repo_root
 
 __all__ = [
     # BVP solvers

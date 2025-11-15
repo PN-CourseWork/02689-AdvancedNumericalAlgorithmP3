@@ -12,9 +12,9 @@ sys.path.insert(0, repo_root)
 
 # -- Project information -----------------------------------------------------
 
-project = "University Project Template"
-copyright = "2025, Your Name"
-author = "Your Name"
+project = "Advanced Numerical Algorithms - Project 3"
+copyright = "2025, Philip Korsager Nickel"
+author = "Philip Korsager Nickel"
 
 # -- General configuration ---------------------------------------------------
 
@@ -77,11 +77,15 @@ sphinx_gallery_conf = {
     "notebook_images": False,  # Don't embed images in notebooks
     # Cross-referencing: Create "Examples using X" in API docs
     "backreferences_dir": "gen_modules/backreferences",
-    "doc_module": ("numutils",),  # Generate backreferences for our package
+    "doc_module": ("fv", "utils", "spectral", "meshing", "ldc"),  # Generate backreferences for our packages
     "inspect_global_variables": True,  # Detect classes/functions used in examples
-    # Make code clickable: Link to API docs when code mentions numutils functions
+    # Make code clickable: Link to API docs when code mentions package functions
     "reference_url": {
-        "numutils": None,  # None = use local docs (not external URL)
+        "fv": None,  # None = use local docs (not external URL)
+        "utils": None,
+        "spectral": None,
+        "meshing": None,
+        "ldc": None,
     },
 }
 
@@ -97,7 +101,7 @@ intersphinx_mapping = {
 # -- HTML output options -----------------------------------------------------
 
 html_theme = "pydata_sphinx_theme"
-html_title = "University Project Template"
+html_title = "Advanced Numerical Algorithms - Project 3"
 html_static_path = ["_static"]
 html_show_sourcelink = False  # Hide "Show Source" link
 html_css_files = ["custom.css"]  # Custom CSS for hiding download buttons

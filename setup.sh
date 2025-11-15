@@ -12,21 +12,14 @@ echo "================================================================"
 cd "$PROJECT_ROOT"
 
 # ---------------------------------------------------------------
-# 1. Remove existing venv
+# 1. Create venv if it doesn't exist
 # ---------------------------------------------------------------
 if [ -d ".venv" ]; then
-    echo "[1/5] Removing existing .venv ..."
-    rm -rf .venv
+    echo "[1/5] Existing .venv found — skipping creation."
 else
-    echo "[1/5] No existing .venv found — skipping removal."
+    echo "[1/5] Creating new uv virtual environment (Python 3.12, seeded)..."
+    uv venv --python 3.12 --seed .venv
 fi
-
-
-# ---------------------------------------------------------------
-# 2. Create a fresh uv venv (Python 3.12) with pip seeded
-# ---------------------------------------------------------------
-echo "[2/5] Creating new uv virtual environment (Python 3.12, seeded)..."
-uv venv --python 3.12 --seed .venv
 
 
 # ---------------------------------------------------------------
