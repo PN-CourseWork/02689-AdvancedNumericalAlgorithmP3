@@ -165,11 +165,6 @@ class LDCPlotter:
             g.savefig(output_path, bbox_inches='tight', dpi=300)
             print(f"Convergence plot saved to: {output_path}")
 
-        if show:
-            plt.show()
-        else:
-            plt.close()
-
     def plot_velocity_fields(self, output_path: Optional[Path | str] = None, show: bool = False):
         """Plot velocity components using matplotlib tricontourf.
 
@@ -212,12 +207,7 @@ class LDCPlotter:
         if output_path:
             plt.savefig(output_path, bbox_inches='tight', dpi=300)
             print(f"Velocity plot saved to: {output_path}")
-
-        if show:
-            plt.show()
-        else:
-            plt.close()
-
+    
     def plot_pressure(self, output_path: Optional[Path | str] = None, show: bool = False):
         """Plot pressure field using matplotlib tricontourf.
 
@@ -244,7 +234,3 @@ class LDCPlotter:
             plt.savefig(output_path, bbox_inches='tight', dpi=300)
             print(f"Pressure plot saved to: {output_path}")
 
-        if show:
-            plt.show()
-        else:
-            plt.close()
