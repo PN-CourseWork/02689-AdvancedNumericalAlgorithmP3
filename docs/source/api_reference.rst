@@ -23,61 +23,17 @@ Core iteration functions for SIMPLE/PISO algorithms.
 Spectral Methods Package (``spectral``)
 =========================================
 
-Spectral methods for solving boundary value problems and time-dependent PDEs.
+Spectral methods for solving Navier-Stokes equations using Legendre-Gauss-Lobatto grids.
 
 .. currentmodule:: spectral
-
-BVP Solvers
------------
-
-.. autosummary::
-   :toctree: generated
-   :nosignatures:
-
-   BvpProblem
-   solve_legendre_collocation
-   solve_legendre_tau
-   solve_polar_bvp
-   solve_bvp
-
-Spectral Bases
---------------
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
    LegendreLobattoBasis
-   FourierEquispacedBasis
    legendre_diff_matrix
-   legendre_mass_matrix
-   fourier_diff_matrix_cotangent
-   fourier_diff_matrix_complex
-   fourier_diff_matrix_on_interval
-
-Time Integrators
-----------------
-
-.. autosummary::
-   :toctree: generated
-   :nosignatures:
-
-   TimeIntegrator
-   get_time_integrator
-   RK3
-   RK4
-
-PDE Solvers
------------
-
-.. autosummary::
-   :toctree: generated
-   :nosignatures:
-
-   KdVSolver
-   soliton
-   two_soliton_initial
-   ManufacturedSolution
+   get_repo_root
 
 Utilities Package (``utils``)
 ================================

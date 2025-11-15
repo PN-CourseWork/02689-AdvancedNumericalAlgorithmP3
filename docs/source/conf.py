@@ -111,10 +111,12 @@ html_theme_options = {
     "navbar_align": "left",
     "header_links_before_dropdown": 5,
     "show_toc_level": 2,  # Only show 2 levels in the page TOC
-    "secondary_sidebar_items": [],  # Hide right sidebar
+    "secondary_sidebar_items": ["page-toc"],  # Right sidebar: on this page
 }
 
-# Show page TOC in left sidebar
+# Configure left sidebar - only customize API reference, let sphinx-gallery use defaults
 html_sidebars = {
-    "**": ["page-toc"],
+    "api_reference": ["page-toc"],  # API reference: only page TOC on left
+    "index": ["page-toc"],  # Index: only page TOC on left
+    # sphinx-gallery pages use default theme sidebars (not specified here)
 }
