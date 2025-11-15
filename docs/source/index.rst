@@ -3,12 +3,12 @@ Advanced Numerical Algorithms - Project 3
 
 Lid-Driven Cavity Flow: Finite Volume and Spectral Methods
 
-**Author:** Philip Korsager Nickel
+**Authors:** Philip Korsager Nickel, Aske Schrøder Nielsen
 
 This documentation provides computational experiments, API reference, and implementation
 details for solving the lid-driven cavity problem using finite volume and spectral methods.
 
-For the full codebase, please visit the `GitHub repository <https://github.com/s214960/AdvancedNumericalAlgorithms-Project3>`.
+For the full codebase, please visit the `GitHub repository <https://github.com/PN-CourseWork/02689-AdvancedNumericalAlgorithmP3>`.
 
 Contents
 --------
@@ -19,14 +19,14 @@ Contents
    Complete API reference for finite volume, spectral methods, and utility modules.
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :hidden:
    :caption: Examples
 
    example_gallery/index
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :hidden:
    :titlesonly:
    :caption: Reference

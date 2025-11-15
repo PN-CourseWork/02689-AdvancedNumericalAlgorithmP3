@@ -107,7 +107,7 @@ html_show_sourcelink = False  # Hide "Show Source" link
 html_css_files = ["custom.css"]  # Custom CSS for hiding download buttons
 
 html_theme_options = {
-    "github_url": "https://github.com/s214960/AdvancedNumericalAlgorithms-Project3",
+    "github_url": "https://github.com/PN-CourseWork/02689-AdvancedNumericalAlgorithmP3",
     "navbar_align": "left",
     "header_links_before_dropdown": 5,
     "show_toc_level": 2,  # Only show 2 levels in the page TOC
