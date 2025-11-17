@@ -99,7 +99,7 @@ def compute_convective_stencil(
     return Flux_P_f, Flux_N_f, convDC
 
 @njit(inline="always", cache=True, fastmath=True)
-def compute_boundary_convective_flux(f, mesh, rho, mdot, u_field, phi, p_b, bc_type, bc_value, component_idx):
+def compute_boundary_convective_flux(f, mdot, bc_value):
     """
     First-order upwind boundary convection flux for velocity component.
 

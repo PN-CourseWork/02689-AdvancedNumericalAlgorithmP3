@@ -141,22 +141,11 @@ def rhie_chow_velocity_boundary_faces(mesh, U_faces, U_star, grad_p_bar, grad_p,
 
     # ═══ PRE-FETCH STATIC BOUNDARY DATA ═══
     boundary_faces = mesh.boundary_faces
-    owner_cells = mesh.owner_cells
-    boundary_types = mesh.boundary_types
     boundary_values = mesh.boundary_values
-    vector_S_f = mesh.vector_S_f
-    d_Cb = mesh.d_Cb
 
     # ––– boundary faces (OPTIMIZED LOOP) –––––––––––––––––––––––––––––––––––
     for i in range(n_boundary):
         f = boundary_faces[i]
-        P = owner_cells[f]
-        bc_type = boundary_types[f, 0]
-
-        # Pre-fetch face area components (single memory access)
-        S_f = vector_S_f[f]
-        S_f_0 = S_f[0]
-        S_f_1 = S_f[1]
 
         # All velocity boundaries use Dirichlet BC: fixed velocity at boundary
         boundary_vel = boundary_values[f]
@@ -182,12 +171,11 @@ def mdot_calculation(mesh, rho, U_f, correction=False):
     internal_faces = mesh.internal_faces
     boundary_faces = mesh.boundary_faces
     vector_S_f = mesh.vector_S_f
-    boundary_types = mesh.boundary_types
-    
+
     # ––– internal faces (OPTIMIZED LOOP) –––––––––––––––––––––––––––––––––––
     for i in range(n_internal):
         f = internal_faces[i]
-        
+
         # Pre-fetch velocity and area vector components (single memory access each)
         U_f_vec = U_f[f]
         S_f_vec = vector_S_f[f]
@@ -195,15 +183,14 @@ def mdot_calculation(mesh, rho, U_f, correction=False):
         U_f_1 = U_f_vec[1]
         S_f_0 = S_f_vec[0]
         S_f_1 = S_f_vec[1]
-        
+
         # Manual dot product (avoid np.dot allocation)
         mdot[f] = rho * (U_f_0 * S_f_0 + U_f_1 * S_f_1)
 
     # ––– boundary faces (OPTIMIZED LOOP) –––––––––––––––––––––––––––––––––––
     for i in range(n_boundary):
         f = boundary_faces[i]
-        bc_type = boundary_types[f, 0]
-        
+
         # Pre-fetch components
         U_f_vec = U_f[f]
         S_f_vec = vector_S_f[f]
@@ -211,7 +198,7 @@ def mdot_calculation(mesh, rho, U_f, correction=False):
         U_f_1 = U_f_vec[1]
         S_f_0 = S_f_vec[0]
         S_f_1 = S_f_vec[1]
-        
+
         # Manual dot product
         mdot[f] = rho * (U_f_0 * S_f_0 + U_f_1 * S_f_1)
 

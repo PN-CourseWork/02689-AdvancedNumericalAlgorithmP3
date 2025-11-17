@@ -219,9 +219,9 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
                                      cell_centers, face_centers)
 
     # 7. Boundary conditions (lid-driven cavity specific)
+    # All velocity boundaries use Dirichlet BC
     internal_faces = np.where(neighbor_cells >= 0)[0].astype(np.int64)
     boundary_faces_list = []
-    boundary_types = np.full((n_faces, 2), -1, dtype=np.int64)
     boundary_values = np.zeros((n_faces, 3), dtype=np.float64)
 
     # Identify boundary faces by checking face centers against domain boundaries
@@ -233,22 +233,18 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
         boundary_faces_list.append(f)
         fc = face_centers[f]
 
-        # Determine which boundary this face belongs to
+        # Determine which boundary this face belongs to and set velocity values
         if abs(fc[1] - Ly) < eps:
-            # Top boundary (moving lid)
-            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
+            # Top boundary (moving lid with Dirichlet BC)
             boundary_values[f] = [lid_velocity, 0.0, 0.0]
         elif abs(fc[1] - 0.0) < eps:
-            # Bottom boundary (stationary wall)
-            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
+            # Bottom boundary (stationary wall with Dirichlet BC)
             boundary_values[f] = [0.0, 0.0, 0.0]
         elif abs(fc[0] - 0.0) < eps:
-            # Left boundary (stationary wall)
-            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
+            # Left boundary (stationary wall with Dirichlet BC)
             boundary_values[f] = [0.0, 0.0, 0.0]
         elif abs(fc[0] - Lx) < eps:
-            # Right boundary (stationary wall)
-            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
+            # Right boundary (stationary wall with Dirichlet BC)
             boundary_values[f] = [0.0, 0.0, 0.0]
 
     boundary_faces = np.array(boundary_faces_list, dtype=np.int64)
@@ -282,7 +278,6 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
         face_interp_factors=np.ascontiguousarray(face_interp_factors),
         internal_faces=np.ascontiguousarray(internal_faces),
         boundary_faces=np.ascontiguousarray(boundary_faces),
-        boundary_types=np.ascontiguousarray(boundary_types),
         boundary_values=np.ascontiguousarray(boundary_values),
         d_Cb=np.ascontiguousarray(d_Cb),
     )

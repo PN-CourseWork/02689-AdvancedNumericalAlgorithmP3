@@ -12,11 +12,7 @@ Indexing Conventions:
 
 Boundary Condition Metadata:
 - boundary_values[f, :] = [u_BC, v_BC, p_BC] for face f. Zero for internal.
-- boundary_types[f, :] = [vel_type, p_type] with:
-    * 0 = Wall
-    * 1 = Dirichlet
-    * 2 = Neumann
-    * 3 = zeroGradient
+- All velocity boundaries use Dirichlet BC with fixed values.
 - d_Cb[f] = distance from cell center to boundary face center (used for one-sided gradients)
 
 Fast Boolean Masks:
@@ -53,7 +49,6 @@ mesh_data_spec = [
     ("boundary_faces", types.int64[:]),          # Indices of faces with N = –1
 
     # --- Boundary Conditions ---
-    ("boundary_types", types.int64[:, :]),       # BC type per face: [vel_type, p_type]
     ("boundary_values", types.float64[:, :]),    # BC values per face: [u_BC, v_BC, p_BC]
     ("d_Cb", types.float64[:]),                  # Distance from cell center to boundary face center (Moukalled 8.6.8)
 ]
@@ -76,7 +71,6 @@ class MeshData2D:
         face_interp_factors,
         internal_faces,
         boundary_faces,
-        boundary_types,
         boundary_values,
         d_Cb,
     ):
@@ -103,6 +97,5 @@ class MeshData2D:
         self.boundary_faces = boundary_faces
 
         # --- BCs ---
-        self.boundary_types = boundary_types
         self.boundary_values = boundary_values
         self.d_Cb = d_Cb

@@ -14,7 +14,6 @@ def compute_cell_gradients(mesh, u, pinned_idx=0, weighted=True, weight_exponent
     neighbor_cells = mesh.neighbor_cells
     cc             = mesh.cell_centers
     face_centers   = mesh.face_centers
-    boundary_types = mesh.boundary_types
 
     for c in prange(n_cells):
         if c == pinned_idx:

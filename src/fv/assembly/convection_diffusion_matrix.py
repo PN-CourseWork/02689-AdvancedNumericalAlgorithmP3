@@ -1,15 +1,8 @@
 import numpy as np
 from numba import njit
 
-from fv.discretization.diffusion.central_diff import (
-    compute_diffusive_flux_matrix_entry,
-    compute_diffusive_correction,
-    compute_boundary_diffusive_correction,
-)
-from fv.discretization.convection.upwind import (
-    compute_convective_stencil,
-    compute_boundary_convective_flux,
-)
+from fv.discretization.diffusion.central_diff import compute_diffusive_flux_matrix_entry
+from fv.discretization.convection.upwind import compute_convective_stencil
 
 EPS = 1.0e-14
 
@@ -54,7 +47,6 @@ def assemble_diffusion_convection_matrix(
 
     # Boundary face data (static)
     boundary_faces = mesh.boundary_faces
-    boundary_types = mesh.boundary_types
     boundary_values = mesh.boundary_values
 
     # ––– internal faces (OPTIMIZED MEMORY ACCESS) –––––––––––––––––––––––––
@@ -70,13 +62,11 @@ def assemble_diffusion_convection_matrix(
 
         # —— orthogonal diffusion ——
         diffFlux_P_f, diffFlux_N_f = compute_diffusive_flux_matrix_entry(f, grad_phi, mesh, mu)
-        # —— non-orthogonal correction (explicit) ——
-        diffDC = compute_diffusive_correction(f, grad_phi, mesh, mu)
 
         # —— face fluxes —— Moukalled 15.72 ——
         Flux_P_f =  convFlux_P_f + diffFlux_P_f
         Flux_N_f =  convFlux_N_f + diffFlux_N_f
-        Flux_V_f = convDC + diffDC 
+        Flux_V_f = convDC  # diffDC is always 0 for orthogonal grids 
 
         # Matrix assembly (using pre-fetched P, N)
         row[idx] = P; col[idx] = P; data[idx] = Flux_P_f; idx += 1
@@ -87,36 +77,24 @@ def assemble_diffusion_convection_matrix(
         b[P] -= Flux_V_f
         b[N] += Flux_V_f
 
-    # ––– boundary faces (OPTIMIZED MEMORY ACCESS) –––––––––––––––––––––––––
+    # ––– boundary faces –––––––––––––––––––––––––––––––––––––––––––––––––––––
     for i in range(n_boundary):
         f = boundary_faces[i]
-        bc_type = boundary_types[f, 0]
         bc_val = boundary_values[f, component_idx]
         P = owner_cells[f]
-        
-        # Pre-fetch geometric vectors (static data)
-        S_b = np.ascontiguousarray(mesh.vector_S_f[f])
-        E_f = np.ascontiguousarray(mesh.vector_S_f[f])
-        mag_S_b = np.linalg.norm(S_b)
-        mag_E_f = np.linalg.norm(E_f) + EPS
-        d_Cb = mesh.d_Cb[f]
-        n = S_b / mag_S_b
-        vec_Cb = d_Cb * n
-        
-        # Boundary pressure calculation (using pre-fetched data)
-        uv_b = boundary_values[f]
-        grad_p = np.ascontiguousarray(grad_pressure_field[P])
-        p_b = pressure_field[P] + np.dot(grad_p, vec_Cb)
- 
-        diffFlux_P_b, diffFlux_N_b = compute_boundary_diffusive_correction(
-            f, u_field, grad_phi, mesh, mu,  p_b,  bc_type, bc_val, component_idx
-        )
 
-        convFlux_P_b, convFlux_N_b = compute_boundary_convective_flux(
-            f, mesh, rho, mdot, u_field, phi, p_b, bc_type, bc_val, component_idx
-        )
+        # Diffusion flux (Dirichlet BC)
+        E_f = mesh.vector_S_f[f]
+        E_mag = np.sqrt(E_f[0]**2 + E_f[1]**2)
+        d_PB = mesh.d_Cb[f]
+        diffFlux_P_b = mu * E_mag / d_PB
+        diffFlux_N_b = -diffFlux_P_b * bc_val
 
-        row[idx] = P; col[idx] = P; data[idx] = (+diffFlux_P_b + convFlux_P_b); idx += 1
+        # Convection flux (Dirichlet BC)
+        convFlux_P_b = mdot[f]
+        convFlux_N_b = -mdot[f] * bc_val
+
+        row[idx] = P; col[idx] = P; data[idx] = (diffFlux_P_b + convFlux_P_b); idx += 1
         b[P] -= (diffFlux_N_b + convFlux_N_b)
 
     # ––– trim overallocation –––––––––––––––––––––––––––––––––––––––––––––––

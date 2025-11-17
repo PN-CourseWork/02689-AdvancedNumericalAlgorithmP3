@@ -36,22 +36,11 @@ def compute_diffusive_flux_matrix_entry(f, grad_phi, mesh, mu):
 
     return Flux_P_f, Flux_N_f
 
-
-@njit(inline="always", cache=True, fastmath=True)
-def compute_diffusive_correction(f, grad_phi, mesh, mu):
-    """
-    Compute diffusive correction term.
-    For orthogonal Cartesian grids, T_f = 0 and skewness = 0, so correction is always 0.
-    """
-    # For orthogonal grids, there is no non-orthogonal correction
-    return 0.0
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Boundary faces
 # ──────────────────────────────────────────────────────────────────────────────
 @njit(inline="always", cache=True, fastmath=True)
-def compute_boundary_diffusive_correction(
-        f, U, grad_phi, mesh, mu, p_b, bc_type, bc_val, component_idx):
+def compute_boundary_diffusive_correction(f, mesh, mu, bc_val):
     """
     Return (diffFlux_P_b, diffFlux_N_b) for boundary diffusion.
 
@@ -60,13 +49,12 @@ def compute_boundary_diffusive_correction(
 
     All velocity boundaries use Dirichlet BC with fixed values.
     """
-    muF = mu
     E_f = np.ascontiguousarray(mesh.vector_S_f[f])
     d_PB = mesh.d_Cb[f]
 
     # Dirichlet BC: fixed value at boundary
     E_mag = np.linalg.norm(E_f)
-    diffFlux_P_b = muF * E_mag / d_PB
+    diffFlux_P_b = mu * E_mag / d_PB
     diffFlux_N_b = -diffFlux_P_b * bc_val
 
     return diffFlux_P_b, diffFlux_N_b
