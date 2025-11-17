@@ -4,14 +4,12 @@ This module implements a collocated finite volume solver using
 SIMPLE algorithm for pressure-velocity coupling.
 """
 
-import sys
 import numpy as np
-from pathlib import Path
-from typing import Tuple
 from scipy.sparse import coo_matrix
+from dataclasses import replace
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import FVinfo
+from .datastructures import FVinfo, FVFields, TimeSeries
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.leastSquares import compute_cell_gradients
@@ -50,8 +48,7 @@ class FVSolver(LidDrivenCavitySolver):
         """
         super().__init__(**kwargs)
 
-    def _initialize_fields(self):
-        """Initialize velocity and pressure fields for SIMPLE algorithm."""
+        # Initialize fields
         n_cells = self.mesh.cell_volumes.shape[0]
         n_faces = self.mesh.internal_faces.shape[0] + self.mesh.boundary_faces.shape[0]
 
@@ -69,17 +66,20 @@ class FVSolver(LidDrivenCavitySolver):
         # Mass fluxes
         self.mdot = np.zeros(n_faces)
 
-        # Linear solver settings
-        self.linear_solver_settings = {
-            'momentum': {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000},
-            'pressure': {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000}
-        }
+        # Linear solver settings (same for both momentum and pressure)
+        self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000}
 
-    def _solve_momentum_equation(self, phi, grad_phi, phi_prev_iter, grad_p_component):
+    def _initialize_fields(self):
+        """Initialize fields - now a no-op since initialization happens in __init__."""
+        pass
+
+    def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component):
         """Solve a single momentum equation (u or v).
 
         Parameters
         ----------
+        component_idx : int
+            Component index (0 for u, 1 for v)
         phi : ndarray
             Current velocity component (u or v)
         grad_phi : ndarray
@@ -97,7 +97,6 @@ class FVSolver(LidDrivenCavitySolver):
             Diagonal of momentum matrix (needed for pressure correction)
         """
         n_cells = self.mesh.cell_volumes.shape[0]
-        component_idx = 0 if phi is self.u else 1
 
         # Assemble momentum equation
         row, col, data, b = assemble_diffusion_convection_matrix(
@@ -114,7 +113,7 @@ class FVSolver(LidDrivenCavitySolver):
         A.setdiag(relaxed_A_diag)
 
         # Solve
-        phi_star, _, _ = scipy_solver(A, rhs, **self.linear_solver_settings['momentum'])
+        phi_star, *_ = scipy_solver(A, rhs, **self.linear_solver_settings)
 
         return phi_star, A_diag
 
@@ -137,8 +136,8 @@ class FVSolver(LidDrivenCavitySolver):
         grad_v = compute_cell_gradients(self.mesh, self.v, weighted=True, weight_exponent=0.5, use_limiter=True)
 
         # Solve momentum equations
-        u_star, A_u_diag = self._solve_momentum_equation(self.u, grad_u, self.u_prev_iter, grad_p[:, 0])
-        v_star, A_v_diag = self._solve_momentum_equation(self.v, grad_v, self.v_prev_iter, grad_p[:, 1])
+        u_star, A_u_diag = self._solve_momentum_equation(0, self.u, grad_u, self.u_prev_iter, grad_p[:, 0])
+        v_star, A_v_diag = self._solve_momentum_equation(1, self.v, grad_v, self.v_prev_iter, grad_p[:, 1])
 
         # Pressure correction
         bold_D = bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag)
@@ -153,7 +152,7 @@ class FVSolver(LidDrivenCavitySolver):
         A_p = coo_matrix((data, (row, col)), shape=(n_cells, n_cells)).tocsr()
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, mdot_star)
 
-        p_prime, _, _ = scipy_solver(A_p, rhs_p, remove_nullspace=True, **self.linear_solver_settings['pressure'])
+        p_prime, *_ = scipy_solver(A_p, rhs_p, remove_nullspace=True, **self.linear_solver_settings)
 
         # Velocity and pressure corrections
         grad_p_prime = compute_cell_gradients(self.mesh, p_prime, weighted=True, weight_exponent=0.5, use_limiter=False)
@@ -180,9 +179,7 @@ class FVSolver(LidDrivenCavitySolver):
 
     def _create_output_dataclasses(self, residual_history, final_iter_count, is_converged):
         """Create FV-specific output dataclasses."""
-        from .datastructures import FVFields, TimeSeries, FVinfo
-
-        # Extract residuals
+        # Extract residuals using list comprehensions
         u_residuals = [r['u'] for r in residual_history]
         v_residuals = [r['v'] for r in residual_history]
         combined_residual = [max(r['u'], r['v']) for r in residual_history]
@@ -204,20 +201,12 @@ class FVSolver(LidDrivenCavitySolver):
             continuity_residual=None,  # Can add this later if needed
         )
 
-        metadata = FVinfo(
-            Re=self.config.Re,
-            lid_velocity=self.config.lid_velocity,
-            Lx=self.config.Lx,
-            Ly=self.config.Ly,
-            nx=self.config.nx,
-            ny=self.config.ny,
+        # Update config with convergence info instead of duplicating all fields
+        metadata = replace(
+            self.config,
             iterations=final_iter_count,
             converged=is_converged,
             final_residual=combined_residual[-1] if combined_residual else float('inf'),
-            convection_scheme=self.config.convection_scheme,
-            limiter=self.config.limiter,
-            alpha_uv=self.config.alpha_uv,
-            alpha_p=self.config.alpha_p,
         )
 
         return fields, time_series, metadata
