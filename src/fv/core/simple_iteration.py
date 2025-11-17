@@ -56,8 +56,6 @@ def initialize_simple_state(mesh, config):
         'p': np.ascontiguousarray(np.zeros(n_cells)),
         # Mass fluxes
         'mdot': np.ascontiguousarray(np.zeros(n_faces)),
-        # Helper arrays
-        'U_old_faces': np.ascontiguousarray(np.zeros((n_faces, 2))),
         # Linear solver settings
         'linear_solver_settings': {
             'momentum': {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000},
@@ -94,7 +92,6 @@ def simple_step(mesh, config, state):
     v_prev_iter = state['v_prev_iter']
     p = state['p']
     mdot = state['mdot']
-    U_old_faces = state['U_old_faces']
     rho = state['rho']
     mu = state['mu']
     linear_solver_settings = state['linear_solver_settings']
@@ -106,9 +103,7 @@ def simple_step(mesh, config, state):
     grad_p_bar = interpolate_to_face(mesh, grad_p)
 
     # Stack u and v for interpolation functions
-    U = np.column_stack([u, v])
     U_prev_iter = np.column_stack([u_prev_iter, v_prev_iter])
-    U_old_bar = interpolate_to_face(mesh, U)
 
     grad_u = compute_cell_gradients(mesh, u, weighted=True, weight_exponent=0.5, use_limiter=True)
     grad_v = compute_cell_gradients(mesh, v, weighted=True, weight_exponent=0.5, use_limiter=True)
@@ -123,7 +118,6 @@ def simple_step(mesh, config, state):
     A_u = coo_matrix((data, (row, col)), shape=(n_cells, n_cells)).tocsr()
     A_u_diag = A_u.diagonal()
     rhs_u = b_u - grad_p[:, 0] * mesh.cell_volumes
-    rhs_u_unrelaxed = rhs_u.copy()
 
     # Relax
     relaxed_A_u_diag, rhs_u = relax_momentum_equation(rhs_u, A_u_diag, u_prev_iter, config.alpha_uv)
@@ -143,7 +137,6 @@ def simple_step(mesh, config, state):
     A_v = coo_matrix((data, (row, col)), shape=(n_cells, n_cells)).tocsr()
     A_v_diag = A_v.diagonal()
     rhs_v = b_v - grad_p[:, 1] * mesh.cell_volumes
-    rhs_v_unrelaxed = rhs_v.copy()
 
     # Relax
     relaxed_A_v_diag, rhs_v = relax_momentum_equation(rhs_v, A_v_diag, v_prev_iter, config.alpha_uv)
@@ -161,8 +154,7 @@ def simple_step(mesh, config, state):
 
     # Stack u_star and v_star for Rhie-Chow
     U_star = np.column_stack([u_star, v_star])
-    U_star_bar = interpolate_to_face(mesh, U_star)
-    U_star_rc = rhie_chow_velocity(mesh, U_star, U_star_bar, U_old_bar, U_old_faces, grad_p_bar, grad_p, p, config.alpha_uv, bold_D_bar)
+    U_star_rc = rhie_chow_velocity(mesh, U_star, grad_p_bar, grad_p, bold_D_bar)
 
     mdot_star = mdot_calculation(mesh, rho, U_star_rc)
 
@@ -184,7 +176,6 @@ def simple_step(mesh, config, state):
     v_corrected = v_star + v_prime
 
     U_prime_face = interpolate_to_face(mesh, U_prime)
-    U_faces_corrected = U_star_rc + U_prime_face
 
     mdot_prime = mdot_calculation(mesh, rho, U_prime_face)
     mdot_corrected = mdot_star + mdot_prime
@@ -198,6 +189,5 @@ def simple_step(mesh, config, state):
     state['u_prev_iter'] = u_corrected.copy()
     state['v_prev_iter'] = v_corrected.copy()
     state['mdot'] = mdot_corrected
-    state['U_old_faces'] = U_faces_corrected
 
     return state

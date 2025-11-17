@@ -5,14 +5,6 @@ from numba import njit
 def MUSCL(r):
     return max(0.0, min(2.0, 2.0 * r, 0.5 * (1 + r))) if r > 0 else 0.0
 
-@njit(inline="always")
-def OSPRE(r):
-    return (3 * r * (r + 1)) / (2 * (r * r + r + 1 + 1e-12)) if r > 0 else 0.0
-
-@njit(inline="always")
-def H_Cui(r):
-    return (3 * (r + abs(r))) / (2 * (r + 2 + 1e-12)) if r > 0 else 0.0
-
 @njit(inline="always", cache=True, fastmath=True)
 def compute_convective_stencil(
     f, mesh, rho, mdot, u_field, grad_phi, component_idx,
@@ -55,46 +47,9 @@ def compute_convective_stencil(
 
         if limiter == "MUSCL":
             psi = MUSCL(r)
-        elif limiter == "OSPRE":
-            psi = OSPRE(r)
-        elif limiter == "H_Cui":
-            psi = H_Cui(r)
 
         # Apply the limiter to get high-order face value
         phi_HO = phi_up + 0.5 * psi * (phi_down - phi_up)
-        F_high = mdot[f] * phi_HO
-        convDC = (F_high - F_low)
-    else:
-        # Higher-order schemes (Central difference, SOU, QUICK)
-        # Variables needed for higher-order schemes
-        phi_P = phi[P]
-        phi_N = phi[N]
-        F_low = mdot[f] * (phi_P if mdot[f] >= 0 else phi_N)
-
-        g_f = mesh.face_interp_factors[f]
-        d_CE = np.ascontiguousarray(mesh.vector_d_CE[f])
-        gradC = grad_phi[P]
-        gradN = grad_phi[N]
-        grad_f = g_f * gradN + (1 - g_f) * gradC
-        d_Cf = d_CE * g_f
-
-        # set coefficients
-        if scheme == "Central difference":
-            a = 0.0
-            b = 1.0
-        elif scheme == "SOU":
-            a = 2.0
-            b = -1.0
-        elif scheme == "QUICK":
-            a = 0.5
-            b = 0.5
-        else:
-            # Default to central difference for unknown schemes
-            a = 0.0
-            b = 1.0
-
-        # Compute the high order term
-        phi_HO = phi_P + np.dot(gradC * a + grad_f * b, d_Cf)
         F_high = mdot[f] * phi_HO
         convDC = (F_high - F_low)
 

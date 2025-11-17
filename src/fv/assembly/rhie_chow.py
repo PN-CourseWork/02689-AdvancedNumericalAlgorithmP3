@@ -27,16 +27,6 @@ def rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_b
         
         # Pre-fetch interpolation factor (single access)
         g = face_interp_factors[f]
-        
-        # Pre-fetch face area vector components
-        S_f = vector_S_f[f]
-        S_f_0 = S_f[0]
-        S_f_1 = S_f[1]
-
-        # Manual norm calculation
-        mag_S_f = np.sqrt(S_f_0 * S_f_0 + S_f_1 * S_f_1)
-        n_f_0 = S_f_0 / mag_S_f
-        n_f_1 = S_f_1 / mag_S_f
 
         # Pre-fetch velocity and pressure gradient data (better cache locality)
         U_star_P = U_star[P]
@@ -144,9 +134,9 @@ def mdot_calculation(mesh, rho, U_f):
 
 
 @njit(cache=True, fastmath=True, nogil=True)
-def rhie_chow_velocity(mesh, U_star, U_star_bar, U_old_bar, U_old_faces, grad_p_bar, grad_p, p, alpha_uv, bold_D_bar):
+def rhie_chow_velocity(mesh, U_star, grad_p_bar, grad_p, bold_D_bar):
     """
-    Wrapper function that maintains the same interface while using optimized memory access.
+    Compute Rhie-Chow interpolated velocity at faces.
     """
     # Compute internal faces with optimized memory access
     U_faces = rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_bar)
