@@ -26,13 +26,10 @@ def assemble_diffusion_convection_matrix(
     scheme="Upwind",
     limiter=None,
     pressure_field = None,
-    grad_pressure_field = None,
-    dt=0.0,
-    transient=False,
-    time_scheme="Euler"
+    grad_pressure_field = None
 ):
-    """Assemble sparse matrix and RHS for a collocated FV discretisation.
-    
+    """Assemble sparse matrix and RHS for steady-state collocated FV discretisation.
+
     Optimized for memory access patterns with pre-fetched static data.
     """
 
@@ -41,7 +38,7 @@ def assemble_diffusion_convection_matrix(
     n_boundary  = mesh.boundary_faces.shape[0]
 
     # ––– pessimistic non-zero count ––––––––––––––––––––––––––––––––––––––––
-    max_nnz = 8 * n_internal + 3 * n_boundary + n_cells
+    max_nnz = 8 * n_internal + 3 * n_boundary
     row  = np.zeros(max_nnz, dtype=np.int64)
     col  = np.zeros(max_nnz, dtype=np.int64)
     data = np.zeros(max_nnz, dtype=np.float64)
@@ -54,16 +51,11 @@ def assemble_diffusion_convection_matrix(
     internal_faces = mesh.internal_faces
     owner_cells = mesh.owner_cells
     neighbor_cells = mesh.neighbor_cells
-    
+
     # Boundary face data (static)
     boundary_faces = mesh.boundary_faces
     boundary_types = mesh.boundary_types
     boundary_values = mesh.boundary_values
-
-    # Determine scaling factor for spatial terms based on time scheme
-    time_scheme_factor = 1.0
-    if transient and time_scheme == "CrankNicolson":
-        time_scheme_factor = 0.5
 
     # ––– internal faces (OPTIMIZED MEMORY ACCESS) –––––––––––––––––––––––––
     for i in range(n_internal):
@@ -87,13 +79,13 @@ def assemble_diffusion_convection_matrix(
         Flux_V_f = convDC + diffDC 
 
         # Matrix assembly (using pre-fetched P, N)
-        row[idx] = P; col[idx] = P; data[idx] = Flux_P_f * time_scheme_factor; idx += 1
-        row[idx] = P; col[idx] = N; data[idx] = Flux_N_f * time_scheme_factor; idx += 1
-        row[idx] = N; col[idx] = N; data[idx] = -Flux_N_f * time_scheme_factor; idx += 1
-        row[idx] = N; col[idx] = P; data[idx] = -Flux_P_f * time_scheme_factor; idx += 1
+        row[idx] = P; col[idx] = P; data[idx] = Flux_P_f; idx += 1
+        row[idx] = P; col[idx] = N; data[idx] = Flux_N_f; idx += 1
+        row[idx] = N; col[idx] = N; data[idx] = -Flux_N_f; idx += 1
+        row[idx] = N; col[idx] = P; data[idx] = -Flux_P_f; idx += 1
 
-        b[P] -= Flux_V_f * time_scheme_factor
-        b[N] += Flux_V_f * time_scheme_factor
+        b[P] -= Flux_V_f
+        b[N] += Flux_V_f
 
     # ––– boundary faces (OPTIMIZED MEMORY ACCESS) –––––––––––––––––––––––––
     for i in range(n_boundary):
@@ -123,16 +115,9 @@ def assemble_diffusion_convection_matrix(
         convFlux_P_b, convFlux_N_b = compute_boundary_convective_flux(
             f, mesh, rho, mdot, u_field, phi, p_b, bc_type, bc_val, component_idx
         )
-        
-        row[idx] = P; col[idx] = P; data[idx] = (+diffFlux_P_b + convFlux_P_b) * time_scheme_factor; idx += 1
-        b[P] -= (diffFlux_N_b + convFlux_N_b) * time_scheme_factor
 
-    if transient and dt > 0:
-        # This loop adds the transient term contribution to the diagonal and source term
-        for i in range(n_cells):
-            transient_term_coeff = rho * mesh.cell_volumes[i] / dt
-            row[idx] = i; col[idx] = i; data[idx] = transient_term_coeff; idx += 1
-            b[i] += transient_term_coeff * phi[i]
+        row[idx] = P; col[idx] = P; data[idx] = (+diffFlux_P_b + convFlux_P_b); idx += 1
+        b[P] -= (diffFlux_N_b + convFlux_N_b)
 
     # ––– trim overallocation –––––––––––––––––––––––––––––––––––––––––––––––
     return row[:idx], col[:idx], data[:idx], b
