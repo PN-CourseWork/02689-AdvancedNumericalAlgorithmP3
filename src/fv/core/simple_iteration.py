@@ -186,7 +186,7 @@ def simple_step(mesh, config, state):
     U_prime_face = interpolate_to_face(mesh, U_prime)
     U_faces_corrected = U_star_rc + U_prime_face
 
-    mdot_prime = mdot_calculation(mesh, rho, U_prime_face, correction=True)
+    mdot_prime = mdot_calculation(mesh, rho, U_prime_face)
     mdot_corrected = mdot_star + mdot_prime
 
     p_corrected = p + config.alpha_p * p_prime

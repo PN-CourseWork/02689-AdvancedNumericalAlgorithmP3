@@ -2,70 +2,8 @@ import numpy as np
 from numba import njit, prange
 
 
-@njit(cache=True)
-def compute_velocity_gradient_least_squares(mesh, U_star_rc, U_star, x_P, U_star_C, P, f_exclude):
-    """
-    Compute 2x2 velocity gradient tensor delta_v at cell P using least squares
-    over all face neighbors except the excluded face f_exclude.
-
-    Parameters:
-    -----------
-    mesh : mesh object
-    U_star_rc : (n_faces, 2) array of rhie chow interpolated velocities
-    U_star : (n_cells, 2) array of cell-centered velocities from momentum solution
-    x_P : (2,) array, cell center of P
-    U_star_C : (2,) array, velocity at cell P from momentum solution
-    P : int, index of cell
-    f_exclude : int, face to exclude (boundary face)
-
-    Returns:
-    --------
-    grad_v : (2, 2) array, delta_v tensor at cell P
-    """
-    AtA = np.zeros((2, 2), dtype=np.float64)
-    Atb_u = np.zeros(2, dtype=np.float64)
-    Atb_v = np.zeros(2, dtype=np.float64)
-
-    for k in range(mesh.cell_faces[P].shape[0]):
-        ff = mesh.cell_faces[P][k]
-        if ff == f_exclude:
-            continue
-
-        x_f = mesh.face_centers[ff]
-        dx = x_f[0] - x_P[0]
-        dy = x_f[1] - x_P[1]
-        U_star_f = U_star_rc[ff]
-        du = U_star_f[0] - U_star_C[0]
-        dv = U_star_f[1] - U_star_C[1]
-
-        AtA[0, 0] += dx * dx
-        AtA[0, 1] += dx * dy
-        AtA[1, 0] += dy * dx
-        AtA[1, 1] += dy * dy
-
-        Atb_u[0] += dx * du
-        Atb_u[1] += dy * du
-        Atb_v[0] += dx * dv
-        Atb_v[1] += dy * dv
-
-    # Solve AtA x = Atb using analytical 2x2 inverse
-    det = AtA[0, 0] * AtA[1, 1] - AtA[0, 1] * AtA[1, 0] + 1e-14
-    inv_AtA_00 =  AtA[1, 1] / det
-    inv_AtA_01 = -AtA[0, 1] / det
-    inv_AtA_10 = -AtA[1, 0] / det
-    inv_AtA_11 =  AtA[0, 0] / det
-
-    grad_v = np.zeros((2, 2), dtype=np.float64)
-    grad_v[0, 0] = inv_AtA_00 * Atb_u[0] + inv_AtA_01 * Atb_u[1]
-    grad_v[0, 1] = inv_AtA_10 * Atb_u[0] + inv_AtA_11 * Atb_u[1]
-    grad_v[1, 0] = inv_AtA_00 * Atb_v[0] + inv_AtA_01 * Atb_v[1]
-    grad_v[1, 1] = inv_AtA_10 * Atb_v[0] + inv_AtA_11 * Atb_v[1]
-
-    return grad_v
-
-
 @njit(inline="always", cache=True, fastmath=True, nogil=True)
-def rhie_chow_velocity_internal_faces(mesh, U_star, U_star_bar, U_old_bar, U_old_faces, grad_p_bar, grad_p, p, alpha_uv, bold_D_bar):
+def rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_bar):
     """
     Compute Rhie-Chow velocity at internal faces.
     Optimized for memory access patterns with pre-fetched static data.
@@ -132,7 +70,7 @@ def rhie_chow_velocity_internal_faces(mesh, U_star, U_star_bar, U_old_bar, U_old
 
 
 @njit(inline="always", cache=True, fastmath=True, nogil=True)
-def rhie_chow_velocity_boundary_faces(mesh, U_faces, U_star, grad_p_bar, grad_p, p, alpha_uv, bold_D_bar, U_old_bar, U_old_faces):
+def rhie_chow_velocity_boundary_faces(mesh, U_faces):
     """
     Apply boundary conditions to Rhie-Chow velocity.
     Optimized memory access patterns with pre-fetched boundary data.
@@ -156,7 +94,7 @@ def rhie_chow_velocity_boundary_faces(mesh, U_faces, U_star, grad_p_bar, grad_p,
 
 
 @njit(cache=True, fastmath=True, nogil=True)
-def mdot_calculation(mesh, rho, U_f, correction=False):
+def mdot_calculation(mesh, rho, U_f):
     """
     Calculate mass flux through faces: mdot = rho * U_f · S_f
     Optimized for memory access patterns with pre-fetched static data.
@@ -205,58 +143,15 @@ def mdot_calculation(mesh, rho, U_f, correction=False):
     return mdot
 
 
-@njit(parallel=False, cache=True)
-def compute_face_fluxes(mesh, face_velocity, rho):
-    """
-    Compute mass fluxes at faces from face velocities.
-
-    Parameters
-    ----------
-    mesh : MeshData2D
-        Mesh data structure
-    face_velocity : ndarray
-        Face velocities [n_faces, 2]
-    rho : float
-        Density
-
-    Returns
-    ------
-    face_mass_fluxes : ndarray
-        Mass fluxes at faces
-    """
-    n_faces = len(mesh.face_areas)
-    face_mass_fluxes = np.zeros(n_faces)
-
-    for f in prange(n_faces):
-        # Get face area and normal vector (Sf_x, Sf_y)
-        S_f = np.ascontiguousarray(mesh.vector_S_f[f])  # This is already Area * unit_normal
-
-        vol_flux = np.dot(face_velocity[f], S_f)
-
-        # Calculate mass flux
-        face_mass_fluxes[f] = rho * vol_flux
-
-    return face_mass_fluxes
-
-@njit(parallel=False, cache=True)
-def compute_face_velocities(mesh, u, v):
-    n_faces = len(mesh.face_areas)
-    face_velocity = np.zeros((n_faces, 2))
-    for f in range(n_faces):
-        gf = mesh.face_interp_factors[f]
-        face_velocity[f, 0] = gf * u[mesh.neighbor_cells[f]] + (1 - gf) * u[mesh.owner_cells[f]]
-        face_velocity[f, 1] = gf * v[mesh.neighbor_cells[f]] + (1 - gf) * v[mesh.owner_cells[f]]
-    return face_velocity
-
 @njit(cache=True, fastmath=True, nogil=True)
 def rhie_chow_velocity(mesh, U_star, U_star_bar, U_old_bar, U_old_faces, grad_p_bar, grad_p, p, alpha_uv, bold_D_bar):
     """
     Wrapper function that maintains the same interface while using optimized memory access.
     """
     # Compute internal faces with optimized memory access
-    U_faces = rhie_chow_velocity_internal_faces(mesh, U_star, U_star_bar, U_old_bar, U_old_faces, grad_p_bar, grad_p, p, alpha_uv, bold_D_bar)
-    
+    U_faces = rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_bar)
+
     # Apply boundary conditions with optimized memory access
-    U_faces = rhie_chow_velocity_boundary_faces(mesh, U_faces, U_star, grad_p_bar, grad_p, p, alpha_uv, bold_D_bar, U_old_bar, U_old_faces)
-    
+    U_faces = rhie_chow_velocity_boundary_faces(mesh, U_faces)
+
     return U_faces
