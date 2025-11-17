@@ -236,19 +236,19 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
         # Determine which boundary this face belongs to
         if abs(fc[1] - Ly) < eps:
             # Top boundary (moving lid)
-            boundary_types[f] = [0, 3]  # wall velocity, zeroGradient pressure
+            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
             boundary_values[f] = [lid_velocity, 0.0, 0.0]
         elif abs(fc[1] - 0.0) < eps:
             # Bottom boundary (stationary wall)
-            boundary_types[f] = [0, 3]
+            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
             boundary_values[f] = [0.0, 0.0, 0.0]
         elif abs(fc[0] - 0.0) < eps:
             # Left boundary (stationary wall)
-            boundary_types[f] = [0, 3]
+            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
             boundary_values[f] = [0.0, 0.0, 0.0]
         elif abs(fc[0] - Lx) < eps:
             # Right boundary (stationary wall)
-            boundary_types[f] = [0, 3]
+            boundary_types[f] = [1, 3]  # Dirichlet velocity, zeroGradient pressure
             boundary_values[f] = [0.0, 0.0, 0.0]
 
     boundary_faces = np.array(boundary_faces_list, dtype=np.int64)
