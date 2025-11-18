@@ -106,9 +106,10 @@ class LidDrivenCavitySolver(ABC):
         if max_iter is None:
             max_iter = self.config.max_iterations
 
-        # Store previous iteration for residual calculation
-        self.fields.u_prev[:] = self.fields.u
-        self.fields.v_prev[:] = self.fields.v
+        # Store previous iteration for residual calculation (use local copies, not fields.u_prev!)
+        # Note: fields.u_prev/v_prev are used by FV solver for under-relaxation
+        u_prev = self.fields.u.copy()
+        v_prev = self.fields.v.copy()
 
         time_start = time.time()
         is_converged = False
@@ -118,11 +119,11 @@ class LidDrivenCavitySolver(ABC):
             self.fields.u, self.fields.v, self.fields.p = self.step()
 
             # Calculate normalized solution change: ||u^{n+1} - u^n||_2 / ||u^n||_2
-            u_change_norm = np.linalg.norm(self.fields.u - self.fields.u_prev)
-            v_change_norm = np.linalg.norm(self.fields.v - self.fields.v_prev)
+            u_change_norm = np.linalg.norm(self.fields.u - u_prev)
+            v_change_norm = np.linalg.norm(self.fields.v - v_prev)
 
-            u_prev_norm = np.linalg.norm(self.fields.u_prev) + 1e-12
-            v_prev_norm = np.linalg.norm(self.fields.v_prev) + 1e-12
+            u_prev_norm = np.linalg.norm(u_prev) + 1e-12
+            v_prev_norm = np.linalg.norm(v_prev) + 1e-12
 
             u_residual = u_change_norm / u_prev_norm
             v_residual = v_change_norm / v_prev_norm
@@ -133,8 +134,8 @@ class LidDrivenCavitySolver(ABC):
                 self.time_series.v_residuals.append(v_residual)
 
             # Update previous iteration
-            self.fields.u_prev[:] = self.fields.u
-            self.fields.v_prev[:] = self.fields.v
+            u_prev = self.fields.u.copy()
+            v_prev = self.fields.v.copy()
 
             # Check convergence (only after warmup period)
             if i >= 10:

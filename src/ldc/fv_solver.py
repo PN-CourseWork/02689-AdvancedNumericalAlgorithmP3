@@ -11,7 +11,7 @@ from .base_solver import LidDrivenCavitySolver
 from .datastructures import FVMeta, FVFields
 
 from meshing.simple_structured import create_structured_mesh_2d
-from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
+from fv.assembly.convection_diffusion_matrix_structured import assemble_diffusion_convection_matrix_structured
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
 from fv.linear_solvers.scipy_solver import scipy_solver
 from fv.assembly.rhie_chow import mdot_calculation, rhie_chow_velocity
@@ -101,8 +101,8 @@ class FVSolver(LidDrivenCavitySolver):
         A_diag : ndarray
             Diagonal of momentum matrix (needed for pressure correction)
         """
-        # Assemble momentum equation
-        row, col, data, b = assemble_diffusion_convection_matrix(
+        # Assemble momentum equation (vectorized for structured grids)
+        row, col, data, b = assemble_diffusion_convection_matrix_structured(
             self.mesh, self.fields.mdot, grad_phi, self.rho, self.mu,
             component_idx, phi=phi,
             scheme=self.config.convection_scheme, limiter=self.config.limiter

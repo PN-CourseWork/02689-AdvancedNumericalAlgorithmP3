@@ -37,6 +37,10 @@ class MeshData2D:
         boundary_faces,
         boundary_values,
         d_Cb,
+        nx=None,
+        ny=None,
+        dx=None,
+        dy=None,
     ):
         # --- Geometry ---
         self.cell_volumes = cell_volumes
@@ -63,3 +67,9 @@ class MeshData2D:
         # --- BCs ---
         self.boundary_values = boundary_values
         self.d_Cb = d_Cb
+
+        # --- Structured Grid Info (optional) ---
+        self.nx = nx
+        self.ny = ny
+        self.dx = dx
+        self.dy = dy

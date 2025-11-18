@@ -280,4 +280,8 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
         boundary_faces=np.ascontiguousarray(boundary_faces),
         boundary_values=np.ascontiguousarray(boundary_values),
         d_Cb=np.ascontiguousarray(d_Cb),
+        nx=nx,
+        ny=ny,
+        dx=dx,
+        dy=dy,
     )
