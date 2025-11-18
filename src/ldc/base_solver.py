@@ -4,149 +4,49 @@ from abc import ABC, abstractmethod
 from typing import Tuple
 import numpy as np
 
-from .datastructures import Info
+from .datastructures import Fields, Meta, TimeSeries, Mesh
 
 
 class LidDrivenCavitySolver(ABC):
     """Abstract base solver for lid-driven cavity problem.
 
     This base class handles:
+    - Configuration management
     - Physics parameters (Re, viscosity, density)
-    - Uniform structured grid creation
-    - Common grid properties (dx, dy, X, Y, grid_points)
 
-    Subclasses only need to:
-    - Specify grid size via _get_grid_size()
-    - Do solver-specific setup via _setup_solver_specifics()
-    - Implement solve() method
+    Subclasses must implement:
+    - step() : Perform one iteration
+    - _create_output_dataclasses() : Create result dataclasses
 
     Parameters
     ----------
     config : Config (or subclass like FVConfig, SpectralConfig)
         Configuration with physics (Re, Lx, Ly, lid_velocity) and numerics (nx, ny, etc).
     """
-
-    # Subclasses should override this with their config class
-    Config = None
-
-    def __init__(self, config: Config = None, **kwargs):
+    def __init__(self, **kwargs):
         """Initialize solver with configuration.
 
         Parameters
         ----------
-        config : Config, optional
-            Configuration object (FVConfig, SpectralConfig, etc).
-            If not provided, kwargs are used to create config.
         **kwargs
-            Configuration parameters passed to Config class if config is None.
+            Configuration parameters passed to the Config class.
         """
-        # Create config from kwargs if not provided
-        if config is None:
-            if self.Config is None:
-                raise ValueError("Subclass must define Config class attribute")
-            config = self.Config(**kwargs)
 
-        self.config = config
+        self.config = self.Config(**kwargs)
 
-        # Compute fluid properties from Reynolds number
-        self.rho = 1.0  # Normalized density
-        self.mu = self.rho * config.lid_velocity * config.Lx / config.Re
+        self.mesh = Mesh(self.config)        
 
-        # Get grid size from subclass
-        nx, ny = self._get_grid_size()
+        self.fields = Fields(self.config)
 
-        # Create uniform structured grid (common for all solvers)
-        self._create_uniform_grid(nx, ny)
-
-        # Create mesh (for FV solvers) or None (for spectral solvers)
-        self._create_mesh()
-
-
-        # Let subclass do solver-specific initialization
-        self._setup_solver_specifics()
-
-    def _get_grid_size(self) -> Tuple[int, int]:
-        """Return grid dimensions (nx, ny) for this solver.
-
-        Default implementation returns config.nx and config.ny.
-        Subclasses can override if they use different naming (e.g., Nx, Ny).
-
-        Returns
-        -------
-        nx, ny : int
-            Number of grid points/cells in x and y directions.
-        """
-        return self.config.nx, self.config.ny
-
-    def _create_uniform_grid(self, nx: int, ny: int):
-        """Create uniform structured grid (shared by all solvers).
-
-        Creates grid arrays that are accessible to subclasses:
-        - self.x, self.y : 1D coordinate arrays
-        - self.X, self.Y : 2D meshgrid arrays
-        - self.dx, self.dy : Grid spacing
-        - self.grid_points : Flattened (N, 2) array of coordinates
-        - self.nx, self.ny : Grid dimensions
-
-        Parameters
-        ----------
-        nx, ny : int
-            Number of grid points in x and y.
-        """
-        self.nx = nx
-        self.ny = ny
-
-        # Create 1D coordinates
-        self.x = np.linspace(0, self.config.Lx, nx)
-        self.y = np.linspace(0, self.config.Ly, ny)
-
-        # Create 2D meshgrid
-        self.X, self.Y = np.meshgrid(self.x, self.y)
-
-        # Grid spacing
-        self.dx = self.x[1] - self.x[0] if nx > 1 else self.config.Lx
-        self.dy = self.y[1] - self.y[0] if ny > 1 else self.config.Ly
-
-        # Flattened grid points for compatibility
-        self.grid_points = np.column_stack([self.X.flatten(), self.Y.flatten()])
-
-    def _create_mesh(self):
-        """Create FV mesh structure.
-
-        Default implementation creates a structured FV mesh using gmsh.
-        Spectral solvers can override this to set self.mesh = None.
-        """
-        from meshing.simple_structured import create_structured_mesh_2d
-
-        self.mesh = create_structured_mesh_2d(
-            nx=self.nx,
-            ny=self.ny,
-            Lx=self.config.Lx,
-            Ly=self.config.Ly,
-            lid_velocity=self.config.lid_velocity
-        )
-
-    def _setup_solver_specifics(self):
-        """Solver-specific initialization (optional).
-
-        Called after grid creation. Override this to:
-        - Create solver-specific data structures (spectral operators, etc.)
-        - Initialize additional solver-specific state
-
-        Default implementation does nothing.
-        """
-        pass
+        self.time_series = TimeSeries()
 
     @abstractmethod
     def step(self):
         """Perform one iteration/time step of the solver.
 
         This method should:
-        1. Update the solution fields (u, v, p)
+        1. Update the solution fields in self.fields (u, v, p)
         2. Return the updated fields as a tuple (u, v, p)
-
-        The fields should be stored as instance variables that can be accessed
-        for residual computation.
 
         Returns
         -------
@@ -158,43 +58,7 @@ class LidDrivenCavitySolver(ABC):
             Updated pressure field
         """
         pass
-
-    @abstractmethod
-    def _initialize_fields(self):
-        """Initialize solution fields (u, v, p) and any solver-specific state.
-
-        This method should set:
-        - self.u : np.ndarray - initial u velocity
-        - self.v : np.ndarray - initial v velocity
-        - self.p : np.ndarray - initial pressure
-        - Any other solver-specific state needed for step()
-        """
-        pass
-
-    @abstractmethod
-    def _create_output_dataclasses(self, residual_history, final_iter_count, is_converged):
-        """Create output dataclass instances from final solution.
-
-        Parameters
-        ----------
-        residual_history : list of dict
-            History of residuals: [{'u': float, 'v': float}, ...]
-        final_iter_count : int
-            Number of iterations performed
-        is_converged : bool
-            Whether the solver converged
-
-        Returns
-        -------
-        fields : Fields
-            Solution fields dataclass
-        time_series : TimeSeries
-            Time series data
-        metadata : Info (or subclass)
-            Solver metadata
-        """
-        pass
-
+    
     def solve(self, tolerance: float = None, max_iter: int = None):
         """Solve the lid-driven cavity problem using iterative stepping.
 
@@ -217,33 +81,28 @@ class LidDrivenCavitySolver(ABC):
 
         # Use config values if not explicitly provided
         if tolerance is None:
-            tolerance = self.config.tolerance
+            self.config.tolerance = tolerance
         if max_iter is None:
-            max_iter = self.config.max_iterations
-
-        # Initialize fields
-        self._initialize_fields()
+            self.config.max_iterations = max_iter
 
         # Store previous iteration for residual calculation
-        u_prev = self.u.copy()
-        v_prev = self.v.copy()
+        u_prev = self.fields.u.copy()
+        v_prev = self.fields.v.copy()
 
         # Residual history
         residual_history = []
 
         time_start = time.time()
-        final_iter_count = 0
-        is_converged = False
 
-        for i in range(max_iter):
-            final_iter_count = i + 1
+        for i in range(self.config.max_iterations):
+            self.config.iterations = i + 1
 
             # Perform one iteration
-            self.u, self.v, self.p = self.step()
+            self.fields.u, self.fields.v, self.fields.p = self.step()
 
             # Calculate normalized solution change: ||u^{n+1} - u^n||_2 / ||u^n||_2
-            u_change_norm = np.linalg.norm(self.u - u_prev)
-            v_change_norm = np.linalg.norm(self.v - v_prev)
+            u_change_norm = np.linalg.norm(self.fields.u - u_prev)
+            v_change_norm = np.linalg.norm(self.fields.v - v_prev)
 
             u_prev_norm = np.linalg.norm(u_prev) + 1e-12
             v_prev_norm = np.linalg.norm(v_prev) + 1e-12
@@ -254,10 +113,11 @@ class LidDrivenCavitySolver(ABC):
             # Only store residual history after first 10 iterations
             if i >= 10:
                 residual_history.append({'u': u_residual, 'v': v_residual})
+                self.time_series.
 
             # Update previous iteration
-            u_prev = self.u.copy()
-            v_prev = self.v.copy()
+            u_prev = self.fields.u.copy()
+            v_prev = self.fields.v.copy()
 
             # Check convergence (only after warmup period)
             if i >= 10:

@@ -12,12 +12,19 @@ import numpy as np
 # Shared Data Classes 
 # =======================================================
 
+@dataclass
+class Mesh: 
+
+
+
 
 @dataclass
 class Fields:
     """Base spatial solution fields."""
     u: np.ndarray
+    u_prev: np.ndarray
     v: np.ndarray
+    v_prev: np.ndarray
     p: np.ndarray
     x: np.ndarray
     y: np.ndarray
@@ -27,15 +34,14 @@ class Fields:
 @dataclass
 class TimeSeries:
     """Time series data common to all solvers."""
-    residual: List[float]
-    u_residual: List[float] = None
-    v_residual: List[float] = None
-    continuity_residual: List[float] = None
+    rel_residual: List[float]
+    u_residual: List[float] 
+    v_residual: List[float] 
     #TODO: Add the quantities stuff from the paper
 
 
 @dataclass
-class Info:
+class Meta:
     """Base solver metadata, config and convergence info."""
     # Physics parameters (required)
     Re: float
@@ -52,12 +58,12 @@ class Info:
     # Solver config
     max_iterations: int = 500
     tolerance: float = 1e-4
-    method: str = None
+    method: str = ""
 
     # Convergence info
-    iterations: int = None
+    iterations: int = 0
     converged: bool = False
-    final_residual: float = None
+    final_residual: float = 0.0
 
 
 #=============================================================
@@ -65,32 +71,12 @@ class Info:
 # ============================================================
 
 @dataclass
-class FVinfo(Info):
+class FVmeta(Meta):
     """FV-specific metadata with discretization parameters."""
-    convection_scheme: str = "Upwind" 
+    convection_scheme: str = "Upwind"
     limiter: str = "MUSCL"
     alpha_uv: float = 0.6
     alpha_p: float = 0.4
 
-@dataclass
-class FVFields(Fields):
-    """FV-specific fields with mass flux."""
-    mdot: np.ndarray = None
-
-#=====================================================
-# Spectral Data Classes
-#=====================================================
-
-@dataclass
-class SpectralInfo(Info):
-    """Spectral-specific metadata with discretization parameters."""
-    Nx: int = 64
-    Ny: int = 64
-    differentiation_method: str = "fft"  # 'fft', 'chebyshev', 'matrix'
-    time_scheme: str = "rk4"
-    dt: float = 0.001
-    dealiasing: bool = True
-    multigrid: bool = False
-    mg_levels: int = 3
 
 
