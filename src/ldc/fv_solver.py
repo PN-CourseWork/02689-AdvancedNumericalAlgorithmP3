@@ -6,11 +6,11 @@ SIMPLE algorithm for pressure-velocity coupling.
 
 import numpy as np
 from scipy.sparse import csr_matrix
-from dataclasses import replace
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import FVinfo, FVFields, TimeSeries, InternalFields
+from .datastructures import FVmeta, FVfields
 
+from meshing.simple_structured import create_structured_mesh_2d
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
 from fv.linear_solvers.scipy_solver import scipy_solver
@@ -34,8 +34,9 @@ class FVSolver(LidDrivenCavitySolver):
         FV-specific parameters (nx, ny, convection scheme, etc.).
     """
 
-    # Make config class accessible via solver
-    Config = FVinfo
+    # Specify types for FV solver
+    Config = FVmeta
+    FieldsType = FVfields
 
     def __init__(self, **kwargs):
         """Initialize FV solver.
@@ -46,7 +47,28 @@ class FVSolver(LidDrivenCavitySolver):
             Configuration parameters passed to FVConfig.
             Can also pass config=FVConfig(...) directly.
         """
-        super().__init__(**kwargs)
+        # Create config
+        if self.Config is None:
+            raise ValueError("Subclass must define Config class attribute")
+        self.config = self.Config(**kwargs)
+
+        # Physics parameters
+        self.rho = 1.0
+        self.mu = self.rho * self.config.lid_velocity * self.config.Lx / self.config.Re
+
+        # Create FV mesh directly
+        self.mesh = create_structured_mesh_2d(
+            nx=self.config.nx,
+            ny=self.config.ny,
+            Lx=self.config.Lx,
+            Ly=self.config.Ly,
+            lid_velocity=self.config.lid_velocity
+        )
+
+        # Create fields and time series
+        self.fields = self.FieldsType(self.mesh)
+        from .datastructures import TimeSeries
+        self.time_series = TimeSeries()
 
         # Linear solver settings (same for both momentum and pressure)
         self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000}
@@ -153,37 +175,3 @@ class FVSolver(LidDrivenCavitySolver):
         self.fields.mdot = mdot_corrected
 
         return self.fields.u, self.fields.v, self.fields.p
-
-    def _create_output_dataclasses(self, residual_history, final_iter_count, is_converged):
-        """Create FV-specific output dataclasses."""
-        # Extract residuals using list comprehensions
-        u_residuals = [r['u'] for r in residual_history]
-        v_residuals = [r['v'] for r in residual_history]
-        combined_residual = [max(r['u'], r['v']) for r in residual_history]
-
-        fields = FVFields(
-            u=self.fields.u,
-            v=self.fields.v,
-            p=self.fields.p,
-            x=self.mesh.cell_centers[:, 0],
-            y=self.mesh.cell_centers[:, 1],
-            grid_points=self.mesh.cell_centers,
-            mdot=self.fields.mdot,
-        )
-
-        time_series = TimeSeries(
-            residual=combined_residual,
-            u_residual=u_residuals,
-            v_residual=v_residuals,
-            continuity_residual=None,  # Can add this later if needed
-        )
-
-        # Update config with convergence info instead of duplicating all fields
-        metadata = replace(
-            self.config,
-            iterations=final_iter_count,
-            converged=is_converged,
-            final_residual=combined_residual[-1] if combined_residual else float('inf'),
-        )
-
-        return fields, time_series, metadata

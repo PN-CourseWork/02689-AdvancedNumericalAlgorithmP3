@@ -1,8 +1,8 @@
 import numpy as np
-from numba import njit, prange
 
 
-@njit(inline="always", cache=True, fastmath=True, nogil=True)
+
+
 def rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_bar):
     """
     Compute Rhie-Chow velocity at internal faces.
@@ -59,7 +59,7 @@ def rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_b
     return U_faces
 
 
-@njit(inline="always", cache=True, fastmath=True, nogil=True)
+
 def rhie_chow_velocity_boundary_faces(mesh, U_faces):
     """
     Apply boundary conditions to Rhie-Chow velocity.
@@ -83,7 +83,7 @@ def rhie_chow_velocity_boundary_faces(mesh, U_faces):
     return U_faces
 
 
-@njit(cache=True, fastmath=True, nogil=True)
+
 def mdot_calculation(mesh, rho, U_f):
     """
     Calculate mass flux through faces: mdot = rho * U_f · S_f
@@ -133,7 +133,7 @@ def mdot_calculation(mesh, rho, U_f):
     return mdot
 
 
-@njit(cache=True, fastmath=True, nogil=True)
+
 def rhie_chow_velocity(mesh, U_star, grad_p_bar, grad_p, bold_D_bar):
     """
     Compute Rhie-Chow interpolated velocity at faces.

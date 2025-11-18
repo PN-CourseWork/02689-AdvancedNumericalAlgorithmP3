@@ -42,9 +42,9 @@ solver.solve(tolerance=1e-5, max_iter=500)
 # Display convergence statistics from the SIMPLE iteration.
 
 print(f"\nSolution Status:")
-print(f"  Converged: {solver.metadata.converged}")
-print(f"  Iterations: {solver.metadata.iterations}")
-print(f"  Final residual: {solver.metadata.final_residual:.6e}")
+print(f"  Converged: {solver.config.converged}")
+print(f"  Iterations: {solver.config.iterations}")
+print(f"  Final residual: {solver.config.final_residual:.6e}")
 
 # %%
 # Save Solution

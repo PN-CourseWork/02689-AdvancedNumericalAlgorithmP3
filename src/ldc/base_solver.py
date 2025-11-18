@@ -12,17 +12,23 @@ class LidDrivenCavitySolver(ABC):
 
     This base class handles:
     - Configuration management
-    - Physics parameters (Re, viscosity, density)
+    - Mesh and field initialization
+    - Common solve loop with residual tracking
 
     Subclasses must implement:
     - step() : Perform one iteration
-    - _create_output_dataclasses() : Create result dataclasses
 
-    Parameters
-    ----------
-    config : Config (or subclass like FVConfig, SpectralConfig)
-        Configuration with physics (Re, Lx, Ly, lid_velocity) and numerics (nx, ny, etc).
+    Subclasses must define:
+    - Config : The config dataclass (Meta or subclass)
+    - MeshType : (optional) The mesh dataclass (Mesh or subclass, defaults to Mesh)
+    - FieldsType : (optional) The fields dataclass (Fields or subclass, defaults to Fields)
     """
+
+    # Subclasses override these
+    Config = None
+    MeshType = Mesh
+    FieldsType = Fields
+
     def __init__(self, **kwargs):
         """Initialize solver with configuration.
 
@@ -31,13 +37,23 @@ class LidDrivenCavitySolver(ABC):
         **kwargs
             Configuration parameters passed to the Config class.
         """
+        # Create config
+        if self.Config is None:
+            raise ValueError("Subclass must define Config class attribute")
 
         self.config = self.Config(**kwargs)
 
-        self.mesh = Mesh(self.config)        
+        # Compute fluid properties from Reynolds number
+        self.rho = 1.0  # Normalized density
+        self.mu = self.rho * self.config.lid_velocity * self.config.Lx / self.config.Re
 
-        self.fields = Fields(self.config)
+        # Create mesh
+        self.mesh = self.MeshType(self.config)
 
+        # Create fields
+        self.fields = self.FieldsType(self.mesh)
+
+        # Initialize time series
         self.time_series = TimeSeries()
 
     @abstractmethod
@@ -81,22 +97,18 @@ class LidDrivenCavitySolver(ABC):
 
         # Use config values if not explicitly provided
         if tolerance is None:
-            self.config.tolerance = tolerance
+            tolerance = self.config.tolerance
         if max_iter is None:
-            self.config.max_iterations = max_iter
+            max_iter = self.config.max_iterations
 
         # Store previous iteration for residual calculation
         u_prev = self.fields.u.copy()
         v_prev = self.fields.v.copy()
 
-        # Residual history
-        residual_history = []
-
         time_start = time.time()
+        is_converged = False
 
-        for i in range(self.config.max_iterations):
-            self.config.iterations = i + 1
-
+        for i in range(max_iter):
             # Perform one iteration
             self.fields.u, self.fields.v, self.fields.p = self.step()
 
@@ -112,8 +124,10 @@ class LidDrivenCavitySolver(ABC):
 
             # Only store residual history after first 10 iterations
             if i >= 10:
-                residual_history.append({'u': u_residual, 'v': v_residual})
-                self.time_series.
+                rel_residual = max(u_residual, v_residual)
+                self.time_series.rel_residual.append(rel_residual)
+                self.time_series.u_residual.append(u_residual)
+                self.time_series.v_residual.append(v_residual)
 
             # Update previous iteration
             u_prev = self.fields.u.copy()
@@ -135,10 +149,17 @@ class LidDrivenCavitySolver(ABC):
         time_end = time.time()
         print(f"Solver finished in {time_end - time_start:.2f} seconds.")
 
-        # Create output dataclasses
-        self.fields, self.time_series, self.metadata = self._create_output_dataclasses(
-            residual_history, final_iter_count, is_converged
-        )
+        # Update config with convergence info
+        self.config.iterations = i + 1
+        self.config.converged = is_converged
+        if self.time_series.rel_residual:
+            self.config.final_residual = self.time_series.rel_residual[-1]
+
+        # Print summary
+        print(f"\nSolution Status:")
+        print(f"  Converged: {self.config.converged}")
+        print(f"  Iterations: {self.config.iterations}")
+        print(f"  Final residual: {self.config.final_residual:.6e}")
 
 
     def save(self, filepath):
@@ -156,14 +177,27 @@ class LidDrivenCavitySolver(ABC):
         filepath = Path(filepath)
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert dataclasses to dicts
-        fields_dict = asdict(self.fields)
+        # Convert dataclasses to dicts (manually extract fields to avoid mesh pickling issue)
+        fields_dict = {
+            'u': self.fields.u,
+            'v': self.fields.v,
+            'p': self.fields.p,
+            'u_prev_iter': self.fields.u_prev_iter,
+            'v_prev_iter': self.fields.v_prev_iter,
+            'x': self.fields.x,
+            'y': self.fields.y,
+            'grid_points': self.fields.grid_points,
+        }
+        # Add FV-specific fields if they exist
+        if hasattr(self.fields, 'mdot'):
+            fields_dict['mdot'] = self.fields.mdot
+
         time_series_dict = asdict(self.time_series)
-        metadata_dict = asdict(self.metadata)
+        config_dict = asdict(self.config)
 
         with h5py.File(filepath, 'w') as f:
-            # Save metadata as root-level attributes
-            for key, val in metadata_dict.items():
+            # Save config as root-level attributes
+            for key, val in config_dict.items():
                 # Skip None values and convert to appropriate types
                 if val is None:
                     continue
@@ -176,11 +210,12 @@ class LidDrivenCavitySolver(ABC):
             # Save fields in a fields group
             fields_grp = f.create_group('fields')
             for key, val in fields_dict.items():
-                fields_grp.create_dataset(key, data=val)
+                # Save all arrays
+                if isinstance(val, np.ndarray):
+                    fields_grp.create_dataset(key, data=val)
 
             # Add velocity magnitude if u and v are present
             if 'u' in fields_dict and 'v' in fields_dict:
-                import numpy as np
                 vel_mag = np.sqrt(fields_dict['u']**2 + fields_dict['v']**2)
                 fields_grp.create_dataset('velocity_magnitude', data=vel_mag)
 
@@ -192,5 +227,5 @@ class LidDrivenCavitySolver(ABC):
             if time_series_dict:
                 ts_grp = f.create_group('time_series')
                 for key, val in time_series_dict.items():
-                    if val is not None:
+                    if val is not None and len(val) > 0:
                         ts_grp.create_dataset(key, data=val)

@@ -1,7 +1,7 @@
 import numpy as np
-from numba import njit, prange
 
-@njit(cache=True, fastmath=True, boundscheck=False, error_model='numpy')
+
+
 def assemble_pressure_correction_matrix(mesh, rho):
     """
     Assemble pressure correction equation matrix.

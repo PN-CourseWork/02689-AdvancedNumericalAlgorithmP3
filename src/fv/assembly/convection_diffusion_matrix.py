@@ -1,9 +1,9 @@
 import numpy as np
-from numba import njit
+
 
 from fv.discretization.convection.upwind import compute_convective_stencil
 
-@njit(cache=True, fastmath=True, nogil=True, parallel=False, boundscheck=False, error_model='numpy')
+
 def assemble_diffusion_convection_matrix(
     mesh,
     mdot,

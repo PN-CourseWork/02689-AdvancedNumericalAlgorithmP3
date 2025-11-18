@@ -1,7 +1,7 @@
 import numpy as np
-from numba import njit, prange
 
-@njit(parallel=False, cache=True)
+
+
 def relax_momentum_equation(rhs, A_diag, phi, alpha):
     """
     In-place Patankar-style under-relaxation of a momentum equation system.
@@ -13,7 +13,7 @@ def relax_momentum_equation(rhs, A_diag, phi, alpha):
     relaxed_diagonal = np.zeros(n, dtype=np.float64)
     relaxed_rhs = np.zeros(n, dtype=np.float64)
 
-    for i in prange(n):
+    for i in range(n):
         a = A_diag[i]
         a_relaxed = a * inv_alpha
         relaxed_diagonal[i] = a_relaxed
@@ -23,7 +23,7 @@ def relax_momentum_equation(rhs, A_diag, phi, alpha):
 
 
 
-@njit(parallel=True, cache=True)
+
 def interpolate_to_face(mesh, quantity):
     """
     Optimized interpolation to faces with better memory access patterns.
@@ -38,7 +38,7 @@ def interpolate_to_face(mesh, quantity):
         interpolated_quantity = np.zeros((n_faces, 1), dtype=np.float64)
         
         # Process internal faces
-        for i in prange(n_internal):
+        for i in range(n_internal):
             f = mesh.internal_faces[i]
             P = mesh.owner_cells[f]
             N = mesh.neighbor_cells[f]
@@ -46,7 +46,7 @@ def interpolate_to_face(mesh, quantity):
             interpolated_quantity[f, 0] = gf * quantity[N] + (1.0 - gf) * quantity[P]
 
         # Process boundary faces
-        for i in prange(n_boundary):
+        for i in range(n_boundary):
             f = mesh.boundary_faces[i]
             P = mesh.owner_cells[f]
             interpolated_quantity[f, 0] = quantity[P]
@@ -58,7 +58,7 @@ def interpolate_to_face(mesh, quantity):
         
         if n_components == 2:
             # Optimized 2D vector case with manual unrolling
-            for i in prange(n_internal):
+            for i in range(n_internal):
                 f = mesh.internal_faces[i]
                 P = mesh.owner_cells[f]
                 N = mesh.neighbor_cells[f]
@@ -67,14 +67,14 @@ def interpolate_to_face(mesh, quantity):
                 interpolated_quantity[f, 0] = gf * quantity[N, 0] + (1.0 - gf) * quantity[P, 0]
                 interpolated_quantity[f, 1] = gf * quantity[N, 1] + (1.0 - gf) * quantity[P, 1]
 
-            for i in prange(n_boundary):
+            for i in range(n_boundary):
                 f = mesh.boundary_faces[i]
                 P = mesh.owner_cells[f]
                 interpolated_quantity[f, 0] = quantity[P, 0]
                 interpolated_quantity[f, 1] = quantity[P, 1]
         else:
             # General vector case
-            for i in prange(n_internal):
+            for i in range(n_internal):
                 f = mesh.internal_faces[i]
                 P = mesh.owner_cells[f]
                 N = mesh.neighbor_cells[f]
@@ -83,7 +83,7 @@ def interpolate_to_face(mesh, quantity):
                 for c in range(n_components):
                     interpolated_quantity[f, c] = gf * quantity[N, c] + (1.0 - gf) * quantity[P, c]
 
-            for i in prange(n_boundary):
+            for i in range(n_boundary):
                 f = mesh.boundary_faces[i]
                 P = mesh.owner_cells[f]
                 for c in range(n_components):
@@ -92,12 +92,12 @@ def interpolate_to_face(mesh, quantity):
     return interpolated_quantity
 
 
-@njit(parallel=False, cache=True)
+
 def bold_Dv_calculation(mesh, A_u_diag, A_v_diag):
     n_cells = mesh.cell_volumes.shape[0]
     bold_Dv = np.zeros((n_cells, 2), dtype=np.float64)
 
-    for i in prange(n_cells):
+    for i in range(n_cells):
         bold_Dv[i, 0] = mesh.cell_volumes[i] / (A_u_diag[i] + 1e-14)  # D_u
         bold_Dv[i, 1] = mesh.cell_volumes[i] / (A_v_diag[i] + 1e-14)  # D_v
 

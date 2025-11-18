@@ -1,11 +1,11 @@
 import numpy as np
-from numba import njit
 
-@njit(inline="always")
+
+
 def MUSCL(r):
     return max(0.0, min(2.0, 2.0 * r, 0.5 * (1 + r))) if r > 0 else 0.0
 
-@njit(inline="always", cache=True, fastmath=True)
+
 def compute_convective_stencil(
     f, mesh, rho, mdot, grad_phi, component_idx,
     phi, scheme="Upwind", limiter=None

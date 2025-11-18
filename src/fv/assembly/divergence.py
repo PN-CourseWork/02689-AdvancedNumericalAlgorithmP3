@@ -1,8 +1,8 @@
-from numba import njit
+
 import numpy as np
 
 
-@njit()
+
 def compute_divergence_from_face_fluxes(mesh, face_fluxes):
     """
     Compute divergence (mass imbalance) per cell from face mass fluxes.
