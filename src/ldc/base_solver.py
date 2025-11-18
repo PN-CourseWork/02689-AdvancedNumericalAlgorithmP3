@@ -155,8 +155,11 @@ class LidDrivenCavitySolver(ABC):
         # Update config with convergence info
         self.config.iterations = i + 1
         self.config.converged = is_converged
-        if self.time_series.rel_residual:
-            self.config.final_residual = self.time_series.rel_residual[-1]
+        if self.time_series.u_residuals:
+            self.config.final_residual = max(
+                self.time_series.u_residuals[-1],
+                self.time_series.v_residuals[-1]
+            )
 
         # Print summary
         print(f"\nSolution Status:")
@@ -185,11 +188,11 @@ class LidDrivenCavitySolver(ABC):
             'u': self.fields.u,
             'v': self.fields.v,
             'p': self.fields.p,
-            'u_prev_iter': self.fields.u_prev_iter,
-            'v_prev_iter': self.fields.v_prev_iter,
-            'x': self.fields.x,
-            'y': self.fields.y,
-            'grid_points': self.fields.grid_points,
+            'u_prev': self.fields.u_prev,
+            'v_prev': self.fields.v_prev,
+            'x': self.mesh.x,
+            'y': self.mesh.y,
+            'grid_points': self.mesh.grid_points,
         }
         # Add FV-specific fields if they exist
         if hasattr(self.fields, 'mdot'):

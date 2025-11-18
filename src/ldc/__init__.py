@@ -13,9 +13,9 @@ LidDrivenCavitySolver (abstract base - defines problem)
 from .base_solver import LidDrivenCavitySolver
 from .datastructures import (
     Meta,
-    FVmeta,
+    FVMeta,
     Fields,
-    FVfields,
+    FVFields,
     TimeSeries,
     Mesh,
 )
@@ -26,10 +26,10 @@ __all__ = [
     "LidDrivenCavitySolver",
     # Configurations
     "Meta",
-    "FVmeta",
+    "FVMeta",
     # Data structures
     "Fields",
-    "FVfields",
+    "FVFields",
     "TimeSeries",
     "Mesh",
     # Concrete solvers

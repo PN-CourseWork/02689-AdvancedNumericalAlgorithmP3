@@ -8,7 +8,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import FVmeta, FVfields
+from .datastructures import FVMeta, FVFields
 
 from meshing.simple_structured import create_structured_mesh_2d
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
@@ -35,8 +35,8 @@ class FVSolver(LidDrivenCavitySolver):
     """
 
     # Specify types for FV solver
-    Config = FVmeta
-    FieldsType = FVfields
+    Config = FVMeta
+    FieldsType = FVFields
 
     def __init__(self, **kwargs):
         """Initialize FV solver.
@@ -66,7 +66,9 @@ class FVSolver(LidDrivenCavitySolver):
         )
 
         # Create fields and time series
-        self.fields = self.FieldsType(self.mesh)
+        n_cells = self.mesh.cell_volumes.shape[0]
+        n_faces = self.mesh.internal_faces.shape[0] + self.mesh.boundary_faces.shape[0]
+        self.fields = self.FieldsType(n_cells=n_cells, n_faces=n_faces)
         from .datastructures import TimeSeries
         self.time_series = TimeSeries()
 
@@ -135,8 +137,8 @@ class FVSolver(LidDrivenCavitySolver):
         grad_v = compute_cell_gradients_structured(self.mesh, self.fields.v, use_limiter=True)
 
         # Solve momentum equations
-        u_star, A_u_diag = self._solve_momentum_equation(0, self.fields.u, grad_u, self.fields.u_prev_iter, grad_p[:, 0])
-        v_star, A_v_diag = self._solve_momentum_equation(1, self.fields.v, grad_v, self.fields.v_prev_iter, grad_p[:, 1])
+        u_star, A_u_diag = self._solve_momentum_equation(0, self.fields.u, grad_u, self.fields.u_prev, grad_p[:, 0])
+        v_star, A_v_diag = self._solve_momentum_equation(1, self.fields.v, grad_v, self.fields.v_prev, grad_p[:, 1])
 
         # Pressure correction
         bold_D = bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag)
@@ -170,8 +172,8 @@ class FVSolver(LidDrivenCavitySolver):
         self.fields.u = u_corrected
         self.fields.v = v_corrected
         self.fields.p = p_corrected
-        self.fields.u_prev_iter = u_corrected.copy()
-        self.fields.v_prev_iter = v_corrected.copy()
+        self.fields.u_prev = u_corrected.copy()
+        self.fields.v_prev = v_corrected.copy()
         self.fields.mdot = mdot_corrected
 
         return self.fields.u, self.fields.v, self.fields.p
