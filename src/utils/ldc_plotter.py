@@ -85,7 +85,16 @@ class LDCPlotter:
             Re = f.attrs['Re']
 
             # Load time-series
-            residuals = f['time_series/residual'][:]
+            if 'time_series/residual' in f:
+                # Old format
+                residuals = f['time_series/residual'][:]
+            elif 'time_series/u_residuals' in f:
+                # New format: take max of u and v residuals
+                u_res = f['time_series/u_residuals'][:]
+                v_res = f['time_series/v_residuals'][:]
+                residuals = np.maximum(u_res, v_res)
+            else:
+                residuals = np.array([])
 
             # Load spatial fields
             grid_points = f['grid_points'][:]

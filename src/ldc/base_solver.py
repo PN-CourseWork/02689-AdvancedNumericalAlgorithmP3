@@ -190,10 +190,21 @@ class LidDrivenCavitySolver(ABC):
             'p': self.fields.p,
             'u_prev': self.fields.u_prev,
             'v_prev': self.fields.v_prev,
-            'x': self.mesh.x,
-            'y': self.mesh.y,
-            'grid_points': self.mesh.grid_points,
         }
+
+        # Extract grid information (different for Mesh vs FV mesh)
+        if hasattr(self.mesh, 'x') and hasattr(self.mesh, 'y'):
+            # Simple Mesh class
+            fields_dict['x'] = self.mesh.x
+            fields_dict['y'] = self.mesh.y
+            fields_dict['grid_points'] = self.mesh.grid_points
+        elif hasattr(self.mesh, 'cell_centers'):
+            # FV mesh (MeshData2D)
+            fields_dict['grid_points'] = self.mesh.cell_centers
+            # Extract unique x and y coordinates
+            fields_dict['x'] = np.unique(self.mesh.cell_centers[:, 0])
+            fields_dict['y'] = np.unique(self.mesh.cell_centers[:, 1])
+
         # Add FV-specific fields if they exist
         if hasattr(self.fields, 'mdot'):
             fields_dict['mdot'] = self.fields.mdot
