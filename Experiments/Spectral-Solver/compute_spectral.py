@@ -20,11 +20,11 @@ data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = SpectralSolver(
     Re=100.0,            # Reynolds number
-    Nx=31,               # Polynomial order in x (nodes = Nx+1 = 32)
-    Ny=31,               # Polynomial order in y (nodes = Ny+1 = 32)
+    Nx=10,               # Polynomial order in x (nodes = Nx+1 = 16)
+    Ny=10,               # Polynomial order in y (nodes = Ny+1 = 16)
     CFL=0.15,            # CFL number for adaptive time stepping
     beta_squared=5.0,    # Artificial compressibility coefficient
-    corner_smoothing=0.15 # Lid velocity smoothing near corners
+    corner_smoothing=0.05 # Lid velocity smoothing near corners
 )
 
 print(f"Solver configured: Re={solver.config.Re}, Grid={(solver.config.Nx+1)}x{(solver.config.Ny+1)}, CFL={solver.config.CFL}")
@@ -36,7 +36,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Solve the incompressible Navier-Stokes equations using RK4 with artificial compressibility.
 # Note: Explicit RK4 requires small CFL (~0.1) for stability at Re=100
 
-solver.solve(tolerance=1e-10, max_iter=20000)
+solver.solve(tolerance=1e-5, max_iter=5000)
 
 # %%
 # Convergence Results
