@@ -6,10 +6,49 @@ SIMPLE algorithm for pressure-velocity coupling.
 
 import numpy as np
 from scipy.sparse import csr_matrix
-from dataclasses import replace
+from dataclasses import replace, dataclass
 
 from .base_solver import LidDrivenCavitySolver
 from .datastructures import FVinfo, FVFields, TimeSeries
+
+
+@dataclass
+class SolverState:
+    """Current solution state."""
+    u: np.ndarray
+    v: np.ndarray
+    p: np.ndarray
+    mdot: np.ndarray
+
+
+@dataclass
+class PreviousIteration:
+    """Previous iteration values for under-relaxation."""
+    u: np.ndarray
+    v: np.ndarray
+
+
+@dataclass
+class WorkBuffers:
+    """Pre-allocated work buffers reused each iteration."""
+    # Gradient buffers
+    grad_p: np.ndarray
+    grad_u: np.ndarray
+    grad_v: np.ndarray
+    grad_p_prime: np.ndarray
+
+    # Face interpolation buffers
+    grad_p_bar: np.ndarray
+    bold_D: np.ndarray
+    bold_D_bar: np.ndarray
+
+    # Velocity and flux buffers
+    U_star_rc: np.ndarray
+    U_prime_face: np.ndarray
+    u_prime: np.ndarray
+    v_prime: np.ndarray
+    mdot_star: np.ndarray
+    mdot_prime: np.ndarray
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
@@ -18,7 +57,7 @@ from fv.assembly.rhie_chow import mdot_calculation, rhie_chow_velocity
 from fv.assembly.pressure_correction_eq_assembly import assemble_pressure_correction_matrix
 from fv.assembly.divergence import compute_divergence_from_face_fluxes
 from fv.core.corrections import velocity_correction
-from fv.core.helpers import bold_Dv_calculation, interpolate_to_face, relax_momentum_equation
+from fv.core.helpers import bold_Dv_calculation, interpolate_to_face, interpolate_velocity_to_face, relax_momentum_equation
 
 
 class FVSolver(LidDrivenCavitySolver):
@@ -58,15 +97,39 @@ class FVSolver(LidDrivenCavitySolver):
         # Compute dynamic viscosity from Reynolds number
         self.mu = self.rho * self.config.lid_velocity * self.config.Lx / self.config.Re
 
-        # Initialize velocity and pressure fields (1D arrays)
-        self.u = np.zeros(n_cells)
-        self.v = np.zeros(n_cells)
-        self.u_prev_iter = np.zeros(n_cells)
-        self.v_prev_iter = np.zeros(n_cells)
-        self.p = np.zeros(n_cells)
+        # Initialize solution state
+        self.state = SolverState(
+            u=np.zeros(n_cells),
+            v=np.zeros(n_cells),
+            p=np.zeros(n_cells),
+            mdot=np.zeros(n_faces),
+        )
 
-        # Mass fluxes
-        self.mdot = np.zeros(n_faces)
+        # Initialize previous iteration buffers
+        self.prev = PreviousIteration(
+            u=np.zeros(n_cells),
+            v=np.zeros(n_cells),
+        )
+
+        # Pre-allocate work buffers
+        self.buf = WorkBuffers(
+            # Gradient buffers
+            grad_p=np.zeros((n_cells, 2)),
+            grad_u=np.zeros((n_cells, 2)),
+            grad_v=np.zeros((n_cells, 2)),
+            grad_p_prime=np.zeros((n_cells, 2)),
+            # Face interpolation buffers
+            grad_p_bar=np.zeros((n_faces, 2)),
+            bold_D=np.zeros((n_cells, 2)),
+            bold_D_bar=np.zeros((n_faces, 2)),
+            # Velocity and flux buffers
+            U_star_rc=np.zeros((n_faces, 2)),
+            U_prime_face=np.zeros((n_faces, 2)),
+            u_prime=np.zeros(n_cells),
+            v_prime=np.zeros(n_cells),
+            mdot_star=np.zeros(n_faces),
+            mdot_prime=np.zeros(n_faces),
+        )
 
         # Linear solver settings (same for both momentum and pressure)
         self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000}
@@ -77,6 +140,39 @@ class FVSolver(LidDrivenCavitySolver):
     def _initialize_fields(self):
         """Initialize fields - no-op since initialization happens in __init__."""
         pass
+
+    # Properties for backward compatibility with base solver
+    @property
+    def u(self):
+        return self.state.u
+
+    @u.setter
+    def u(self, value):
+        self.state.u = value
+
+    @property
+    def v(self):
+        return self.state.v
+
+    @v.setter
+    def v(self, value):
+        self.state.v = value
+
+    @property
+    def p(self):
+        return self.state.p
+
+    @p.setter
+    def p(self, value):
+        self.state.p = value
+
+    @property
+    def mdot(self):
+        return self.state.mdot
+
+    @mdot.setter
+    def mdot(self, value):
+        self.state.mdot = value
 
     def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component):
         """Solve a single momentum equation (u or v).
@@ -128,51 +224,54 @@ class FVSolver(LidDrivenCavitySolver):
         u, v, p : np.ndarray
             Updated velocity and pressure fields
         """
-        # Compute pressure gradient (no limiter for pressure)
-        grad_p = compute_cell_gradients_structured(self.mesh, self.p, use_limiter=False)
-        grad_p_bar = interpolate_to_face(self.mesh, grad_p)
+        # Swap buffers at start (zero-copy) - prev now has old values, state gets fresh buffer
+        self.state.u, self.prev.u = self.prev.u, self.state.u
+        self.state.v, self.prev.v = self.prev.v, self.state.v
 
-        # Compute velocity gradients (with limiter)
-        grad_u = compute_cell_gradients_structured(self.mesh, self.u, use_limiter=True)
-        grad_v = compute_cell_gradients_structured(self.mesh, self.v, use_limiter=True)
+        # Compute pressure gradient (no limiter for pressure) - reuse buffers
+        compute_cell_gradients_structured(self.mesh, self.state.p, use_limiter=False, out=self.buf.grad_p)
+        interpolate_to_face(self.mesh, self.buf.grad_p, out=self.buf.grad_p_bar)
+
+        # Compute velocity gradients (with limiter) - reuse buffers
+        compute_cell_gradients_structured(self.mesh, self.prev.u, use_limiter=True, out=self.buf.grad_u)
+        compute_cell_gradients_structured(self.mesh, self.prev.v, use_limiter=True, out=self.buf.grad_v)
 
         # Solve momentum equations
-        u_star, A_u_diag = self._solve_momentum_equation(0, self.u, grad_u, self.u_prev_iter, grad_p[:, 0])
-        v_star, A_v_diag = self._solve_momentum_equation(1, self.v, grad_v, self.v_prev_iter, grad_p[:, 1])
+        u_star, A_u_diag = self._solve_momentum_equation(0, self.prev.u, self.buf.grad_u, self.prev.u, self.buf.grad_p[:, 0])
+        v_star, A_v_diag = self._solve_momentum_equation(1, self.prev.v, self.buf.grad_v, self.prev.v, self.buf.grad_p[:, 1])
 
-        # Pressure correction
-        bold_D = bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag)
-        bold_D_bar = interpolate_to_face(self.mesh, bold_D)
+        # Pressure correction - reuse buffers
+        bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag, out=self.buf.bold_D)
+        interpolate_to_face(self.mesh, self.buf.bold_D, out=self.buf.bold_D_bar)
 
-        U_star_rc = rhie_chow_velocity(self.mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar)
+        rhie_chow_velocity(self.mesh, u_star, v_star, self.buf.grad_p_bar, self.buf.grad_p, self.buf.bold_D_bar, out=self.buf.U_star_rc)
 
-        mdot_star = mdot_calculation(self.mesh, self.rho, U_star_rc)
+        mdot_calculation(self.mesh, self.rho, self.buf.U_star_rc, out=self.buf.mdot_star)
 
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
-        rhs_p = -compute_divergence_from_face_fluxes(self.mesh, mdot_star)
+        rhs_p = -compute_divergence_from_face_fluxes(self.mesh, self.buf.mdot_star)
 
         p_prime, *_ = scipy_solver(A_p, rhs_p, remove_nullspace=True, **self.linear_solver_settings)
 
-        # Velocity and pressure corrections
-        grad_p_prime = compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False)
-        u_prime, v_prime = velocity_correction(self.mesh, grad_p_prime, bold_D)
+        # Velocity and pressure corrections - reuse buffers
+        compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=self.buf.grad_p_prime)
+        velocity_correction(self.mesh, self.buf.grad_p_prime, self.buf.bold_D, u_prime=self.buf.u_prime, v_prime=self.buf.v_prime)
 
-        # Update velocity and pressure
-        self.u = u_star + u_prime
-        self.v = v_star + v_prime
-        self.p += self.config.alpha_p * p_prime
+        # Update velocity and pressure (in-place operations into fresh buffers)
+        np.add(u_star, self.buf.u_prime, out=self.state.u)
+        np.add(v_star, self.buf.v_prime, out=self.state.v)
+        self.state.p += self.config.alpha_p * p_prime
 
-        # Update mass flux
-        U_prime_face = interpolate_to_face(self.mesh, np.column_stack([u_prime, v_prime]))
-        mdot_prime = mdot_calculation(self.mesh, self.rho, U_prime_face)
-        self.mdot = mdot_star + mdot_prime
+        # Update mass flux - reuse buffers
+        interpolate_velocity_to_face(self.mesh, self.buf.u_prime, self.buf.v_prime, out=self.buf.U_prime_face)
+        mdot_calculation(self.mesh, self.rho, self.buf.U_prime_face, out=self.buf.mdot_prime)
+        np.add(self.buf.mdot_star, self.buf.mdot_prime, out=self.state.mdot)
 
-        # Store for next iteration
-        self.u_prev_iter = self.u.copy()
-        self.v_prev_iter = self.v.copy()
+        # No copy needed! state now has new values, prev has old values
+        # Next iteration they will swap again
 
-        return self.u, self.v, self.p
+        return self.state.u, self.state.v, self.state.p
 
     def _create_output_dataclasses(self, residual_history, final_iter_count, is_converged):
         """Create FV-specific output dataclasses."""

@@ -8,7 +8,7 @@ from numba import njit, prange
 
 
 @njit(parallel=True, cache=True)
-def compute_cell_gradients_structured(mesh, u, pinned_idx=0, use_limiter=True):
+def compute_cell_gradients_structured(mesh, u, pinned_idx=0, use_limiter=True, out=None):
     """Compute cell gradients using central differences for structured Cartesian grids.
 
     This is much simpler and faster than least-squares for regular grids.
@@ -24,6 +24,8 @@ def compute_cell_gradients_structured(mesh, u, pinned_idx=0, use_limiter=True):
         Cell index to pin gradient to zero (for pressure)
     use_limiter : bool
         Apply Barth-Jespersen limiter to gradients
+    out : ndarray, optional
+        Pre-allocated output buffer (n_cells, 2)
 
     Returns
     -------
@@ -31,7 +33,10 @@ def compute_cell_gradients_structured(mesh, u, pinned_idx=0, use_limiter=True):
         Cell gradients [du/dx, du/dy]
     """
     n_cells = mesh.cell_centers.shape[0]
-    grad = np.zeros((n_cells, 2), dtype=np.float64)
+    if out is None:
+        grad = np.zeros((n_cells, 2), dtype=np.float64)
+    else:
+        grad = out
 
     # Pre-fetch mesh arrays
     cell_faces = mesh.cell_faces

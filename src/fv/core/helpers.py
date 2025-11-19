@@ -24,7 +24,42 @@ def relax_momentum_equation(rhs, A_diag, phi, alpha):
 
 
 @njit(parallel=True, cache=True)
-def interpolate_to_face(mesh, quantity):
+def interpolate_velocity_to_face(mesh, u, v, out=None):
+    """
+    Optimized velocity interpolation that takes separate u and v components.
+    Returns combined (n_faces, 2) array without intermediate column stacking.
+    """
+    n_faces = mesh.face_areas.shape[0]
+    n_internal = mesh.internal_faces.shape[0]
+    n_boundary = mesh.boundary_faces.shape[0]
+
+    if out is None:
+        U_face = np.zeros((n_faces, 2), dtype=np.float64)
+    else:
+        U_face = out
+
+    # Process internal faces
+    for i in prange(n_internal):
+        f = mesh.internal_faces[i]
+        P = mesh.owner_cells[f]
+        N = mesh.neighbor_cells[f]
+        gf = mesh.face_interp_factors[f]
+
+        U_face[f, 0] = gf * u[N] + (1.0 - gf) * u[P]
+        U_face[f, 1] = gf * v[N] + (1.0 - gf) * v[P]
+
+    # Process boundary faces
+    for i in prange(n_boundary):
+        f = mesh.boundary_faces[i]
+        P = mesh.owner_cells[f]
+        U_face[f, 0] = u[P]
+        U_face[f, 1] = v[P]
+
+    return U_face
+
+
+@njit(parallel=True, cache=True)
+def interpolate_to_face(mesh, quantity, out=None):
     """
     Optimized interpolation to faces with better memory access patterns.
     Handles both scalar and vector quantities efficiently.
@@ -32,10 +67,13 @@ def interpolate_to_face(mesh, quantity):
     n_faces = mesh.face_areas.shape[0]
     n_internal = mesh.internal_faces.shape[0]
     n_boundary = mesh.boundary_faces.shape[0]
-    
+
     if quantity.ndim == 1:
         # Scalar field
-        interpolated_quantity = np.zeros((n_faces, 1), dtype=np.float64)
+        if out is None:
+            interpolated_quantity = np.zeros((n_faces, 1), dtype=np.float64)
+        else:
+            interpolated_quantity = out
         
         # Process internal faces
         for i in prange(n_internal):
@@ -54,7 +92,10 @@ def interpolate_to_face(mesh, quantity):
     else:
         # Vector field - optimized for common 2D case
         n_components = quantity.shape[1]
-        interpolated_quantity = np.zeros((n_faces, n_components), dtype=np.float64)
+        if out is None:
+            interpolated_quantity = np.zeros((n_faces, n_components), dtype=np.float64)
+        else:
+            interpolated_quantity = out
         
         if n_components == 2:
             # Optimized 2D vector case with manual unrolling
@@ -93,9 +134,12 @@ def interpolate_to_face(mesh, quantity):
 
 
 @njit(parallel=False, cache=True)
-def bold_Dv_calculation(mesh, A_u_diag, A_v_diag):
+def bold_Dv_calculation(mesh, A_u_diag, A_v_diag, out=None):
     n_cells = mesh.cell_volumes.shape[0]
-    bold_Dv = np.zeros((n_cells, 2), dtype=np.float64)
+    if out is None:
+        bold_Dv = np.zeros((n_cells, 2), dtype=np.float64)
+    else:
+        bold_Dv = out
 
     for i in prange(n_cells):
         bold_Dv[i, 0] = mesh.cell_volumes[i] / (A_u_diag[i] + 1e-14)  # D_u
