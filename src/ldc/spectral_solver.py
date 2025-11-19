@@ -11,7 +11,7 @@ import numpy as np
 
 from .base_solver import LidDrivenCavitySolver
 from .datastructures import SpectralInfo, SpectralResultFields, SpectralSolverFields
-from spectral.spectral import LegendreLobattoBasis
+from spectral.spectral import LegendreLobattoBasis, ChebyshevLobattoBasis
 
 
 class SpectralSolver(LidDrivenCavitySolver):
@@ -37,12 +37,21 @@ class SpectralSolver(LidDrivenCavitySolver):
         ----------
         **kwargs
             Configuration parameters passed to SpectralInfo.
+            Supports basis_type='legendre' or basis_type='chebyshev'.
         """
         super().__init__(**kwargs)
 
-        # Create spectral basis
-        self.basis_x = LegendreLobattoBasis(domain=(0.0, self.config.Lx))
-        self.basis_y = LegendreLobattoBasis(domain=(0.0, self.config.Ly))
+        # Create spectral basis based on config
+        if self.config.basis_type.lower() == "chebyshev":
+            self.basis_x = ChebyshevLobattoBasis(domain=(0.0, self.config.Lx))
+            self.basis_y = ChebyshevLobattoBasis(domain=(0.0, self.config.Ly))
+            print(f"Using Chebyshev-Gauss-Lobatto basis (Zhang et al. 2010)")
+        elif self.config.basis_type.lower() == "legendre":
+            self.basis_x = LegendreLobattoBasis(domain=(0.0, self.config.Lx))
+            self.basis_y = LegendreLobattoBasis(domain=(0.0, self.config.Ly))
+            print(f"Using Legendre-Gauss-Lobatto basis")
+        else:
+            raise ValueError(f"Unknown basis_type: {self.config.basis_type}. Use 'legendre' or 'chebyshev'")
 
         # Setup grids
         self._setup_grids()

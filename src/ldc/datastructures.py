@@ -151,6 +151,7 @@ class SpectralInfo(Info):
     """Spectral-specific metadata with discretization parameters."""
     Nx: int = 64
     Ny: int = 64
+    basis_type: str = "legendre"  # 'legendre' or 'chebyshev'
     differentiation_method: str = "fft"  # 'fft', 'chebyshev', 'matrix'
     time_scheme: str = "rk4"
     dt: float = 0.001
