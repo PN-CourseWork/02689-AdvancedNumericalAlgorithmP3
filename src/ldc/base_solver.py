@@ -11,27 +11,20 @@ from .datastructures import Info, TimeSeries
 class LidDrivenCavitySolver(ABC):
     """Abstract base solver for lid-driven cavity problem.
 
-    This base class handles:
-    - Physics parameters (Re, viscosity, density)
-    - Uniform structured grid creation
-    - Common grid properties (dx, dy, X, Y, grid_points)
+    Handles:
+    - Configuration management
     - Iteration loop with residual computation
     - Result storage
 
     Subclasses must:
     - Set Config and ResultFields class attributes
-    - Implement step() to perform one iteration
-    - Can extend __init__ via super()
-
-    Parameters
-    ----------
-    config : Config (or subclass like FVinfo, SpectralInfo)
-        Configuration with physics (Re, Lx, Ly, lid_velocity) and numerics (nx, ny, etc).
+    - Implement step() - perform one iteration
+    - Implement _create_result_fields() - create result dataclass
+    - Extend __init__() for solver-specific setup
     """
 
-    # Subclasses must set these
     Config = None
-    ResultFields = None  # e.g., FVResultFields
+    ResultFields = None
 
     def __init__(self, config: Config = None, **kwargs):
         """Initialize solver with configuration.
@@ -39,8 +32,7 @@ class LidDrivenCavitySolver(ABC):
         Parameters
         ----------
         config : Config, optional
-            Configuration object (FVConfig, SpectralConfig, etc).
-            If not provided, kwargs are used to create config.
+            Configuration object. If not provided, kwargs are used to create config.
         **kwargs
             Configuration parameters passed to Config class if config is None.
         """
@@ -51,64 +43,6 @@ class LidDrivenCavitySolver(ABC):
             config = self.Config(**kwargs)
 
         self.config = config
-
-        # Compute fluid properties from Reynolds number
-        self.rho = 1.0  # Normalized density
-        self.mu = self.rho * config.lid_velocity * config.Lx / config.Re
-
-        # Create uniform structured grid (common for all solvers)
-        self._create_uniform_grid(config.nx, config.ny)
-
-        # Create mesh (for FV solvers) or None (for spectral solvers)
-        self._create_mesh()
-
-    def _create_uniform_grid(self, nx: int, ny: int):
-        """Create uniform structured grid (shared by all solvers).
-
-        Creates grid arrays that are accessible to subclasses:
-        - self.x, self.y : 1D coordinate arrays
-        - self.X, self.Y : 2D meshgrid arrays
-        - self.dx, self.dy : Grid spacing
-        - self.grid_points : Flattened (N, 2) array of coordinates
-        - self.nx, self.ny : Grid dimensions
-
-        Parameters
-        ----------
-        nx, ny : int
-            Number of grid points in x and y.
-        """
-        self.nx = nx
-        self.ny = ny
-
-        # Create 1D coordinates
-        self.x = np.linspace(0, self.config.Lx, nx)
-        self.y = np.linspace(0, self.config.Ly, ny)
-
-        # Create 2D meshgrid
-        self.X, self.Y = np.meshgrid(self.x, self.y)
-
-        # Grid spacing
-        self.dx = self.x[1] - self.x[0] if nx > 1 else self.config.Lx
-        self.dy = self.y[1] - self.y[0] if ny > 1 else self.config.Ly
-
-        # Flattened grid points for compatibility
-        self.grid_points = np.column_stack([self.X.flatten(), self.Y.flatten()])
-
-    def _create_mesh(self):
-        """Create FV mesh structure.
-
-        Default implementation creates a structured FV mesh using gmsh.
-        Spectral solvers can override this to set self.mesh = None.
-        """
-        from meshing.simple_structured import create_structured_mesh_2d
-
-        self.mesh = create_structured_mesh_2d(
-            nx=self.nx,
-            ny=self.ny,
-            Lx=self.config.Lx,
-            Ly=self.config.Ly,
-            lid_velocity=self.config.lid_velocity
-        )
 
     @abstractmethod
     def step(self):
@@ -132,19 +66,13 @@ class LidDrivenCavitySolver(ABC):
         """
         pass
 
+    @abstractmethod
     def _create_result_fields(self):
-        """Create result fields dataclass. Override for solver-specific fields.
+        """Create result fields dataclass with solver-specific data.
 
-        Default implementation works for basic solvers.
+        Must return an instance of self.ResultFields.
         """
-        return self.ResultFields(
-            u=self.arrays.u,
-            v=self.arrays.v,
-            p=self.arrays.p,
-            x=self.x,
-            y=self.y,
-            grid_points=self.grid_points,
-        )
+        pass
 
     def _store_results(self, residual_history, final_iter_count, is_converged):
         """Store solve results in self.fields, self.time_series, and self.metadata."""

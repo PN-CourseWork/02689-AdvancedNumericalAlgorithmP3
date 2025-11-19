@@ -45,22 +45,31 @@ class FVSolver(LidDrivenCavitySolver):
         Parameters
         ----------
         **kwargs
-            Configuration parameters passed to FVConfig.
-            Can also pass config=FVConfig(...) directly.
+            Configuration parameters passed to FVinfo.
         """
         super().__init__(**kwargs)
 
-        # Initialize fields
+        # Create mesh
+        from meshing.simple_structured import create_structured_mesh_2d
+        self.mesh = create_structured_mesh_2d(
+            nx=self.config.nx,
+            ny=self.config.ny,
+            Lx=self.config.Lx,
+            Ly=self.config.Ly,
+            lid_velocity=self.config.lid_velocity
+        )
+
+        # Get dimensions from mesh
         n_cells = self.mesh.cell_volumes.shape[0]
         n_faces = self.mesh.internal_faces.shape[0] + self.mesh.boundary_faces.shape[0]
 
-        # Compute dynamic viscosity from Reynolds number
+        # Compute fluid properties
         self.mu = self.rho * self.config.lid_velocity * self.config.Lx / self.config.Re
 
         # Allocate all solver arrays
         self.arrays = FVSolverFields.allocate(n_cells, n_faces)
 
-        # Linear solver settings (same for both momentum and pressure)
+        # Linear solver settings
         self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000}
 
         # Cache commonly used values
