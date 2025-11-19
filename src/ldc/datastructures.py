@@ -67,36 +67,31 @@ class Info:
 @dataclass
 class FVinfo(Info):
     """FV-specific metadata with discretization parameters."""
-    convection_scheme: str = "Upwind" 
+    convection_scheme: str = "Upwind"
     limiter: str = "MUSCL"
     alpha_uv: float = 0.6
     alpha_p: float = 0.4
 
+
 @dataclass
-class FVFields(Fields):
-    """FV-specific fields with mass flux."""
+class FVResultFields(Fields):
+    """FV result fields returned to user after solving."""
     mdot: np.ndarray = None
 
 
 @dataclass
-class SolverState:
-    """Current solution state."""
+class FVSolverFields:
+    """Internal FV solver arrays - current state, previous iteration, and work buffers."""
+    # Current solution state
     u: np.ndarray
     v: np.ndarray
     p: np.ndarray
     mdot: np.ndarray
 
+    # Previous iteration (for under-relaxation)
+    u_prev: np.ndarray
+    v_prev: np.ndarray
 
-@dataclass
-class PreviousIteration:
-    """Previous iteration values for under-relaxation."""
-    u: np.ndarray
-    v: np.ndarray
-
-
-@dataclass
-class WorkBuffers:
-    """Pre-allocated work buffers reused each iteration."""
     # Gradient buffers
     grad_p: np.ndarray
     grad_u: np.ndarray
@@ -108,7 +103,7 @@ class WorkBuffers:
     bold_D: np.ndarray
     bold_D_bar: np.ndarray
 
-    # Velocity and flux buffers
+    # Velocity and flux work buffers
     U_star_rc: np.ndarray
     U_prime_face: np.ndarray
     u_prime: np.ndarray
