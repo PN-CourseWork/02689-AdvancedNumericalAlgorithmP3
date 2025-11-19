@@ -3,12 +3,12 @@ from numba import njit, prange
 
 
 @njit(inline="always", cache=True, fastmath=True, nogil=True)
-def rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_bar):
+def rhie_chow_velocity_internal_faces(mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar):
     """
     Compute Rhie-Chow velocity at internal faces.
     Optimized for memory access patterns with pre-fetched static data.
     """
-    n_internal = mesh.internal_faces.shape[0] 
+    n_internal = mesh.internal_faces.shape[0]
     n_total_faces = mesh.vector_S_f.shape[0]
     U_faces = np.zeros((n_total_faces, 2), dtype=np.float64)
 
@@ -24,20 +24,22 @@ def rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_b
         f = internal_faces[i]
         P = owner_cells[f]
         N = neighbor_cells[f]
-        
+
         # Pre-fetch interpolation factor (single access)
         g = face_interp_factors[f]
 
         # Pre-fetch velocity and pressure gradient data (better cache locality)
-        U_star_P = U_star[P]
-        U_star_N = U_star[N]
+        u_star_P = u_star[P]
+        u_star_N = u_star[N]
+        v_star_P = v_star[P]
+        v_star_N = v_star[N]
         grad_p_P = grad_p[P]
         grad_p_N = grad_p[N]
         bold_D_P = bold_D_bar[f]  # Already at face
 
         # Velocity interpolation with pre-fetched data
-        U_f_0 = (1.0 - g) * U_star_P[0] + g * U_star_N[0]
-        U_f_1 = (1.0 - g) * U_star_P[1] + g * U_star_N[1]
+        U_f_0 = (1.0 - g) * u_star_P + g * u_star_N
+        U_f_1 = (1.0 - g) * v_star_P + g * v_star_N
 
         # Pressure gradient interpolation with cached components
         grad_p_f_0 = (1.0 - g) * grad_p_P[0] + g * grad_p_N[0]
@@ -134,12 +136,12 @@ def mdot_calculation(mesh, rho, U_f):
 
 
 @njit(cache=True, fastmath=True, nogil=True)
-def rhie_chow_velocity(mesh, U_star, grad_p_bar, grad_p, bold_D_bar):
+def rhie_chow_velocity(mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar):
     """
     Compute Rhie-Chow interpolated velocity at faces.
     """
     # Compute internal faces with optimized memory access
-    U_faces = rhie_chow_velocity_internal_faces(mesh, U_star, grad_p_bar, grad_p, bold_D_bar)
+    U_faces = rhie_chow_velocity_internal_faces(mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar)
 
     # Apply boundary conditions with optimized memory access
     U_faces = rhie_chow_velocity_boundary_faces(mesh, U_faces)

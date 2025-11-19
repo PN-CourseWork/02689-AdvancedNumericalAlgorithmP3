@@ -144,8 +144,7 @@ class FVSolver(LidDrivenCavitySolver):
         bold_D = bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag)
         bold_D_bar = interpolate_to_face(self.mesh, bold_D)
 
-        U_star = np.column_stack([u_star, v_star])
-        U_star_rc = rhie_chow_velocity(self.mesh, U_star, grad_p_bar, grad_p, bold_D_bar)
+        U_star_rc = rhie_chow_velocity(self.mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar)
 
         mdot_star = mdot_calculation(self.mesh, self.rho, U_star_rc)
 
@@ -157,24 +156,21 @@ class FVSolver(LidDrivenCavitySolver):
 
         # Velocity and pressure corrections
         grad_p_prime = compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False)
-        U_prime = velocity_correction(self.mesh, grad_p_prime, bold_D)
+        u_prime, v_prime = velocity_correction(self.mesh, grad_p_prime, bold_D)
 
-        u_corrected = u_star + U_prime[:, 0]
-        v_corrected = v_star + U_prime[:, 1]
-        p_corrected = self.p + self.config.alpha_p * p_prime
+        # Update velocity and pressure
+        self.u = u_star + u_prime
+        self.v = v_star + v_prime
+        self.p += self.config.alpha_p * p_prime
 
         # Update mass flux
-        U_prime_face = interpolate_to_face(self.mesh, U_prime)
+        U_prime_face = interpolate_to_face(self.mesh, np.column_stack([u_prime, v_prime]))
         mdot_prime = mdot_calculation(self.mesh, self.rho, U_prime_face)
-        mdot_corrected = mdot_star + mdot_prime
+        self.mdot = mdot_star + mdot_prime
 
-        # Update solver state
-        self.u = u_corrected
-        self.v = v_corrected
-        self.p = p_corrected
-        self.u_prev_iter = u_corrected.copy()
-        self.v_prev_iter = v_corrected.copy()
-        self.mdot = mdot_corrected
+        # Store for next iteration
+        self.u_prev_iter = self.u.copy()
+        self.v_prev_iter = self.v.copy()
 
         return self.u, self.v, self.p
 
