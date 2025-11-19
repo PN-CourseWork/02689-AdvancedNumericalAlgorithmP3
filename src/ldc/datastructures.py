@@ -77,6 +77,46 @@ class FVFields(Fields):
     """FV-specific fields with mass flux."""
     mdot: np.ndarray = None
 
+
+@dataclass
+class SolverState:
+    """Current solution state."""
+    u: np.ndarray
+    v: np.ndarray
+    p: np.ndarray
+    mdot: np.ndarray
+
+
+@dataclass
+class PreviousIteration:
+    """Previous iteration values for under-relaxation."""
+    u: np.ndarray
+    v: np.ndarray
+
+
+@dataclass
+class WorkBuffers:
+    """Pre-allocated work buffers reused each iteration."""
+    # Gradient buffers
+    grad_p: np.ndarray
+    grad_u: np.ndarray
+    grad_v: np.ndarray
+    grad_p_prime: np.ndarray
+
+    # Face interpolation buffers
+    grad_p_bar: np.ndarray
+    bold_D: np.ndarray
+    bold_D_bar: np.ndarray
+
+    # Velocity and flux buffers
+    U_star_rc: np.ndarray
+    U_prime_face: np.ndarray
+    u_prime: np.ndarray
+    v_prime: np.ndarray
+    mdot_star: np.ndarray
+    mdot_prime: np.ndarray
+
+
 #=====================================================
 # Spectral Data Classes
 #=====================================================
