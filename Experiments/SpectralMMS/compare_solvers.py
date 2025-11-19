@@ -37,27 +37,25 @@ def compute_errors(h5_path, name):
         n_points = len(grid_points)
         N = int(np.sqrt(n_points))
 
-        # Find centerline profiles
-        # U along vertical centerline (x ≈ 0.5)
-        tol = 1 / (2 * (N - 1))  # Half cell width tolerance
-        vertical_mask = np.abs(x_coords - 0.5) < tol
-        y_u = y_coords[vertical_mask]
-        u_centerline = u_flat[vertical_mask]
+        # Reshape to 2D grid
+        x_2d = x_coords.reshape((N, N))
+        y_2d = y_coords.reshape((N, N))
+        u_2d = u_flat.reshape((N, N))
+        v_2d = v_flat.reshape((N, N))
 
-        # Sort by y coordinate
-        sort_idx = np.argsort(y_u)
-        y_u = y_u[sort_idx]
-        u_centerline = u_centerline[sort_idx]
+        # Find centerline profiles
+        # For spectral methods, the grid might not have exact centerline
+        # Find the column/row closest to 0.5
+
+        # U along vertical centerline (x ≈ 0.5)
+        i_center = np.argmin(np.abs(x_2d[:, 0] - 0.5))
+        y_u = y_2d[i_center, :]
+        u_centerline = u_2d[i_center, :]
 
         # V along horizontal centerline (y ≈ 0.5)
-        horizontal_mask = np.abs(y_coords - 0.5) < tol
-        x_v = x_coords[horizontal_mask]
-        v_centerline = v_flat[horizontal_mask]
-
-        # Sort by x coordinate
-        sort_idx = np.argsort(x_v)
-        x_v = x_v[sort_idx]
-        v_centerline = v_centerline[sort_idx]
+        j_center = np.argmin(np.abs(y_2d[0, :] - 0.5))
+        x_v = x_2d[:, j_center]
+        v_centerline = v_2d[:, j_center]
 
         # Interpolate to Ghia points
         u_interp = np.interp(ghia_y_u, y_u, u_centerline)

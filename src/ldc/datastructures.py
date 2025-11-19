@@ -157,5 +157,93 @@ class SpectralInfo(Info):
     dealiasing: bool = True
     multigrid: bool = False
     mg_levels: int = 3
+    CFL: float = 0.1
+    beta_squared: float = 5.0
+    corner_smoothing: float = 0.15
+
+
+@dataclass
+class SpectralResultFields(Fields):
+    """Spectral result fields returned to user after solving."""
+    pass
+
+
+@dataclass
+class SpectralSolverFields:
+    """Internal spectral solver arrays - current state and work buffers."""
+    # Current solution state
+    u: np.ndarray
+    v: np.ndarray
+    p: np.ndarray
+
+    # Previous iteration (for convergence check)
+    u_prev: np.ndarray
+    v_prev: np.ndarray
+
+    # RK4 stage buffers
+    u_stage: np.ndarray
+    v_stage: np.ndarray
+    p_stage: np.ndarray
+
+    # Residuals
+    R_u: np.ndarray
+    R_v: np.ndarray
+    R_p: np.ndarray
+
+    # Derivative buffers
+    du_dx: np.ndarray
+    du_dy: np.ndarray
+    dv_dx: np.ndarray
+    dv_dy: np.ndarray
+    lap_u: np.ndarray
+    lap_v: np.ndarray
+
+    # Pressure gradient on full grid
+    dp_dx: np.ndarray
+    dp_dy: np.ndarray
+
+    # Pressure on reduced grid
+    p_inner: np.ndarray
+
+    @classmethod
+    def allocate(cls, n_nodes_full: int, n_nodes_inner: int):
+        """Allocate all arrays with proper sizes.
+
+        Parameters
+        ----------
+        n_nodes_full : int
+            Number of nodes on full (Nx+1) × (Ny+1) grid
+        n_nodes_inner : int
+            Number of nodes on inner (Nx-1) × (Ny-1) grid
+        """
+        return cls(
+            # Current solution
+            u=np.zeros(n_nodes_full),
+            v=np.zeros(n_nodes_full),
+            p=np.zeros(n_nodes_full),
+            # Previous iteration
+            u_prev=np.zeros(n_nodes_full),
+            v_prev=np.zeros(n_nodes_full),
+            # RK4 stage buffers
+            u_stage=np.zeros(n_nodes_full),
+            v_stage=np.zeros(n_nodes_full),
+            p_stage=np.zeros(n_nodes_full),
+            # Residuals
+            R_u=np.zeros(n_nodes_full),
+            R_v=np.zeros(n_nodes_full),
+            R_p=np.zeros(n_nodes_full),
+            # Derivative buffers
+            du_dx=np.zeros(n_nodes_full),
+            du_dy=np.zeros(n_nodes_full),
+            dv_dx=np.zeros(n_nodes_full),
+            dv_dy=np.zeros(n_nodes_full),
+            lap_u=np.zeros(n_nodes_full),
+            lap_v=np.zeros(n_nodes_full),
+            # Pressure gradient on full grid
+            dp_dx=np.zeros(n_nodes_full),
+            dp_dy=np.zeros(n_nodes_full),
+            # Pressure on reduced grid
+            p_inner=np.zeros(n_nodes_inner),
+        )
 
 

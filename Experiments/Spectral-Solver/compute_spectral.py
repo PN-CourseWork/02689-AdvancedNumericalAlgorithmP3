@@ -20,9 +20,9 @@ data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = SpectralSolver(
     Re=100.0,            # Reynolds number
-    Nx=16,               # Polynomial order in x (nodes = Nx+1 = 17)
-    Ny=16,               # Polynomial order in y (nodes = Ny+1 = 17)
-    CFL=0.1,             # CFL number for adaptive time stepping (0.1 for Re=100 stability)
+    Nx=31,               # Polynomial order in x (nodes = Nx+1 = 32)
+    Ny=31,               # Polynomial order in y (nodes = Ny+1 = 32)
+    CFL=0.15,            # CFL number for adaptive time stepping
     beta_squared=5.0,    # Artificial compressibility coefficient
     corner_smoothing=0.15 # Lid velocity smoothing near corners
 )
@@ -36,7 +36,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Solve the incompressible Navier-Stokes equations using RK4 with artificial compressibility.
 # Note: Explicit RK4 requires small CFL (~0.1) for stability at Re=100
 
-solver.solve(tolerance=1e-5, max_iter=2000)
+solver.solve(tolerance=1e-6, max_iter=10000)
 
 # %%
 # Convergence Results
@@ -45,8 +45,10 @@ solver.solve(tolerance=1e-5, max_iter=2000)
 
 print(f"\nSolution Status:")
 print(f"  Converged: {solver.config.converged}")
-print(f"  Iterations: {solver.config.iterations}")
-print(f"  Final residual: {solver.config.final_residual:.6e}")
+if solver.config.iterations is not None:
+    print(f"  Iterations: {solver.config.iterations}")
+if solver.config.final_residual is not None:
+    print(f"  Final residual: {solver.config.final_residual:.6e}")
 
 # %%
 # Save Solution

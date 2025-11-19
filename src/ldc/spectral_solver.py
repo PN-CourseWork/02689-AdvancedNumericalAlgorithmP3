@@ -53,16 +53,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         # Allocate solver arrays
         n_nodes_full = (self.config.Nx + 1) * (self.config.Ny + 1)
         n_nodes_inner = (self.config.Nx - 1) * (self.config.Ny - 1)
-        self.arrays = SpectralSolverFields(n_nodes_full, n_nodes_inner)
-
-        # Create result fields (references to solver arrays)
-        self.fields = SpectralResultFields(n_cells=n_nodes_full)
-        self.fields.u = self.arrays.u
-        self.fields.v = self.arrays.v
-        self.fields.p = self.arrays.p
-        self.fields.x = self.x_full.ravel()
-        self.fields.y = self.y_full.ravel()
-        self.fields.grid_points = np.column_stack([self.x_full.ravel(), self.y_full.ravel()])
+        self.arrays = SpectralSolverFields.allocate(n_nodes_full, n_nodes_inner)
 
         # Initialize lid velocity with corner smoothing
         self._initialize_lid_velocity()
@@ -341,3 +332,16 @@ class SpectralSolver(LidDrivenCavitySolver):
         a.v[:] = a.v + dt * a.R_v
         a.p[:] = a.p + dt * a.R_p
         self._enforce_boundary_conditions(a.u, a.v)
+
+        return a.u, a.v, a.p
+
+    def _create_result_fields(self):
+        """Create spectral-specific result fields with grid data."""
+        return SpectralResultFields(
+            u=self.arrays.u,
+            v=self.arrays.v,
+            p=self.arrays.p,
+            x=self.x_full.ravel(),
+            y=self.y_full.ravel(),
+            grid_points=np.column_stack([self.x_full.ravel(), self.y_full.ravel()]),
+        )
