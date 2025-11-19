@@ -36,7 +36,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Solve the incompressible Navier-Stokes equations using RK4 with artificial compressibility.
 # Note: Explicit RK4 requires small CFL (~0.1) for stability at Re=100
 
-solver.solve(tolerance=1e-6, max_iter=10000)
+solver.solve(tolerance=1e-10, max_iter=20000)
 
 # %%
 # Convergence Results

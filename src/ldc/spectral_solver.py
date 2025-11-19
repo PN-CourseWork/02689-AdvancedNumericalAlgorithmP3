@@ -131,36 +131,39 @@ class SpectralSolver(LidDrivenCavitySolver):
                     u_2d[idx, -1] = factor * self.config.lid_velocity
 
     def _interpolate_pressure_gradient(self):
-        """Interpolate pressure gradient from reduced grid to full grid.
+        """Compute pressure gradient on inner grid and interpolate to full grid.
 
-        Computes ∂p/∂x and ∂p/∂y on inner grid, then extrapolates to boundaries.
+        PN-PN-2 method:
+        1. Pressure p exists on (Nx-1) × (Ny-1) inner grid
+        2. Compute ∂p/∂x and ∂p/∂y on inner grid using inner diff matrices
+        3. Extrapolate gradients to boundaries on full grid
         """
         Nx, Ny = self.config.Nx, self.config.Ny
 
-        # Compute pressure gradient on inner grid
-        dp_dx_inner = self.Dx_inner @ self.arrays.p_inner
-        dp_dy_inner = self.Dy_inner @ self.arrays.p_inner
+        # Compute pressure gradient on inner grid (this is where pressure actually lives!)
+        self.arrays.dp_dx_inner[:] = self.Dx_inner @ self.arrays.p
+        self.arrays.dp_dy_inner[:] = self.Dy_inner @ self.arrays.p
 
-        # Reshape to 2D
-        dp_dx_2d_inner = dp_dx_inner.reshape((Nx - 1, Ny - 1))
-        dp_dy_2d_inner = dp_dy_inner.reshape((Nx - 1, Ny - 1))
+        # Reshape inner gradients to 2D
+        dp_dx_2d_inner = self.arrays.dp_dx_inner.reshape((Nx - 1, Ny - 1))
+        dp_dy_2d_inner = self.arrays.dp_dy_inner.reshape((Nx - 1, Ny - 1))
 
-        # Create full grid versions with zeros at boundaries
+        # Create full grid versions
         dp_dx_2d = np.zeros((Nx + 1, Ny + 1))
         dp_dy_2d = np.zeros((Nx + 1, Ny + 1))
 
-        # Fill interior
+        # Fill interior with computed gradients
         dp_dx_2d[1:-1, 1:-1] = dp_dx_2d_inner
         dp_dy_2d[1:-1, 1:-1] = dp_dy_2d_inner
 
         # Extrapolate to boundaries (linear extrapolation)
-        # West/East boundaries
+        # West/East boundaries (extrapolate in x-direction)
         dp_dx_2d[0, 1:-1] = 2 * dp_dx_2d[1, 1:-1] - dp_dx_2d[2, 1:-1]
         dp_dx_2d[-1, 1:-1] = 2 * dp_dx_2d[-2, 1:-1] - dp_dx_2d[-3, 1:-1]
         dp_dy_2d[0, 1:-1] = 2 * dp_dy_2d[1, 1:-1] - dp_dy_2d[2, 1:-1]
         dp_dy_2d[-1, 1:-1] = 2 * dp_dy_2d[-2, 1:-1] - dp_dy_2d[-3, 1:-1]
 
-        # South/North boundaries
+        # South/North boundaries (extrapolate in y-direction)
         dp_dx_2d[1:-1, 0] = 2 * dp_dx_2d[1:-1, 1] - dp_dx_2d[1:-1, 2]
         dp_dx_2d[1:-1, -1] = 2 * dp_dx_2d[1:-1, -2] - dp_dx_2d[1:-1, -3]
         dp_dy_2d[1:-1, 0] = 2 * dp_dy_2d[1:-1, 1] - dp_dy_2d[1:-1, 2]
@@ -172,53 +175,64 @@ class SpectralSolver(LidDrivenCavitySolver):
                 dp_dx_2d[i, j] = 0.5 * (dp_dx_2d[i, 1 if j == 0 else -2] + dp_dx_2d[1 if i == 0 else -2, j])
                 dp_dy_2d[i, j] = 0.5 * (dp_dy_2d[i, 1 if j == 0 else -2] + dp_dy_2d[1 if i == 0 else -2, j])
 
-        # Store flattened
+        # Store flattened on full grid
         self.arrays.dp_dx[:] = dp_dx_2d.ravel()
         self.arrays.dp_dy[:] = dp_dy_2d.ravel()
 
     def _compute_residuals(self, u, v, p):
         """Compute RHS residuals for pseudo time-stepping.
 
+        PN-PN-2 method:
+        - u, v on full (Nx+1) × (Ny+1) grid
+        - p on inner (Nx-1) × (Ny-1) grid
+        - R_u, R_v on full grid
+        - R_p on inner grid
+
         Parameters
         ----------
-        u, v, p : np.ndarray
-            Current velocity and pressure fields on full grid
+        u, v : np.ndarray
+            Current velocity fields on full grid
+        p : np.ndarray
+            Current pressure field on INNER grid
 
         Updates
         -------
-        self.arrays.R_u, self.arrays.R_v, self.arrays.R_p
+        self.arrays.R_u, self.arrays.R_v (full grid), self.arrays.R_p (inner grid)
         """
-        # Compute derivatives
+        Nx, Ny = self.config.Nx, self.config.Ny
+
+        # Compute velocity derivatives on full grid
         self.arrays.du_dx[:] = self.Dx @ u
         self.arrays.du_dy[:] = self.Dy @ u
         self.arrays.dv_dx[:] = self.Dx @ v
         self.arrays.dv_dy[:] = self.Dy @ v
 
-        # Compute Laplacians
+        # Compute Laplacians on full grid
         self.arrays.lap_u[:] = self.Laplacian @ u
         self.arrays.lap_v[:] = self.Laplacian @ v
 
-        # Extract pressure on inner grid and compute gradient
-        Nx, Ny = self.config.Nx, self.config.Ny
-        p_2d = p.reshape((Nx + 1, Ny + 1))
-        self.arrays.p_inner[:] = p_2d[1:-1, 1:-1].ravel()
+        # Compute pressure gradient from inner grid p and interpolate to full grid
         self._interpolate_pressure_gradient()
 
-        # Momentum residuals: R = -(u·∇)u - ∇p + (1/Re)∇²u
-        # Convective term: u ∂u/∂x + v ∂u/∂y
+        # Momentum residuals on FULL grid: R = -(u·∇)u - ∇p + (1/Re)∇²u
         conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
         conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
 
-        # Viscous parameter
         nu = 1.0 / self.config.Re
 
-        # Assemble momentum residuals
         self.arrays.R_u[:] = -conv_u - self.arrays.dp_dx + nu * self.arrays.lap_u
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
 
-        # Continuity residual: R_p = -β²(∂u/∂x + ∂v/∂y)
-        divergence = self.arrays.du_dx + self.arrays.dv_dy
-        self.arrays.R_p[:] = -self.config.beta_squared * divergence
+        # Continuity residual on INNER grid: R_p = -β²(∂u/∂x + ∂v/∂y)
+        # Compute divergence on full grid
+        divergence_full = self.arrays.du_dx + self.arrays.dv_dy
+
+        # Restrict divergence to inner grid
+        divergence_2d = divergence_full.reshape((Nx + 1, Ny + 1))
+        divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
+
+        # Pressure residual on inner grid
+        self.arrays.R_p[:] = -self.config.beta_squared * divergence_inner
 
     def _enforce_boundary_conditions(self, u, v):
         """Enforce no-slip boundary conditions on all walls.
@@ -294,7 +308,12 @@ class SpectralSolver(LidDrivenCavitySolver):
     def step(self):
         """Perform one RK4 pseudo time-step.
 
-        Updates self.arrays.u, self.arrays.v, and self.arrays.p in place.
+        PN-PN-2: Updates u, v on full grid and p on inner grid.
+
+        Returns
+        -------
+        u, v, p : np.ndarray
+            Updated velocities (full grid) and pressure (inner grid)
         """
         a = self.arrays  # Shorthand
 
@@ -305,43 +324,87 @@ class SpectralSolver(LidDrivenCavitySolver):
         # Compute adaptive timestep
         dt = self._compute_adaptive_timestep()
 
-        # RK4 stage 1: φ^(1) = φ^n + (1/4)∆τ R(φ^n)
+        # 4-stage RK4 from equations (5) in assignment
+        # φ^(1) = φ^n + (1/4)∆τ R(φ^n)
         self._compute_residuals(a.u, a.v, a.p)
         a.u_stage[:] = a.u + 0.25 * dt * a.R_u
         a.v_stage[:] = a.v + 0.25 * dt * a.R_v
-        a.p_stage[:] = a.p + 0.25 * dt * a.R_p
+        a.p_stage[:] = a.p + 0.25 * dt * a.R_p  # Inner grid
         self._enforce_boundary_conditions(a.u_stage, a.v_stage)
 
-        # RK4 stage 2: φ^(2) = φ^n + (1/3)∆τ R(φ^(1))
+        # φ^(2) = φ^n + (1/3)∆τ R(φ^(1))
         self._compute_residuals(a.u_stage, a.v_stage, a.p_stage)
         a.u_stage[:] = a.u + (1.0/3.0) * dt * a.R_u
         a.v_stage[:] = a.v + (1.0/3.0) * dt * a.R_v
-        a.p_stage[:] = a.p + (1.0/3.0) * dt * a.R_p
+        a.p_stage[:] = a.p + (1.0/3.0) * dt * a.R_p  # Inner grid
         self._enforce_boundary_conditions(a.u_stage, a.v_stage)
 
-        # RK4 stage 3: φ^(3) = φ^n + (1/2)∆τ R(φ^(2))
+        # φ^(3) = φ^n + (1/2)∆τ R(φ^(2))
         self._compute_residuals(a.u_stage, a.v_stage, a.p_stage)
         a.u_stage[:] = a.u + 0.5 * dt * a.R_u
         a.v_stage[:] = a.v + 0.5 * dt * a.R_v
-        a.p_stage[:] = a.p + 0.5 * dt * a.R_p
+        a.p_stage[:] = a.p + 0.5 * dt * a.R_p  # Inner grid
         self._enforce_boundary_conditions(a.u_stage, a.v_stage)
 
-        # RK4 stage 4: φ^(n+1) = φ^n + ∆τ R(φ^(3))
+        # φ^(n+1) = φ^n + ∆τ R(φ^(3))
         self._compute_residuals(a.u_stage, a.v_stage, a.p_stage)
         a.u[:] = a.u + dt * a.R_u
         a.v[:] = a.v + dt * a.R_v
-        a.p[:] = a.p + dt * a.R_p
+        a.p[:] = a.p + dt * a.R_p  # Inner grid
         self._enforce_boundary_conditions(a.u, a.v)
 
         return a.u, a.v, a.p
 
     def _create_result_fields(self):
-        """Create spectral-specific result fields with grid data."""
+        """Create spectral-specific result fields with grid data.
+
+        For PN-PN-2: Pressure lives on inner grid, so we interpolate to full grid
+        for output/visualization purposes.
+        """
+        # Interpolate pressure from inner to full grid for output
+        p_full = self._interpolate_pressure_to_full_grid()
+
         return SpectralResultFields(
             u=self.arrays.u,
             v=self.arrays.v,
-            p=self.arrays.p,
+            p=p_full,
             x=self.x_full.ravel(),
             y=self.y_full.ravel(),
             grid_points=np.column_stack([self.x_full.ravel(), self.y_full.ravel()]),
         )
+
+    def _interpolate_pressure_to_full_grid(self):
+        """Interpolate pressure from inner grid to full grid for output.
+
+        Returns
+        -------
+        p_full : np.ndarray
+            Pressure on full (Nx+1) × (Ny+1) grid
+        """
+        Nx, Ny = self.config.Nx, self.config.Ny
+
+        # Reshape inner pressure to 2D
+        p_inner_2d = self.arrays.p.reshape((Nx - 1, Ny - 1))
+
+        # Create full grid pressure array
+        p_full_2d = np.zeros((Nx + 1, Ny + 1))
+
+        # Copy interior values
+        p_full_2d[1:-1, 1:-1] = p_inner_2d
+
+        # Extrapolate to boundaries (linear extrapolation)
+        # West/East boundaries
+        p_full_2d[0, 1:-1] = 2 * p_full_2d[1, 1:-1] - p_full_2d[2, 1:-1]
+        p_full_2d[-1, 1:-1] = 2 * p_full_2d[-2, 1:-1] - p_full_2d[-3, 1:-1]
+
+        # South/North boundaries
+        p_full_2d[1:-1, 0] = 2 * p_full_2d[1:-1, 1] - p_full_2d[1:-1, 2]
+        p_full_2d[1:-1, -1] = 2 * p_full_2d[1:-1, -2] - p_full_2d[1:-1, -3]
+
+        # Corners (average of neighbors)
+        p_full_2d[0, 0] = 0.5 * (p_full_2d[0, 1] + p_full_2d[1, 0])
+        p_full_2d[0, -1] = 0.5 * (p_full_2d[0, -2] + p_full_2d[1, -1])
+        p_full_2d[-1, 0] = 0.5 * (p_full_2d[-1, 1] + p_full_2d[-2, 0])
+        p_full_2d[-1, -1] = 0.5 * (p_full_2d[-1, -2] + p_full_2d[-2, -1])
+
+        return p_full_2d.ravel()
