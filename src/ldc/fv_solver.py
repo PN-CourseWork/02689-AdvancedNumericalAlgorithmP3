@@ -8,7 +8,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import FVinfo, FVSolverFields, ResultsFields
+from .datastructures import FVinfo, FVFields
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
@@ -66,7 +66,7 @@ class FVSolver(LidDrivenCavitySolver):
         self.mu = self.rho * self.config.lid_velocity * self.config.Lx / self.config.Re
 
         # Allocate all solver arrays
-        self.arrays = FVSolverFields.allocate(n_cells, n_faces)
+        self.arrays = FVFields.allocate(n_cells, n_faces)
 
         # Linear solver settings
         self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-8, 'max_iterations': 10000}
@@ -112,7 +112,7 @@ class FVSolver(LidDrivenCavitySolver):
         A.setdiag(relaxed_A_diag)
 
         # Solve
-        phi_star = scipy_solver(A, rhs, **self.linear_solver_settings)
+        phi_star = scipy_solver(A, rhs)
 
         return phi_star, A_diag
 
@@ -154,7 +154,7 @@ class FVSolver(LidDrivenCavitySolver):
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        p_prime = scipy_solver(A_p, rhs_p, remove_nullspace=True, **self.linear_solver_settings)
+        p_prime = scipy_solver(A_p, rhs_p, remove_nullspace=True)
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)
@@ -173,13 +173,18 @@ class FVSolver(LidDrivenCavitySolver):
         # No copy needed! u and v now have new values, u_prev and v_prev have old values
         # Next iteration they will swap again
 
+        return a.u, a.v, a.p
+
     def _create_result_fields(self):
         """Create FV-specific result fields with mesh data and mdot."""
-        return ResultFields(
+        from .datastructures import Fields
+        return Fields(
             u=self.arrays.u,
             v=self.arrays.v,
             p=self.arrays.p,
             x=self.mesh.cell_centers[:, 0],
             y=self.mesh.cell_centers[:, 1],
             grid_points=self.mesh.cell_centers,
+            u_prev=self.arrays.u_prev,
+            v_prev=self.arrays.v_prev,
         )

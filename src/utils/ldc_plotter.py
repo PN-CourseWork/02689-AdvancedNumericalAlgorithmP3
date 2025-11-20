@@ -64,7 +64,7 @@ class LDCPlotter:
         if self.single_run:
             rd = self.run_data[0]
             self.Re = rd['Re']
-            self.residuals = rd['residuals']
+            self.iter_residuals = rd['iter_residuals']
             self.x = rd['x']
             self.y = rd['y']
             self.u = rd['u']
@@ -85,7 +85,7 @@ class LDCPlotter:
             Re = f.attrs['Re']
 
             # Load time-series
-            residuals = f['time_series/residual'][:]
+            iter_residuals = f['time_series/iter_residual'][:]
 
             # Load spatial fields
             grid_points = f['grid_points'][:]
@@ -103,7 +103,7 @@ class LDCPlotter:
 
         return {
             'Re': Re,
-            'residuals': residuals,
+            'iter_residuals': iter_residuals,
             'x': x,
             'y': y,
             'u': u,
@@ -130,8 +130,8 @@ class LDCPlotter:
         dfs = []
         for rd in self.run_data:
             df = pd.DataFrame({
-                'Iteration': range(len(rd['residuals'])),
-                'Residual': rd['residuals'],
+                'Iteration': range(len(rd['iter_residuals'])),
+                'Residual': rd['iter_residuals'],
                 'Run': rd['label']
             })
             dfs.append(df)

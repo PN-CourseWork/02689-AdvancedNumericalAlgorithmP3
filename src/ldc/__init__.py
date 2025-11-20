@@ -15,8 +15,7 @@ from .datastructures import (
     MetaConfig,
     FVinfo,
     SpectralInfo,
-    ResultsFields,
-    FVSolverFields,
+    FVFields,
     TimeSeries,
 )
 from .fv_solver import FVSolver
@@ -29,8 +28,7 @@ __all__ = [
     "FVinfo",
     "SpectralInfo",
     # Data structures
-    "ResultsFields",
-    "FVSolverFields",
+    "FVFields",
     "TimeSeries",
     # Concrete solvers
     "FVSolver",

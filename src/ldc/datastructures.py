@@ -109,7 +109,8 @@ class FVFields(Fields):
         return cls(
             # Current solution
             x=np.zeros(n_cells),
-            y=np.np.zeros(n_cells),
+            y=np.zeros(n_cells),
+            grid_points=np.zeros((n_cells, 2)),
             u=np.zeros(n_cells),
             v=np.zeros(n_cells),
             p=np.zeros(n_cells),

@@ -52,7 +52,7 @@ def load_run_data(path: Union[str, Path]) -> pd.DataFrame:
 
     with h5py.File(path, 'r') as f:
         # Load time-series data
-        residual = f['time_series/residual'][:]
+        residual = f['time_series/iter_residual'][:]
         n_iter = len(residual)
 
         # Start building DataFrame with time-series
@@ -64,7 +64,7 @@ def load_run_data(path: Union[str, Path]) -> pd.DataFrame:
         # Add other time-series if available
         ts_group = f['time_series']
         for key in ts_group.keys():
-            if key != 'residual':  # Already added
+            if key != 'iter_residual':  # Already added
                 data[key] = ts_group[key][:]
 
         # Load metadata and broadcast to all rows

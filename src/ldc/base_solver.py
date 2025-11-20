@@ -26,7 +26,7 @@ class LidDrivenCavitySolver(ABC):
     Config = None
     ResultFields = None
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config=None, **kwargs):
         """Initialize solver with configuration.
 
         Parameters

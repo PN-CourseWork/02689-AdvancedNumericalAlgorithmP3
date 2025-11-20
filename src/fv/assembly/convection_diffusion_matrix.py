@@ -50,7 +50,7 @@ def assemble_diffusion_convection_matrix(
 
         # —— convection term (upwind) ——
         convFlux_P_f, convFlux_N_f, convDC = compute_convective_stencil(
-            f, mesh, rho, mdot, grad_phi, component_idx, phi, scheme=scheme
+            f, mesh, mdot, phi, scheme
         )
 
         # —— orthogonal diffusion (inlined for clarity) ——

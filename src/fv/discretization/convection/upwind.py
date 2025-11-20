@@ -17,11 +17,8 @@ def compute_convective_stencil(
     Flux_N_f = -max(-mdot[f],0)
 
     if scheme == "Upwind":
-        print("UPWIND")
         convDC = 0.0
     elif scheme == "TVD":
-
-        print("TVD")
         # Variables needed for TVD
         phi_P = phi[P]
         phi_N = phi[N]
