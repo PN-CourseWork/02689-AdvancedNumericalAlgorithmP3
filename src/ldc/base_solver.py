@@ -239,12 +239,12 @@ class LidDrivenCavitySolver(ABC):
                         ts_grp.create_dataset(key, data=val)
 
     def _calculate_enstrophy(self): 
-        #TODO: 
+        #TODO: ASKE
         return 0.0
 
     def _calculate_palinstropy(self): 
-        #TODO: 
+        #TODO: ASKE
         return 0.0
     def _calculate_energy(self):
-        #TODO: 
+        #TODO: ASKE
         return 0.0

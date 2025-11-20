@@ -61,5 +61,5 @@ print(f"enstrophy: {enstrophy}")
 
 
 
-#TODO: Plot them as a function of iterations
+#TODO: ASKE Plot them as a function of iterations
 
