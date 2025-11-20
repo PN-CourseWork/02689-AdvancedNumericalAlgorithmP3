@@ -64,6 +64,20 @@ class SpectralSolver(LidDrivenCavitySolver):
         n_nodes_inner = (self.config.Nx - 1) * (self.config.Ny - 1)
         self.arrays = SpectralSolverFields.allocate(n_nodes_full, n_nodes_inner)
 
+        # Create persistent 2D views (avoid repeated reshaping)
+        # These are VIEWS, not copies - modifications affect the underlying 1D arrays
+        shape_full = (self.config.Nx + 1, self.config.Ny + 1)
+        shape_inner = (self.config.Nx - 1, self.config.Ny - 1)
+
+        self.u_2d = self.arrays.u.reshape(shape_full)
+        self.v_2d = self.arrays.v.reshape(shape_full)
+        self.u_stage_2d = self.arrays.u_stage.reshape(shape_full)
+        self.v_stage_2d = self.arrays.v_stage.reshape(shape_full)
+
+        self.p_2d = self.arrays.p.reshape(shape_inner)
+        self.dp_dx_inner_2d = self.arrays.dp_dx_inner.reshape(shape_inner)
+        self.dp_dy_inner_2d = self.arrays.dp_dy_inner.reshape(shape_inner)
+
         # Initialize lid velocity with corner smoothing
         self._initialize_lid_velocity()
 
@@ -82,6 +96,64 @@ class SpectralSolver(LidDrivenCavitySolver):
         # Grid spacing (minimum) for CFL calculation
         self.dx_min = np.min(np.diff(x_nodes))
         self.dy_min = np.min(np.diff(y_nodes))
+
+    def _apply_corner_smoothing(self, u_2d):
+        """Apply corner smoothing to lid velocity on top boundary.
+
+        Parameters
+        ----------
+        u_2d : np.ndarray
+            2D velocity array on full grid (Nx+1, Ny+1), modified in place
+        """
+        if self.config.corner_smoothing > 0:
+            Nx = self.config.Nx
+            smooth_width = int(self.config.corner_smoothing * Nx)
+            if smooth_width > 0:
+                # Vectorized corner smoothing
+                i_values = np.arange(smooth_width)
+                factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
+
+                # Left and right corners
+                u_2d[i_values, -1] = factors * self.config.lid_velocity
+                u_2d[Nx - i_values, -1] = factors * self.config.lid_velocity
+
+    def _extrapolate_to_full_grid(self, inner_2d):
+        """Extrapolate field from inner grid (Nx-1, Ny-1) to full grid (Nx+1, Ny+1).
+
+        Uses linear extrapolation to boundaries and averaging for corners.
+
+        Parameters
+        ----------
+        inner_2d : np.ndarray
+            Field on inner grid, shape (Nx-1, Ny-1)
+
+        Returns
+        -------
+        full_2d : np.ndarray
+            Field on full grid, shape (Nx+1, Ny+1)
+        """
+        Nx, Ny = self.config.Nx, self.config.Ny
+        full_2d = np.zeros((Nx + 1, Ny + 1))
+
+        # Copy interior values
+        full_2d[1:-1, 1:-1] = inner_2d
+
+        # Extrapolate to boundaries (linear extrapolation)
+        # West/East boundaries
+        full_2d[0, 1:-1] = 2 * full_2d[1, 1:-1] - full_2d[2, 1:-1]
+        full_2d[-1, 1:-1] = 2 * full_2d[-2, 1:-1] - full_2d[-3, 1:-1]
+
+        # South/North boundaries
+        full_2d[1:-1, 0] = 2 * full_2d[1:-1, 1] - full_2d[1:-1, 2]
+        full_2d[1:-1, -1] = 2 * full_2d[1:-1, -2] - full_2d[1:-1, -3]
+
+        # Corners (average of neighbors)
+        full_2d[0, 0] = 0.5 * (full_2d[0, 1] + full_2d[1, 0])
+        full_2d[0, -1] = 0.5 * (full_2d[0, -2] + full_2d[1, -1])
+        full_2d[-1, 0] = 0.5 * (full_2d[-1, 1] + full_2d[-2, 0])
+        full_2d[-1, -1] = 0.5 * (full_2d[-1, -2] + full_2d[-2, -1])
+
+        return full_2d
 
     def _build_diff_matrices(self):
         """Build spectral differentiation matrices using tensor products."""
@@ -119,23 +191,11 @@ class SpectralSolver(LidDrivenCavitySolver):
 
     def _initialize_lid_velocity(self):
         """Initialize lid velocity with corner smoothing to avoid spurious modes."""
-        Nx, Ny = self.config.Nx, self.config.Ny
-        u_2d = self.arrays.u.reshape((Nx + 1, Ny + 1))
-
         # Set top boundary (y = Ly) to lid velocity
-        u_2d[:, -1] = self.config.lid_velocity
+        self.u_2d[:, -1] = self.config.lid_velocity
 
         # Apply corner smoothing using smooth transition
-        if self.config.corner_smoothing > 0:
-            smooth_width = int(self.config.corner_smoothing * Nx)
-            if smooth_width > 0:
-                # Vectorized corner smoothing
-                i_values = np.arange(smooth_width)
-                factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
-
-                # Left and right corners
-                u_2d[i_values, -1] = factors * self.config.lid_velocity
-                u_2d[Nx - i_values, -1] = factors * self.config.lid_velocity
+        self._apply_corner_smoothing(self.u_2d)
 
     def _interpolate_pressure_gradient(self):
         """Compute pressure gradient on inner grid and interpolate to full grid.
@@ -145,48 +205,13 @@ class SpectralSolver(LidDrivenCavitySolver):
         2. Compute ∂p/∂x and ∂p/∂y on inner grid using inner diff matrices
         3. Extrapolate gradients to boundaries on full grid
         """
-        Nx, Ny = self.config.Nx, self.config.Ny
-
         # Compute pressure gradient on inner grid (this is where pressure actually lives!)
         self.arrays.dp_dx_inner[:] = self.Dx_inner @ self.arrays.p
         self.arrays.dp_dy_inner[:] = self.Dy_inner @ self.arrays.p
 
-        # Reshape inner gradients to 2D
-        dp_dx_2d_inner = self.arrays.dp_dx_inner.reshape((Nx - 1, Ny - 1))
-        dp_dy_2d_inner = self.arrays.dp_dy_inner.reshape((Nx - 1, Ny - 1))
-
-        # Create full grid versions
-        dp_dx_2d = np.zeros((Nx + 1, Ny + 1))
-        dp_dy_2d = np.zeros((Nx + 1, Ny + 1))
-
-        # Fill interior with computed gradients
-        dp_dx_2d[1:-1, 1:-1] = dp_dx_2d_inner
-        dp_dy_2d[1:-1, 1:-1] = dp_dy_2d_inner
-
-        # Extrapolate to boundaries (linear extrapolation)
-        # West/East boundaries (extrapolate in x-direction)
-        dp_dx_2d[0, 1:-1] = 2 * dp_dx_2d[1, 1:-1] - dp_dx_2d[2, 1:-1]
-        dp_dx_2d[-1, 1:-1] = 2 * dp_dx_2d[-2, 1:-1] - dp_dx_2d[-3, 1:-1]
-        dp_dy_2d[0, 1:-1] = 2 * dp_dy_2d[1, 1:-1] - dp_dy_2d[2, 1:-1]
-        dp_dy_2d[-1, 1:-1] = 2 * dp_dy_2d[-2, 1:-1] - dp_dy_2d[-3, 1:-1]
-
-        # South/North boundaries (extrapolate in y-direction)
-        dp_dx_2d[1:-1, 0] = 2 * dp_dx_2d[1:-1, 1] - dp_dx_2d[1:-1, 2]
-        dp_dx_2d[1:-1, -1] = 2 * dp_dx_2d[1:-1, -2] - dp_dx_2d[1:-1, -3]
-        dp_dy_2d[1:-1, 0] = 2 * dp_dy_2d[1:-1, 1] - dp_dy_2d[1:-1, 2]
-        dp_dy_2d[1:-1, -1] = 2 * dp_dy_2d[1:-1, -2] - dp_dy_2d[1:-1, -3]
-
-        # Corners (average of neighbors) - vectorized
-        # Define corner positions and their neighbors
-        i_corners = np.array([0, 0, -1, -1])
-        j_corners = np.array([0, -1, 0, -1])
-        i_horiz = np.array([0, 0, -1, -1])
-        j_horiz = np.array([1, -2, 1, -2])
-        i_vert = np.array([1, 1, -2, -2])
-        j_vert = np.array([0, -1, 0, -1])
-
-        dp_dx_2d[i_corners, j_corners] = 0.5 * (dp_dx_2d[i_horiz, j_horiz] + dp_dx_2d[i_vert, j_vert])
-        dp_dy_2d[i_corners, j_corners] = 0.5 * (dp_dy_2d[i_horiz, j_horiz] + dp_dy_2d[i_vert, j_vert])
+        # Extrapolate to full grid (using 2D views)
+        dp_dx_2d = self._extrapolate_to_full_grid(self.dp_dx_inner_2d)
+        dp_dy_2d = self._extrapolate_to_full_grid(self.dp_dy_inner_2d)
 
         # Store flattened on full grid
         self.arrays.dp_dx[:] = dp_dx_2d.ravel()
@@ -237,10 +262,8 @@ class SpectralSolver(LidDrivenCavitySolver):
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
 
         # Continuity residual on INNER grid: R_p = -β²(∂u/∂x + ∂v/∂y)
-        # Compute divergence on full grid
+        # Compute divergence on full grid, then restrict to inner grid
         divergence_full = self.arrays.du_dx + self.arrays.dv_dy
-
-        # Restrict divergence to inner grid
         divergence_2d = divergence_full.reshape((Nx + 1, Ny + 1))
         divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
 
@@ -253,11 +276,11 @@ class SpectralSolver(LidDrivenCavitySolver):
         Parameters
         ----------
         u, v : np.ndarray
-            Velocity fields to modify in place
+            Velocity fields (1D flat arrays) to modify in place
         """
-        Nx, Ny = self.config.Nx, self.config.Ny
-        u_2d = u.reshape((Nx + 1, Ny + 1))
-        v_2d = v.reshape((Nx + 1, Ny + 1))
+        # Create 2D views for boundary condition enforcement
+        u_2d = u.reshape((self.config.Nx + 1, self.config.Ny + 1))
+        v_2d = v.reshape((self.config.Nx + 1, self.config.Ny + 1))
 
         # West boundary (x = 0)
         u_2d[0, :] = 0.0
@@ -276,16 +299,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         u_2d[:, -1] = self.config.lid_velocity
 
         # Apply corner smoothing to lid velocity
-        if self.config.corner_smoothing > 0:
-            smooth_width = int(self.config.corner_smoothing * Nx)
-            if smooth_width > 0:
-                # Vectorized corner smoothing
-                i_values = np.arange(smooth_width)
-                factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
-
-                # Left and right corners
-                u_2d[i_values, -1] = factors * self.config.lid_velocity
-                u_2d[Nx - i_values, -1] = factors * self.config.lid_velocity
+        self._apply_corner_smoothing(u_2d)
 
     def _compute_adaptive_timestep(self):
         """Compute adaptive pseudo-timestep based on CFL condition.
@@ -392,32 +406,9 @@ class SpectralSolver(LidDrivenCavitySolver):
         Returns
         -------
         p_full : np.ndarray
-            Pressure on full (Nx+1) × (Ny+1) grid
+            Pressure on full (Nx+1) × (Ny+1) grid (flattened)
         """
-        Nx, Ny = self.config.Nx, self.config.Ny
-
-        # Reshape inner pressure to 2D
-        p_inner_2d = self.arrays.p.reshape((Nx - 1, Ny - 1))
-
-        # Create full grid pressure array
-        p_full_2d = np.zeros((Nx + 1, Ny + 1))
-
-        # Copy interior values
-        p_full_2d[1:-1, 1:-1] = p_inner_2d
-
-        # Extrapolate to boundaries (linear extrapolation)
-        # West/East boundaries
-        p_full_2d[0, 1:-1] = 2 * p_full_2d[1, 1:-1] - p_full_2d[2, 1:-1]
-        p_full_2d[-1, 1:-1] = 2 * p_full_2d[-2, 1:-1] - p_full_2d[-3, 1:-1]
-
-        # South/North boundaries
-        p_full_2d[1:-1, 0] = 2 * p_full_2d[1:-1, 1] - p_full_2d[1:-1, 2]
-        p_full_2d[1:-1, -1] = 2 * p_full_2d[1:-1, -2] - p_full_2d[1:-1, -3]
-
-        # Corners (average of neighbors)
-        p_full_2d[0, 0] = 0.5 * (p_full_2d[0, 1] + p_full_2d[1, 0])
-        p_full_2d[0, -1] = 0.5 * (p_full_2d[0, -2] + p_full_2d[1, -1])
-        p_full_2d[-1, 0] = 0.5 * (p_full_2d[-1, 1] + p_full_2d[-2, 0])
-        p_full_2d[-1, -1] = 0.5 * (p_full_2d[-1, -2] + p_full_2d[-2, -1])
+        # Extrapolate pressure from inner to full grid (using persistent 2D view)
+        p_full_2d = self._extrapolate_to_full_grid(self.p_2d)
 
         return p_full_2d.ravel()
