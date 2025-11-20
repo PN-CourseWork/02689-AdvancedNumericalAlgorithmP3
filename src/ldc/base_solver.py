@@ -5,7 +5,7 @@ from typing import Tuple
 import numpy as np
 from dataclasses import replace
 
-from .datastructures import Info, TimeSeries
+from .datastructures import MetaConfig, TimeSeries
 
 
 class LidDrivenCavitySolver(ABC):
@@ -26,7 +26,7 @@ class LidDrivenCavitySolver(ABC):
     Config = None
     ResultFields = None
 
-    def __init__(self, config: Config = None, **kwargs):
+    def __init__(self, config, **kwargs):
         """Initialize solver with configuration.
 
         Parameters
@@ -86,10 +86,10 @@ class LidDrivenCavitySolver(ABC):
 
         # Create time series (same for all solvers)
         self.time_series = TimeSeries(
-            residual=combined_residual,
+            iter_residual=combined_residual,
             u_residual=u_residuals,
             v_residual=v_residuals,
-            continuity_residual=None,
+            continuity_residual= []
         )
 
         # Update metadata with convergence info
@@ -100,7 +100,7 @@ class LidDrivenCavitySolver(ABC):
             final_residual=combined_residual[-1] if combined_residual else float('inf'),
         )
 
-    def solve(self, tolerance: float = None, max_iter: int = None):
+    def solve(self, tolerance, max_iter):
         """Solve the lid-driven cavity problem using iterative stepping.
 
         This method implements the common iteration loop with residual calculation.

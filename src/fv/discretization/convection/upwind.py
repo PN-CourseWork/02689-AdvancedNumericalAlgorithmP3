@@ -4,9 +4,9 @@ from numba import njit
 def MUSCL(r):
     return max(0.0, min(2.0, 2.0 * r, 0.5 * (1 + r))) if r > 0 else 0.0
 
-@njit()
+#@njit()
 def compute_convective_stencil(
-    f, mesh, rho, mdot, grad_phi, component_idx,
+    f, mesh, mdot,
     phi, scheme 
 ):
     P = mesh.owner_cells[f]
@@ -17,9 +17,11 @@ def compute_convective_stencil(
     Flux_N_f = -max(-mdot[f],0)
 
     if scheme == "Upwind":
+        print("UPWIND")
         convDC = 0.0
     elif scheme == "TVD":
 
+        print("TVD")
         # Variables needed for TVD
         phi_P = phi[P]
         phi_N = phi[N]

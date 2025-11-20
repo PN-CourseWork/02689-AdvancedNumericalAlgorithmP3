@@ -24,7 +24,8 @@ solver = FVSolver(
     nx=16,          # Grid cells in x-direction
     ny=16,          # Grid cells in y-direction
     alpha_uv=0.7,   # Velocity under-relaxation factor
-    alpha_p=0.3     # Pressure under-relaxation factor
+    alpha_p=0.3,     # Pressure under-relaxation factor
+    convection_scheme = "TVD"
 )
 
 print(f"Solver configured: Re={solver.config.Re}, Grid={solver.config.nx}x{solver.config.ny}")
@@ -41,7 +42,7 @@ solver.solve(tolerance=1e-5, max_iter=10000)
 # -------------------
 # Display convergence statistics from the SIMPLE iteration.
 
-print(f"\nSolution Status:")
+print("\nSolution Status:")
 print(f"  Converged: {solver.metadata.converged}")
 print(f"  Iterations: {solver.metadata.iterations}")
 print(f"  Final residual: {solver.metadata.final_residual:.6e}")

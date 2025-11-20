@@ -13,7 +13,6 @@ def assemble_diffusion_convection_matrix(
     component_idx,
     phi,
     scheme="Upwind",
-    limiter=None
 ):
     """Assemble sparse matrix and RHS for steady-state collocated FV discretisation.
 

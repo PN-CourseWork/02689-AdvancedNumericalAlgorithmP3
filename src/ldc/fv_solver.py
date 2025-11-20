@@ -8,7 +8,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import FVinfo, FVResultFields, FVSolverFields
+from .datastructures import FVinfo, FVSolverFields, ResultsFields
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
@@ -34,7 +34,6 @@ class FVSolver(LidDrivenCavitySolver):
     """
 
     Config = FVinfo
-    ResultFields = FVResultFields
 
     # Constant fluid density
     rho = 1.0
@@ -102,7 +101,7 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data, b = assemble_diffusion_convection_matrix(
             self.mesh, self.arrays.mdot, grad_phi, self.rho, self.mu,
             component_idx, phi=phi,
-            scheme=self.config.convection_scheme, limiter=self.config.limiter
+            scheme=self.config.convection_scheme
         )
         A = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         A_diag = A.diagonal()
@@ -174,16 +173,13 @@ class FVSolver(LidDrivenCavitySolver):
         # No copy needed! u and v now have new values, u_prev and v_prev have old values
         # Next iteration they will swap again
 
-        return a.u, a.v, a.p
-
     def _create_result_fields(self):
         """Create FV-specific result fields with mesh data and mdot."""
-        return FVResultFields(
+        return ResultFields(
             u=self.arrays.u,
             v=self.arrays.v,
             p=self.arrays.p,
             x=self.mesh.cell_centers[:, 0],
             y=self.mesh.cell_centers[:, 1],
             grid_points=self.mesh.cell_centers,
-            mdot=self.arrays.mdot,
         )

@@ -8,8 +8,7 @@ from scipy.sparse.linalg import spsolve
 def scipy_solver(
     A_csr: csr_matrix,
     b_np: np.ndarray,
-    remove_nullspace: bool = False,
-    **kwargs  # Accept and ignore extra parameters for flexible calling
+    remove_nullspace: bool = False
 ):
     """
     Solve A x = b using SciPy sparse direct solver (spsolve).

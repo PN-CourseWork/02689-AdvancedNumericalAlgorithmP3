@@ -3,8 +3,8 @@
 This module defines the configuration and result data structures
 for lid-driven cavity solvers (both FV and spectral).
 """
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from dataclasses import dataclass
+from typing import Optional, List
 
 import numpy as np
 
@@ -22,27 +22,33 @@ class Fields:
     x: np.ndarray
     y: np.ndarray
     grid_points: np.ndarray
+    # Previous iteration (for under-relaxation)
+    u_prev: np.ndarray
+    v_prev: np.ndarray
+    
+
+
 
 
 @dataclass
 class TimeSeries:
     """Time series data common to all solvers."""
-    residual: List[float]
-    u_residual: List[float] = None
-    v_residual: List[float] = None
-    continuity_residual: List[float] = None
+    iter_residual: List[float]
+    u_residual: List[float]
+    v_residual: List[float]
+    continuity_residual: Optional[List[float]]
     #TODO: Add the quantities stuff from the paper
 
 
 @dataclass
-class Info:
+class MetaConfig:
     """Base solver metadata, config and convergence info."""
     # Physics parameters (required)
-    Re: float
+    Re: float = 100
 
     # Grid parameters (with defaults)
-    nx: int = 64
-    ny: int = 64
+    nx: int = 16
+    ny: int = 16
 
     # Physics parameters (with defaults)
     lid_velocity: float = 1
@@ -52,12 +58,12 @@ class Info:
     # Solver config
     max_iterations: int = 500
     tolerance: float = 1e-4
-    method: str = None
+    method: str = ""
 
     # Convergence info
-    iterations: int = None
+    iterations: int = 0
     converged: bool = False
-    final_residual: float = None
+    final_residual: float = 10000
 
 
 #=============================================================
@@ -65,32 +71,18 @@ class Info:
 # ============================================================
 
 @dataclass
-class FVinfo(Info):
+class FVinfo(MetaConfig):
     """FV-specific metadata with discretization parameters."""
-    convection_scheme: str = "TVD"
-    limiter: str = "MUSCL"
-    alpha_uv: float = 0.6
-    alpha_p: float = 0.4
+    convection_scheme: str = ""
+    alpha_uv: float = 0.7
+    alpha_p: float = 0.3
 
 
 @dataclass
-class FVResultFields(Fields):
-    """FV result fields returned to user after solving."""
-    mdot: np.ndarray = None
-
-
-@dataclass
-class FVSolverFields:
+class FVFields(Fields):
     """Internal FV solver arrays - current state, previous iteration, and work buffers."""
     # Current solution state
-    u: np.ndarray
-    v: np.ndarray
-    p: np.ndarray
     mdot: np.ndarray
-
-    # Previous iteration (for under-relaxation)
-    u_prev: np.ndarray
-    v_prev: np.ndarray
 
     # Gradient buffers
     grad_p: np.ndarray
@@ -116,6 +108,8 @@ class FVSolverFields:
         """Allocate all arrays with proper sizes."""
         return cls(
             # Current solution
+            x=np.zeros(n_cells),
+            y=np.np.zeros(n_cells),
             u=np.zeros(n_cells),
             v=np.zeros(n_cells),
             p=np.zeros(n_cells),
@@ -147,7 +141,7 @@ class FVSolverFields:
 #=====================================================
 
 @dataclass
-class SpectralInfo(Info):
+class SpectralInfo(MetaConfig):
     """Spectral-specific metadata with discretization parameters."""
     Nx: int = 64
     Ny: int = 64

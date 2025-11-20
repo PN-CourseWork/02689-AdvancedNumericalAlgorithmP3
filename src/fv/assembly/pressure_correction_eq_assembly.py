@@ -30,17 +30,13 @@ def assemble_pressure_correction_matrix(mesh, rho):
         P = owner_cells[f]
         N = neighbor_cells[f]
 
-        # Pre-fetch vector components (single memory access each)
+        # Pre-fetch vector components
         E_f = vector_E_f[f]
         d_CE = vector_d_CE[f]
-        E_f_0 = E_f[0]
-        E_f_1 = E_f[1]
-        d_CE_0 = d_CE[0]
-        d_CE_1 = d_CE[1]
 
-        # Manual norm calculations (faster than np.linalg.norm)
-        E_mag = np.sqrt(E_f_0 * E_f_0 + E_f_1 * E_f_1)
-        d_mag = np.sqrt(d_CE_0 * d_CE_0 + d_CE_1 * d_CE_1)
+        # Compute vector norms
+        E_mag = np.linalg.norm(E_f)
+        d_mag = np.linalg.norm(d_CE)
 
         # Compute conductance
         D_f = rho * E_mag / d_mag
