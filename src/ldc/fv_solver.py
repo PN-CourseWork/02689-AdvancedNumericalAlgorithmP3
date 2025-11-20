@@ -162,16 +162,12 @@ class FVSolver(LidDrivenCavitySolver):
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)
         velocity_correction(self.mesh, a.grad_p_prime, a.bold_D, u_prime=a.u_prime, v_prime=a.v_prime)
 
-        # Update velocity and pressure (in-place operations into fresh buffers)
-        np.add(u_star, a.u_prime, out=a.u)
-        np.add(v_star, a.v_prime, out=a.v)
+        # Update velocity and pressure
+        a.u = u_star + a.u_prime
+        a.v = v_star + a.v_prime
         a.p += self.config.alpha_p * p_prime
 
-        # Update mass flux - reuse buffers
+        # Update mass flux
         interpolate_velocity_to_face(self.mesh, a.u_prime, a.v_prime, out=a.U_prime_face)
         mdot_calculation(self.mesh, self.rho, a.U_prime_face, out=a.mdot_prime)
-        np.add(a.mdot_star, a.mdot_prime, out=a.mdot)
-
-        # No copy needed! u and v now have new values, u_prev and v_prev have old values
-        # Next iteration they will swap again
-
+        a.mdot = a.mdot_star + a.mdot_prime
