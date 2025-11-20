@@ -8,6 +8,8 @@ Usage:
     python plot_comparison.py [--Re RE] [--legendre PATH] [--chebyshev PATH]
 """
 
+#TODO: Make this less hacky
+
 # %%
 # Setup
 # -----
