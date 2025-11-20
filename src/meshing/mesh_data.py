@@ -28,32 +28,28 @@ mesh_data_spec = [
     ("cell_volumes", types.float64[:]),  # Cell volumes V_C
     ("cell_centers", types.float64[:, :]),  # Cell centroids x_C (shape: [n_cells, 2])
     # --- Face Geometry ---
-    ("face_areas", types.float64[:]),  # Face area magnitudes |S_f| (lengths in 2D)
-    ("face_centers", types.float64[:, :]),  # Face centroids x_f [n_faces, 2]
+    ("face_areas", types.float64[:]),            # Face area magnitudes |S_f| (lengths in 2D)
+    ("face_centers", types.float64[:, :]),       # Face centroids x_f [n_faces, 2]
+
     # --- Connectivity ---
-    ("owner_cells", types.int64[:]),  # Owner cell index for each face
-    ("neighbor_cells", types.int64[:]),  # Neighbor cell index (–1 for boundary faces)
-    ("cell_faces", types.int64[:, :]),  # Padded list of face indices for each cell
+    ("owner_cells", types.int64[:]),             # Owner cell index for each face
+    ("neighbor_cells", types.int64[:]),          # Neighbor cell index (–1 for boundary faces)
+    ("cell_faces", types.int64[:, :]),           # Padded list of face indices for each cell
+
     # --- Vector Geometry --- For orthogonal Cartesian grids
-    (
-        "vector_S_f",
-        types.float64[:, :],
-    ),  # surface vectors S_f = unit_normal * area (serves as both S and E for orthogonal grids)
-    (
-        "vector_d_CE",
-        types.float64[:, :],
-    ),  # distance vector between centroids of elements C and E (also CF in Moukalled)
+    ("vector_S_f", types.float64[:, :]),         # surface vectors S_f = unit_normal * area (serves as both S and E for orthogonal grids)
+    ("vector_d_CE", types.float64[:, :]),        # distance vector between centroids of elements C and E (also CF in Moukalled)
+
     # --- Interpolation Factors ---
-    ("face_interp_factors", types.float64[:]),  # g_f = delta_Pf / delta_PN
+    ("face_interp_factors", types.float64[:]),   # g_f = delta_Pf / delta_PN
+
     # --- Topological Masks ---
-    ("internal_faces", types.int64[:]),  # Indices of faces with valid neighbor (N >= 0)
-    ("boundary_faces", types.int64[:]),  # Indices of faces with N = –1
+    ("internal_faces", types.int64[:]),          # Indices of faces with valid neighbor (N >= 0)
+    ("boundary_faces", types.int64[:]),          # Indices of faces with N = –1
+
     # --- Boundary Conditions ---
-    ("boundary_values", types.float64[:, :]),  # BC values per face: [u_BC, v_BC, p_BC]
-    (
-        "d_Cb",
-        types.float64[:],
-    ),  # Distance from cell center to boundary face center (Moukalled 8.6.8)
+    ("boundary_values", types.float64[:, :]),    # BC values per face: [u_BC, v_BC, p_BC]
+    ("d_Cb", types.float64[:]),                  # Distance from cell center to boundary face center (Moukalled 8.6.8)
 ]
 
 

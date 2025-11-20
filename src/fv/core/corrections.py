@@ -3,9 +3,7 @@ from numba import njit, prange
 
 
 @njit(parallel=True)
-def velocity_correction(
-    mesh, grad_p_prime_cell, bold_D_cell, u_prime=None, v_prime=None
-):
+def velocity_correction(mesh, grad_p_prime_cell, bold_D_cell, u_prime=None, v_prime=None):
     """
     Apply velocity correction: U' = -D_U * grad(p')
     Returns separate u_prime and v_prime components.

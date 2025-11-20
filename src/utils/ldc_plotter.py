@@ -84,7 +84,7 @@ class LDCPlotter:
             Re = f.attrs["Re"]
 
             # Load time-series
-            iter_residuals = f["time_series/iter_residual"][:]
+            iter_residuals = f["time_series/residual"][:]
 
             # Load spatial fields
             grid_points = f["grid_points"][:]

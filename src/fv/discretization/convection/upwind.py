@@ -1,19 +1,20 @@
 from numba import njit
 
-
 @njit()
 def MUSCL(r):
     return max(0.0, min(2.0, 2.0 * r, 0.5 * (1 + r))) if r > 0 else 0.0
 
-
-@njit()
-def compute_convective_stencil(f, mesh, mdot, phi, scheme):
+@njit(inline="always", cache=True, fastmath=True)
+def compute_convective_stencil(
+    f, mesh, rho, mdot, grad_phi, component_idx,
+    phi, scheme="Upwind", limiter=None
+):
     P = mesh.owner_cells[f]
     N = mesh.neighbor_cells[f]
 
     # Moukalled 15.72 (negative sign for neighbor handled in matrix assembly)
     Flux_P_f = max(mdot[f], 0)
-    Flux_N_f = -max(-mdot[f], 0)
+    Flux_N_f = -max(-mdot[f],0)
 
     if scheme == "Upwind":
         convDC = 0.0
@@ -24,7 +25,8 @@ def compute_convective_stencil(f, mesh, mdot, phi, scheme):
         F_low = mdot[f] * (phi_P if mdot[f] >= 0 else phi_N)
 
         # Compute the limiter
-        psi = 1.0  # numba type safeguard
+        if limiter is None:
+            psi = 1.0 # numba type safeguard
 
         # Determine upwind and downwind cells based on mass flux direction
         if mdot[f] >= 0:
@@ -47,6 +49,6 @@ def compute_convective_stencil(f, mesh, mdot, phi, scheme):
         # Apply the limiter to get high-order face value
         phi_HO = phi_up + 0.5 * psi * (phi_down - phi_up)
         F_high = mdot[f] * phi_HO
-        convDC = F_high - F_low
+        convDC = (F_high - F_low)
 
     return Flux_P_f, Flux_N_f, convDC

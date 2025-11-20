@@ -65,19 +65,30 @@ class LidDrivenCavitySolver(ABC):
         """
         pass
 
+    @abstractmethod
+    def _create_result_fields(self):
+        """Create result fields dataclass with solver-specific data.
+
+        Must return an instance of self.ResultFields.
+        """
+        pass
+
     def _store_results(self, residual_history, final_iter_count, is_converged):
         """Store solve results in self.fields, self.time_series, and self.metadata."""
         # Extract residuals
-        u_residuals = [r["u"] for r in residual_history]
-        v_residuals = [r["v"] for r in residual_history]
-        combined_residual = [max(r["u"], r["v"]) for r in residual_history]
+        u_residuals = [r['u'] for r in residual_history]
+        v_residuals = [r['v'] for r in residual_history]
+        combined_residual = [max(r['u'], r['v']) for r in residual_history]
+
+        # Create fields (subclasses can override _create_result_fields)
+        self.fields = self._create_result_fields()
 
         # Create time series (same for all solvers)
         self.time_series = TimeSeries(
-            iter_residual=combined_residual,
+            residual=combined_residual,
             u_residual=u_residuals,
             v_residual=v_residuals,
-            continuity_residual=[],
+            continuity_residual=None,
         )
 
         # Update metadata with convergence info
@@ -85,10 +96,10 @@ class LidDrivenCavitySolver(ABC):
             self.config,
             iterations=final_iter_count,
             converged=is_converged,
-            final_residual=combined_residual[-1] if combined_residual else float("inf"),
+            final_residual=combined_residual[-1] if combined_residual else float('inf'),
         )
 
-    def solve(self, tolerance, max_iter):
+    def solve(self, tolerance: float = None, max_iter: int = None):
         """Solve the lid-driven cavity problem using iterative stepping.
 
         This method implements the common iteration loop with residual calculation.
@@ -115,8 +126,8 @@ class LidDrivenCavitySolver(ABC):
             max_iter = self.config.max_iterations
 
         # Store previous iteration for residual calculation
-        u_prev = self.fields.u.copy()
-        v_prev = self.fields.v.copy()
+        u_prev = self.arrays.u.copy()
+        v_prev = self.arrays.v.copy()
 
         # Residual history
         residual_history = []
@@ -129,11 +140,11 @@ class LidDrivenCavitySolver(ABC):
             final_iter_count = i + 1
 
             # Perform one iteration
-            self.step()
+            self.arrays.u, self.arrays.v, self.arrays.p = self.step()
 
             # Calculate normalized solution change: ||u^{n+1} - u^n||_2 / ||u^n||_2
-            u_change_norm = np.linalg.norm(self.fields.u - u_prev)
-            v_change_norm = np.linalg.norm(self.fields.v - v_prev)
+            u_change_norm = np.linalg.norm(self.arrays.u - u_prev)
+            v_change_norm = np.linalg.norm(self.arrays.v - v_prev)
 
             u_prev_norm = np.linalg.norm(u_prev) + 1e-12
             v_prev_norm = np.linalg.norm(v_prev) + 1e-12
@@ -146,8 +157,8 @@ class LidDrivenCavitySolver(ABC):
                 residual_history.append({"u": u_residual, "v": v_residual})
 
             # Update previous iteration
-            u_prev = self.fields.u.copy()
-            v_prev = self.fields.v.copy()
+            u_prev = self.arrays.u.copy()
+            v_prev = self.arrays.v.copy()
 
             # Check convergence (only after warmup period)
             if i >= 10:
@@ -155,7 +166,7 @@ class LidDrivenCavitySolver(ABC):
             else:
                 is_converged = False
 
-            if i % 10 == 0 or is_converged:
+            if i % 50 == 0 or is_converged:
                 print(f"Iteration {i}: u_res={u_residual:.6e}, v_res={v_residual:.6e}")
 
             if is_converged:

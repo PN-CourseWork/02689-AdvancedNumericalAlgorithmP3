@@ -195,3 +195,83 @@ class GhiaValidator:
         if output_path:
             fig.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Validation plot saved to: {output_path}")
+
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+
+    def compute_errors(self):
+        """Compute error metrics against Ghia benchmark data.
+
+        Returns
+        -------
+        dict
+            Dictionary containing error metrics for u and v velocities:
+            - 'u_l2': L2 norm of u error
+            - 'u_linf': L∞ (maximum) norm of u error
+            - 'u_rms': Root mean square error for u
+            - 'v_l2': L2 norm of v error
+            - 'v_linf': L∞ (maximum) norm of v error
+            - 'v_rms': Root mean square error for v
+        """
+        from scipy.interpolate import interp1d
+
+        # Extract centerline data
+        y_sim, u_sim = self._extract_centerline_u()
+        x_sim, v_sim = self._extract_centerline_v()
+
+        # Interpolate simulation results at Ghia benchmark points
+        # For u velocity (vertical centerline)
+        u_interp_func = interp1d(y_sim, u_sim, kind='cubic', fill_value='extrapolate')
+        u_sim_at_ghia = u_interp_func(self.ghia_y)
+        u_error = u_sim_at_ghia - self.ghia_u
+
+        # For v velocity (horizontal centerline)
+        v_interp_func = interp1d(x_sim, v_sim, kind='cubic', fill_value='extrapolate')
+        v_sim_at_ghia = v_interp_func(self.ghia_x)
+        v_error = v_sim_at_ghia - self.ghia_v
+
+        # Compute error norms
+        errors = {
+            'u_l2': np.sqrt(np.sum(u_error**2)),
+            'u_linf': np.max(np.abs(u_error)),
+            'u_rms': np.sqrt(np.mean(u_error**2)),
+            'v_l2': np.sqrt(np.sum(v_error**2)),
+            'v_linf': np.max(np.abs(v_error)),
+            'v_rms': np.sqrt(np.mean(v_error**2)),
+        }
+
+        return errors
+
+    def print_summary(self):
+        """Print validation summary with error metrics."""
+        errors = self.compute_errors()
+
+        print("\n" + "="*70)
+        print(f"{'VALIDATION SUMMARY':^70}")
+        print("="*70)
+        print(f"  Reynolds number: Re = {self.Re:.0f}")
+        print(f"  Benchmark: Ghia et al. (1982), Re = {self.Re_closest}")
+        print(f"  Solution file: {self.h5_path.name}")
+        print("-"*70)
+        print(f"{'ERROR METRICS':^70}")
+        print("-"*70)
+        print(f"  {'Velocity':<12} {'L² Error':<15} {'L∞ Error':<15} {'RMS Error':<15}")
+        print("-"*70)
+        print(f"  {'u (vertical)':<12} {errors['u_l2']:<15.6e} {errors['u_linf']:<15.6e} {errors['u_rms']:<15.6e}")
+        print(f"  {'v (horizontal)':<12} {errors['v_l2']:<15.6e} {errors['v_linf']:<15.6e} {errors['v_rms']:<15.6e}")
+        print("="*70)
+
+        # Provide interpretation
+        if errors['u_rms'] < 1e-3 and errors['v_rms'] < 1e-3:
+            quality = "EXCELLENT"
+        elif errors['u_rms'] < 1e-2 and errors['v_rms'] < 1e-2:
+            quality = "GOOD"
+        elif errors['u_rms'] < 0.05 and errors['v_rms'] < 0.05:
+            quality = "ACCEPTABLE"
+        else:
+            quality = "NEEDS IMPROVEMENT"
+
+        print(f"  Overall validation quality: {quality}")
+        print("="*70 + "\n")

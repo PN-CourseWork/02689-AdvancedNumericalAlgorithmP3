@@ -3,9 +3,7 @@ from numba import njit
 
 
 @njit(inline="always", cache=True, fastmath=True, nogil=True)
-def rhie_chow_velocity_internal_faces(
-    mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar, U_faces
-):
+def rhie_chow_velocity_internal_faces(mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar, U_faces):
     """
     Compute Rhie-Chow velocity at internal faces.
     Optimized for memory access patterns with pre-fetched static data.
@@ -149,9 +147,7 @@ def rhie_chow_velocity(mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar, out
         U_faces = out
 
     # Compute internal faces with optimized memory access
-    rhie_chow_velocity_internal_faces(
-        mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar, U_faces
-    )
+    rhie_chow_velocity_internal_faces(mesh, u_star, v_star, grad_p_bar, grad_p, bold_D_bar, U_faces)
 
     # Apply boundary conditions with optimized memory access
     rhie_chow_velocity_boundary_faces(mesh, U_faces)
