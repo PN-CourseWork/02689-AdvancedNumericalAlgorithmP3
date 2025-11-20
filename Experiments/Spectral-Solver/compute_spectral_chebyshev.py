@@ -23,7 +23,7 @@ solver = SpectralSolver(
     Nx=15,               # Polynomial order in x (nodes = Nx+1 = 16)
     Ny=15,               # Polynomial order in y (nodes = Ny+1 = 16)
     basis_type="chebyshev",  # Use Chebyshev-Gauss-Lobatto (Zhang et al. 2010)
-    CFL=0.80,            # CFL number for adaptive time stepping
+    CFL=0.70,            # CFL number for adaptive time stepping
     beta_squared=5.0,    # Artificial compressibility coefficient
     corner_smoothing=0.15 # Lid velocity smoothing near corners
 )
@@ -35,7 +35,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Run Pseudo Time-Stepping
 # -------------------------
 
-solver.solve(tolerance=1e-5, max_iter=15000)
+solver.solve(tolerance=1e-5, max_iter=20000)
 
 # %%
 # Convergence Results

@@ -97,9 +97,9 @@ ax2.scatter(validator_leg.ghia_x, validator_leg.ghia_v,
            marker='o', s=80, c='black', label='Ghia et al. (1982)',
            zorder=3, edgecolors='white', linewidths=1.5)
 ax2.plot(x_leg, v_leg, 'b-', linewidth=2.5,
-         label=f'Legendre (RMS={errors_leg["v_rms"]:.4f})', alpha=0.8)
+         label=f'Legendre', alpha=0.8)
 ax2.plot(x_cheb, v_cheb, 'r--', linewidth=2.5,
-         label=f'Chebyshev (RMS={errors_cheb["v_rms"]:.4f})', alpha=0.8)
+         label=f'Chebyshev', alpha=0.8)
 ax2.set_xlabel('x', fontsize=13, fontweight='bold')
 ax2.set_ylabel('v-velocity', fontsize=13, fontweight='bold')
 ax2.set_title('V-Velocity along Horizontal Centerline (y=0.5)',
