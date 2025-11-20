@@ -1,14 +1,13 @@
-import numpy as np
 from numba import njit
 
-@njit(inline="always")
+@njit()
 def MUSCL(r):
     return max(0.0, min(2.0, 2.0 * r, 0.5 * (1 + r))) if r > 0 else 0.0
 
-@njit(inline="always", cache=True, fastmath=True)
+@njit()
 def compute_convective_stencil(
     f, mesh, rho, mdot, grad_phi, component_idx,
-    phi, scheme="Upwind", limiter=None
+    phi, scheme 
 ):
     P = mesh.owner_cells[f]
     N = mesh.neighbor_cells[f]
@@ -20,14 +19,14 @@ def compute_convective_stencil(
     if scheme == "Upwind":
         convDC = 0.0
     elif scheme == "TVD":
+
         # Variables needed for TVD
         phi_P = phi[P]
         phi_N = phi[N]
         F_low = mdot[f] * (phi_P if mdot[f] >= 0 else phi_N)
 
         # Compute the limiter
-        if limiter is None:
-            psi = 1.0 # numba type safeguard
+        psi = 1.0 # numba type safeguard
 
         # Determine upwind and downwind cells based on mass flux direction
         if mdot[f] >= 0:
@@ -45,7 +44,6 @@ def compute_convective_stencil(
             phi_W = 2 * phi_N - phi_P  # Linear extrapolation from N to W
             r = (phi_P - phi_N) / (phi_N - phi_W + 1e-12)
 
-        if limiter == "MUSCL":
             psi = MUSCL(r)
 
         # Apply the limiter to get high-order face value

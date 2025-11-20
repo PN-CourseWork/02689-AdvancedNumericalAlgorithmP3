@@ -3,7 +3,7 @@ from numba import njit
 
 from fv.discretization.convection.upwind import compute_convective_stencil
 
-@njit(cache=True, fastmath=True, nogil=True, parallel=False, boundscheck=False, error_model='numpy')
+#@njit()
 def assemble_diffusion_convection_matrix(
     mesh,
     mdot,
@@ -51,7 +51,7 @@ def assemble_diffusion_convection_matrix(
 
         # —— convection term (upwind) ——
         convFlux_P_f, convFlux_N_f, convDC = compute_convective_stencil(
-            f, mesh, rho, mdot, grad_phi, component_idx, phi, scheme=scheme, limiter=limiter
+            f, mesh, rho, mdot, grad_phi, component_idx, phi, scheme=scheme
         )
 
         # —— orthogonal diffusion (inlined for clarity) ——

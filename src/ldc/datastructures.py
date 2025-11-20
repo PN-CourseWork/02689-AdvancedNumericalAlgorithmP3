@@ -67,7 +67,7 @@ class Info:
 @dataclass
 class FVinfo(Info):
     """FV-specific metadata with discretization parameters."""
-    convection_scheme: str = "Upwind"
+    convection_scheme: str = "TVD"
     limiter: str = "MUSCL"
     alpha_uv: float = 0.6
     alpha_p: float = 0.4

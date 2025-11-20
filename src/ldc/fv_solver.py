@@ -70,7 +70,7 @@ class FVSolver(LidDrivenCavitySolver):
         self.arrays = FVSolverFields.allocate(n_cells, n_faces)
 
         # Linear solver settings
-        self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-6, 'max_iterations': 1000}
+        self.linear_solver_settings = {'type': 'bcgs', 'preconditioner': 'hypre', 'tolerance': 1e-8, 'max_iterations': 10000}
 
         # Cache commonly used values
         self.n_cells = n_cells
@@ -113,7 +113,7 @@ class FVSolver(LidDrivenCavitySolver):
         A.setdiag(relaxed_A_diag)
 
         # Solve
-        phi_star, *_ = scipy_solver(A, rhs, **self.linear_solver_settings)
+        phi_star = scipy_solver(A, rhs, **self.linear_solver_settings)
 
         return phi_star, A_diag
 
@@ -155,7 +155,7 @@ class FVSolver(LidDrivenCavitySolver):
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        p_prime, *_ = scipy_solver(A_p, rhs_p, remove_nullspace=True, **self.linear_solver_settings)
+        p_prime = scipy_solver(A_p, rhs_p, remove_nullspace=True, **self.linear_solver_settings)
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)
