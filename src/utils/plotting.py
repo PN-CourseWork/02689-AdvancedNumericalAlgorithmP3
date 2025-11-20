@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import pandas as pd  # noqa: F401 - re-exported for other modules
 import seaborn as sns
-import pandas as pd
 
 
 # ==============================================================================
@@ -25,7 +25,7 @@ import pandas as pd
 
 def _apply_styles():
     """Apply seaborn style and custom utils.mplstyle."""
-    # Set seaborn theme 
+    # Set seaborn theme
     sns.set_theme()
 
     # Then apply custom style on top

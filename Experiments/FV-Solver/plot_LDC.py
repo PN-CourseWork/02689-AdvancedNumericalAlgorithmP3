@@ -27,7 +27,7 @@ print(f"Loaded solution from: {data_dir / 'LDC_Re100.h5'}")
 # Visualize how the residual decreased during the SIMPLE iteration process.
 
 plotter.plot_convergence(output_path=fig_dir / "LDC_Re100_convergence.pdf")
-print(f"  ✓ Convergence plot saved")
+print("  ✓ Convergence plot saved")
 
 # %%
 # Velocity Fields
@@ -35,7 +35,7 @@ print(f"  ✓ Convergence plot saved")
 # Generate velocity vector field visualizations for the u and v components.
 
 plotter.plot_velocity_fields(output_path=fig_dir / "LDC_Re100_velocity.pdf")
-print(f"  ✓ Velocity field plots saved")
+print("  ✓ Velocity field plots saved")
 
 # %%
 # Pressure Field
@@ -43,7 +43,7 @@ print(f"  ✓ Velocity field plots saved")
 # Generate pressure contour visualization.
 
 plotter.plot_pressure(output_path=fig_dir / "LDC_Re100_pressure.pdf")
-print(f"  ✓ Pressure field plot saved")
+print("  ✓ Pressure field plot saved")
 
 # %%
 # Ghia Benchmark Validation
@@ -52,6 +52,6 @@ print(f"  ✓ Pressure field plot saved")
 
 validator = GhiaValidator(h5_path=data_dir / "LDC_Re100.h5")
 validator.plot_validation(output_path=fig_dir / "LDC_Re100_ghia_validation.pdf")
-print(f"  ✓ Ghia validation plot saved")
+print("  ✓ Ghia validation plot saved")
 
 print(f"\nAll figures saved to: {fig_dir}")

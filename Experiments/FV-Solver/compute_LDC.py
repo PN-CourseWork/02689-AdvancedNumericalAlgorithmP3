@@ -20,28 +20,31 @@ data_dir = project_root / "data" / "FV-Solver"
 data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
-    Re=100.0,       # Reynolds number
-    nx=32,          # Grid cells in x-direction
-    ny=32,          # Grid cells in y-direction
-    alpha_uv=0.6,   # Velocity under-relaxation factor
-    alpha_p=0.2     # Pressure under-relaxation factor
+    Re=100.0,  # Reynolds number
+    nx=16,  # Grid cells in x-direction
+    ny=16,  # Grid cells in y-direction
+    alpha_uv=0.7,  # Velocity under-relaxation factor
+    alpha_p=0.3,  # Pressure under-relaxation factor
+    convection_scheme="TVD",
 )
 
-print(f"Solver configured: Re={solver.Re}, Grid={solver.nx}x{solver.ny}")
+print(
+    f"Solver configured: Re={solver.config.Re}, Grid={solver.config.nx}x{solver.config.ny}"
+)
 
 # %%
 # Run SIMPLE Iteration
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-5, max_iter=500)
+solver.solve(tolerance=1e-5, max_iter=10000)
 
 # %%
 # Convergence Results
 # -------------------
 # Display convergence statistics from the SIMPLE iteration.
 
-print(f"\nSolution Status:")
+print("\nSolution Status:")
 print(f"  Converged: {solver.metadata.converged}")
 print(f"  Iterations: {solver.metadata.iterations}")
 print(f"  Final residual: {solver.metadata.final_residual:.6e}")

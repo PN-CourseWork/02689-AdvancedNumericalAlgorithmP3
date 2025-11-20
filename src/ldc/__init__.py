@@ -11,11 +11,25 @@ LidDrivenCavitySolver (abstract base - defines problem)
 """
 
 from .base_solver import LidDrivenCavitySolver
+from .datastructures import (
+    MetaConfig,
+    FVinfo,
+    SpectralInfo,
+    FVFields,
+    TimeSeries,
+)
 from .fv_solver import FVSolver
 
 __all__ = [
     # Base classes
     "LidDrivenCavitySolver",
+    # Configurations
+    "MetaConfig",
+    "FVinfo",
+    "SpectralInfo",
+    # Data structures
+    "FVFields",
+    "TimeSeries",
     # Concrete solvers
     "FVSolver",
 ]

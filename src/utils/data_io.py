@@ -50,21 +50,21 @@ def load_run_data(path: Union[str, Path]) -> pd.DataFrame:
     """
     path = Path(path)
 
-    with h5py.File(path, 'r') as f:
+    with h5py.File(path, "r") as f:
         # Load time-series data
-        residual = f['time_series/residual'][:]
+        residual = f["time_series/iter_residual"][:]
         n_iter = len(residual)
 
         # Start building DataFrame with time-series
         data = {
-            'iteration': np.arange(n_iter),
-            'residual': residual,
+            "iteration": np.arange(n_iter),
+            "residual": residual,
         }
 
         # Add other time-series if available
-        ts_group = f['time_series']
+        ts_group = f["time_series"]
         for key in ts_group.keys():
-            if key != 'residual':  # Already added
+            if key != "iter_residual":  # Already added
                 data[key] = ts_group[key][:]
 
         # Load metadata and broadcast to all rows
@@ -106,25 +106,27 @@ def load_fields(path: Union[str, Path]) -> pd.DataFrame:
     """
     path = Path(path)
 
-    with h5py.File(path, 'r') as f:
+    with h5py.File(path, "r") as f:
         # Load grid points
-        grid_points = f['grid_points'][:]
+        grid_points = f["grid_points"][:]
 
         # Load fields
-        u = f['fields/u'][:]
-        v = f['fields/v'][:]
-        p = f['fields/p'][:]
-        vel_mag = f['fields/velocity_magnitude'][:]
+        u = f["fields/u"][:]
+        v = f["fields/v"][:]
+        p = f["fields/p"][:]
+        vel_mag = f["fields/velocity_magnitude"][:]
 
         # Create DataFrame
-        df = pd.DataFrame({
-            'x': grid_points[:, 0],
-            'y': grid_points[:, 1],
-            'u': u,
-            'v': v,
-            'p': p,
-            'velocity_magnitude': vel_mag,
-        })
+        df = pd.DataFrame(
+            {
+                "x": grid_points[:, 0],
+                "y": grid_points[:, 1],
+                "u": u,
+                "v": v,
+                "p": p,
+                "velocity_magnitude": vel_mag,
+            }
+        )
 
     return df
 
@@ -150,14 +152,15 @@ def load_metadata(path: Union[str, Path]) -> Dict[str, Any]:
     """
     path = Path(path)
 
-    with h5py.File(path, 'r') as f:
+    with h5py.File(path, "r") as f:
         metadata = dict(f.attrs)
 
     return metadata
 
 
-def load_multiple_runs(paths: List[Union[str, Path]],
-                       labels: List[str] = None) -> pd.DataFrame:
+def load_multiple_runs(
+    paths: List[Union[str, Path]], labels: List[str] = None
+) -> pd.DataFrame:
     """Load multiple runs into single DataFrame for comparison.
 
     Parameters
@@ -186,7 +189,7 @@ def load_multiple_runs(paths: List[Union[str, Path]],
     dfs = []
     for path, label in zip(paths, labels):
         df = load_run_data(path)
-        df['run'] = label
+        df["run"] = label
         dfs.append(df)
 
     return pd.concat(dfs, ignore_index=True)

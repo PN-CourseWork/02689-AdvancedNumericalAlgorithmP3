@@ -77,7 +77,13 @@ sphinx_gallery_conf = {
     "notebook_images": False,  # Don't embed images in notebooks
     # Cross-referencing: Create "Examples using X" in API docs
     "backreferences_dir": "gen_modules/backreferences",
-    "doc_module": ("fv", "utils", "spectral", "meshing", "ldc"),  # Generate backreferences for our packages
+    "doc_module": (
+        "fv",
+        "utils",
+        "spectral",
+        "meshing",
+        "ldc",
+    ),  # Generate backreferences for our packages
     "inspect_global_variables": True,  # Detect classes/functions used in examples
     # Make code clickable: Link to API docs when code mentions package functions
     "reference_url": {
