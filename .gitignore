@@ -3,7 +3,7 @@
 figures/
 # Report 
 
-docs/reports/TexReport/
+#docs/reports/TexReport/
 
 
 # Generated data (keep README.md)

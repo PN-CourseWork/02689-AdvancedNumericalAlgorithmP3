@@ -8,7 +8,7 @@ Lid-Driven Cavity Flow: Finite Volume and Spectral Methods
 This documentation provides computational experiments, API reference, and implementation
 details for solving the lid-driven cavity problem using finite volume and spectral methods.
 
-For the full codebase, please visit the `GitHub repository <https://github.com/PN-CourseWork/02689-AdvancedNumericalAlgorithmP3>`.
+For the full codebase, please visit the `GitHub repository <https://github.com/PN-CourseWork/02689-AdvancedNumericalAlgorithmP3>`_.
 
 Contents
 --------
