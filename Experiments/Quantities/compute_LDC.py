@@ -65,8 +65,6 @@ print(f"ENERGY: {energy}")
 print(f"palinstrophy: {palinstropy}")
 print(f"enstrophy: {enstrophy}")
 
-
-
 #TODO: ASKE Plot them as a function of iterations
 # %%
 # Plot conserved quantities vs iteration
@@ -82,7 +80,7 @@ def plot_ldc_timeseries(solver, savepath: str | Path | None = None, show: bool =
     Parameters
     ----------
     solver : solver instance
-        Expects solver.time_series with attributes `energy`, `enstrophy`, `palinstropy`
+        Expects solver.time_series with attributes energy, enstrophy, palinstropy
         which are lists (or arrays) collected in the solve() loop.
     savepath : str | Path | None
         If provided, save the figure to this path (PNG).
