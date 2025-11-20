@@ -155,8 +155,9 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
+        rhs_p[0] = 0.0
 
-        p_prime = scipy_solver(A_p, rhs_p, remove_nullspace=True)
+        p_prime = scipy_solver(A_p, rhs_p)
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)

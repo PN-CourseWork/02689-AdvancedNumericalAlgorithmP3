@@ -4,13 +4,13 @@ from numba import njit
 @njit()
 def assemble_pressure_correction_matrix(mesh, rho):
     """
-    Assemble pressure correction equation matrix.
+    Assemble pressure correction equation matrix with node 0 pinned.
     Optimized for memory access patterns with pre-fetched static data.
     """
     n_internal = mesh.internal_faces.shape[0]
 
-    # Pessimistic non-zero count 
-    max_nnz = 4 * n_internal  
+    # Pessimistic non-zero count (extra space for pinning)
+    max_nnz = 4 * n_internal + 1
     row = np.zeros(max_nnz, dtype=np.int64)
     col = np.zeros(max_nnz, dtype=np.int64)
     data = np.zeros(max_nnz, dtype=np.float64)
@@ -30,6 +30,10 @@ def assemble_pressure_correction_matrix(mesh, rho):
         P = owner_cells[f]
         N = neighbor_cells[f]
 
+        # Skip entries involving node 0 (will be pinned)
+        if P == 0 or N == 0:
+            continue
+
         # Pre-fetch vector components
         E_f = vector_E_f[f]
         d_CE = vector_d_CE[f]
@@ -46,6 +50,12 @@ def assemble_pressure_correction_matrix(mesh, rho):
         row[idx] = P; col[idx] = N; data[idx] = -D_f; idx += 1
         row[idx] = N; col[idx] = N; data[idx] = D_f; idx += 1
         row[idx] = N; col[idx] = P; data[idx] = -D_f; idx += 1
+
+    # Pin node 0: p'_0 = 0
+    row[idx] = 0
+    col[idx] = 0
+    data[idx] = 1.0
+    idx += 1
 
     return row[:idx], col[:idx], data[:idx]
 
