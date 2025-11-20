@@ -155,6 +155,12 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
+
+        # Pin node 0 to remove nullspace: set row 0 to identity
+        A_p = A_p.tolil()
+        A_p[0, :] = 0.0
+        A_p[0, 0] = 1.0
+        A_p = A_p.tocsr()
         rhs_p[0] = 0.0
 
         p_prime = scipy_solver(A_p, rhs_p)
