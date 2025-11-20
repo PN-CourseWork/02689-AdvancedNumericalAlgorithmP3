@@ -65,7 +65,7 @@ class LidDrivenCavitySolver(ABC):
         """
         pass
 
-    def _store_results(self, residual_history, final_iter_count, is_converged):
+    def _store_results(self, residual_history, final_iter_count, is_converged, energy, enstrophy, palinstropy):
         """Store solve results in self.fields, self.time_series, and self.metadata."""
         # Extract residuals
         u_residuals = [r["u"] for r in residual_history]
@@ -78,6 +78,9 @@ class LidDrivenCavitySolver(ABC):
             u_residual=u_residuals,
             v_residual=v_residuals,
             continuity_residual=[],
+            energy= energy,
+            enstrophy= enstrophy,
+            palinstropy= palinstropy,
         )
 
         # Update metadata with convergence info
@@ -120,6 +123,11 @@ class LidDrivenCavitySolver(ABC):
 
         # Residual history
         residual_history = []
+        # Quantities
+        energy = []
+        palinstropy = []
+        enstrophy = []
+            
 
         time_start = time.time()
         final_iter_count = 0
@@ -149,6 +157,13 @@ class LidDrivenCavitySolver(ABC):
             u_prev = self.fields.u.copy()
             v_prev = self.fields.v.copy()
 
+            # ========================================================
+            # Calculate quantities
+            # ========================================================
+            energy.append(self._calculate_energy())
+            enstrophy.append(self._calculate_enstrophy())
+            palinstropy.append(self._calculate_palinstropy())
+
             # Check convergence (only after warmup period)
             if i >= 10:
                 is_converged = (u_residual < tolerance) and (v_residual < tolerance)
@@ -166,7 +181,7 @@ class LidDrivenCavitySolver(ABC):
         print(f"Solver finished in {time_end - time_start:.2f} seconds.")
 
         # Store results
-        self._store_results(residual_history, final_iter_count, is_converged)
+        self._store_results(residual_history, final_iter_count, is_converged, energy, enstrophy, palinstropy)
 
     def save(self, filepath):
         """Save results to HDF5 file.
@@ -222,3 +237,11 @@ class LidDrivenCavitySolver(ABC):
                 for key, val in time_series_dict.items():
                     if val is not None:
                         ts_grp.create_dataset(key, data=val)
+
+    def _calculate_enstrophy(self): 
+        return 0.0
+
+    def _calculate_palinstropy(self): 
+        return 0.0
+    def _calculate_energy(self):
+        return 0.0

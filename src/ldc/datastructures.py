@@ -4,7 +4,7 @@ This module defines the configuration and result data structures
 for lid-driven cavity solvers (both FV and spectral).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 
 import numpy as np
@@ -33,10 +33,17 @@ class Fields:
 class TimeSeries:
     """Time series data common to all solvers."""
 
-    iter_residual: List[float]
-    u_residual: List[float]
-    v_residual: List[float]
-    continuity_residual: Optional[List[float]]
+    iter_residual: List[float] = field(default_factory=list)
+    u_residual: List[float] = field(default_factory=list)
+    v_residual: List[float] = field(default_factory=list)
+    continuity_residual: Optional[List[float]] = field(default_factory=list)
+
+    # Quantities
+    energy: Optional[List[float]] = field(default_factory=list)
+    enstrophy: Optional[List[float]] = field(default_factory=list)
+    palinstropy: Optional[List[float]] = field(default_factory=list)
+
+
     # TODO: Add the quantities stuff from the paper
 
 
