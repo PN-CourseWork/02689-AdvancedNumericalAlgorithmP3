@@ -68,6 +68,10 @@ class FVSolver(LidDrivenCavitySolver):
         # Allocate all solver arrays
         self.fields = FVFields.allocate(n_cells, n_faces)
 
+        # Populate grid coordinates from mesh
+        self.fields.x = self.mesh.cell_centers[:, 0]
+        self.fields.y = self.mesh.cell_centers[:, 1]
+        self.fields.grid_points = self.mesh.cell_centers.copy()
 
         # Cache commonly used values
         self.n_cells = n_cells
