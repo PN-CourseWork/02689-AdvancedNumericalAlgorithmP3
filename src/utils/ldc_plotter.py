@@ -1,9 +1,6 @@
 """LDC results plotter for single and multiple runs."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -46,8 +43,14 @@ class LDCPlotter:
     ... ])
     """
 
-    def __init__(self, runs: dict | str | Path | list):
-        """Initialize plotter and load data as DataFrames."""
+    def __init__(self, runs):
+        """Initialize plotter and load data as DataFrames.
+
+        Parameters
+        ----------
+        runs : dict, str, Path, or list
+            Single run or list of runs to load.
+        """
         # Normalize to list
         if not isinstance(runs, list):
             runs = [runs]
@@ -90,12 +93,12 @@ class LDCPlotter:
         if self.metadata['run'].nunique() > 1:
             raise ValueError("Field plotting only available for single run.")
 
-    def plot_convergence(self, output_path: Optional[Path | str] = None):
+    def plot_convergence(self, output_path=None):
         """Plot convergence history using seaborn.
 
         Parameters
         ----------
-        output_path : Path or str, optional
+        output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
         """
         n_runs = self.metadata['run'].nunique()
@@ -127,14 +130,14 @@ class LDCPlotter:
             g.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Convergence plot saved to: {output_path}")
 
-    def plot_velocity_fields(self, output_path: Optional[Path | str] = None):
+    def plot_velocity_fields(self, output_path=None):
         """Plot velocity components (u and v) using matplotlib tricontourf.
 
         Only available for single-run plotting.
 
         Parameters
         ----------
-        output_path : Path or str, optional
+        output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
         """
         self._require_single_run()
@@ -171,14 +174,14 @@ class LDCPlotter:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Velocity fields plot saved to: {output_path}")
 
-    def plot_pressure(self, output_path: Optional[Path | str] = None):
+    def plot_pressure(self, output_path=None):
         """Plot pressure field using matplotlib tricontourf.
 
         Only available for single-run plotting.
 
         Parameters
         ----------
-        output_path : Path or str, optional
+        output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
         """
         self._require_single_run()
@@ -201,14 +204,14 @@ class LDCPlotter:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Pressure plot saved to: {output_path}")
 
-    def plot_velocity_magnitude(self, output_path: Optional[Path | str] = None):
+    def plot_velocity_magnitude(self, output_path=None):
         """Plot velocity magnitude with streamlines.
 
         Only available for single-run plotting.
 
         Parameters
         ----------
-        output_path : Path or str, optional
+        output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
         """
         from scipy.interpolate import griddata

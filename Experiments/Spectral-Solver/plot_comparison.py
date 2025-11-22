@@ -63,3 +63,31 @@ print(f"  ✓ Legendre convergence saved")
 plotter_cheb.plot_convergence(output_path=fig_dir / f"chebyshev_convergence_{Re_str}.pdf")
 print(f"  ✓ Chebyshev convergence saved")
 
+# %%
+# Legendre Field Plots
+# --------------------
+# Velocity fields, pressure, and velocity magnitude with streamlines
+
+plotter_leg.plot_velocity_fields(output_path=fig_dir / f"legendre_velocity_fields_{Re_str}.pdf")
+print(f"  ✓ Legendre velocity fields saved")
+
+plotter_leg.plot_pressure(output_path=fig_dir / f"legendre_pressure_{Re_str}.pdf")
+print(f"  ✓ Legendre pressure saved")
+
+plotter_leg.plot_velocity_magnitude(output_path=fig_dir / f"legendre_velocity_magnitude_{Re_str}.pdf")
+print(f"  ✓ Legendre velocity magnitude saved")
+
+# %%
+# Chebyshev Field Plots
+# ---------------------
+# Velocity fields, pressure, and velocity magnitude with streamlines
+
+plotter_cheb.plot_velocity_fields(output_path=fig_dir / f"chebyshev_velocity_fields_{Re_str}.pdf")
+print(f"  ✓ Chebyshev velocity fields saved")
+
+plotter_cheb.plot_pressure(output_path=fig_dir / f"chebyshev_pressure_{Re_str}.pdf")
+print(f"  ✓ Chebyshev pressure saved")
+
+plotter_cheb.plot_velocity_magnitude(output_path=fig_dir / f"chebyshev_velocity_magnitude_{Re_str}.pdf")
+print(f"  ✓ Chebyshev velocity magnitude saved")
+

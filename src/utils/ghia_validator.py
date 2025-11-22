@@ -1,9 +1,6 @@
 """Ghia benchmark validator for lid-driven cavity simulations."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from scipy.interpolate import RectBivariateSpline, interp1d
@@ -18,12 +15,14 @@ class GhiaValidator:
 
     Parameters
     ----------
-    h5_path : Path or str
+    h5_path : str or Path
         Path to HDF5 file with solution fields.
     Re : float, optional
         Reynolds number (inferred from file if not provided).
-    validation_data_dir : Path or str, optional
+    validation_data_dir : str or Path, optional
         Directory containing Ghia CSV files. If None, uses default location.
+    method_label : str, optional
+        Label for this method (for multi-method comparisons). Defaults to filename stem.
 
     Attributes
     ----------
@@ -33,18 +32,28 @@ class GhiaValidator:
         Ghia benchmark u-velocity data
     ghia_v : pd.DataFrame
         Ghia benchmark v-velocity data
+    Re : float
+        Reynolds number
+    method_label : str
+        Method label for plotting
     """
 
     AVAILABLE_RE = [100, 400, 1000, 3200, 5000, 7500, 10000]
 
-    def __init__(
-        self,
-        h5_path: Path | str,
-        Re: Optional[float] = None,
-        validation_data_dir: Optional[Path | str] = None,
-        method_label: Optional[str] = None,
-    ):
-        """Initialize validator and load data as DataFrames."""
+    def __init__(self, h5_path, Re=None, validation_data_dir=None, method_label=None):
+        """Initialize validator and load data as DataFrames.
+
+        Parameters
+        ----------
+        h5_path : str or Path
+            Path to HDF5 file with solution fields.
+        Re : float, optional
+            Reynolds number (inferred from file if not provided).
+        validation_data_dir : str or Path, optional
+            Directory containing Ghia CSV files. If None, uses default location.
+        method_label : str, optional
+            Label for this method (for multi-method comparisons).
+        """
         self.h5_path = Path(h5_path)
 
         # Load DataFrames from HDF5
@@ -86,7 +95,7 @@ class GhiaValidator:
         self.ghia_u = pd.read_csv(u_file)
         self.ghia_v = pd.read_csv(v_file)
 
-    def _extract_centerline(self, field: str, centerline_axis: str):
+    def _extract_centerline(self, field, centerline_axis):
         """Extract velocity along centerline using interpolation.
 
         Parameters
@@ -246,10 +255,7 @@ class GhiaValidator:
         print("="*70 + "\n")
 
 
-def plot_validation(
-    validators: GhiaValidator | list[GhiaValidator],
-    output_path: Optional[Path | str] = None
-):
+def plot_validation(validators, output_path=None):
     """Plot validation against Ghia benchmark using seaborn.
 
     Handles both single and multiple methods automatically.
@@ -258,7 +264,7 @@ def plot_validation(
     ----------
     validators : GhiaValidator or list of GhiaValidator
         Single validator or list of validators to compare (must all have same Re)
-    output_path : Path or str, optional
+    output_path : str or Path, optional
         Path to save figure. If None, figure is not saved.
     """
     import seaborn as sns
