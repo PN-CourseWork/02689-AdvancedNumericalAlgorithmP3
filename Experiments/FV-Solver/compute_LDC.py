@@ -51,7 +51,9 @@ print(f"  Final residual: {solver.metadata.final_residual:.6e}")
 # -------------
 # Export the complete solution (velocity, pressure fields, and metadata) to HDF5.
 
-output_file = data_dir / "LDC_Re100.h5"
+N = solver.config.nx  # Number of grid cells
+Re = int(solver.config.Re)
+output_file = data_dir / f"LDC_N{N}_Re{Re}.h5"
 solver.save(output_file)
 
 print(f"\nResults saved to: {output_file}")

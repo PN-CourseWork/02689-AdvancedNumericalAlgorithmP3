@@ -13,6 +13,7 @@ from pathlib import Path
 
 # Configuration
 Re = 100
+N = 16  # Grid size (number of nodes)
 Re_str = f"Re{int(Re)}"
 
 project_root = get_project_root()
@@ -21,8 +22,8 @@ fig_dir = project_root / "figures" / "Spectral-Solver"
 fig_dir.mkdir(parents=True, exist_ok=True)
 
 # File paths
-legendre_path = data_dir / f"LDC_Spectral_{Re_str}.h5"
-chebyshev_path = data_dir / f"LDC_Spectral_Chebyshev_{Re_str}.h5"
+legendre_path = data_dir / "Legendre" / f"LDC_N{N}_{Re_str}.h5"
+chebyshev_path = data_dir / "Chebyshev" / f"LDC_N{N}_{Re_str}.h5"
 
 # Validate paths exist
 if not legendre_path.exists():

@@ -15,7 +15,7 @@ from ldc import SpectralSolver
 from utils import get_project_root
 
 project_root = get_project_root()
-data_dir = project_root / "data" / "Spectral-Solver"
+data_dir = project_root / "data" / "Spectral-Solver" / "Legendre"
 data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = SpectralSolver(
@@ -56,7 +56,9 @@ if solver.config.final_residual is not None:
 # -------------
 # Export the complete solution (velocity, pressure fields, and metadata) to HDF5.
 
-output_file = data_dir / "LDC_Spectral_Re100.h5"
+N = solver.config.Nx + 1  # Number of nodes
+Re = int(solver.config.Re)
+output_file = data_dir / f"LDC_N{N}_Re{Re}.h5"
 solver.save(output_file)
 
 print(f"\nResults saved to: {output_file}")

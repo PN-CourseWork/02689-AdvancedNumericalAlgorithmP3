@@ -11,47 +11,70 @@ the results against the benchmark data from Ghia et al. (1982).
 # -------------------
 # Import visualization utilities and load the computed solution from HDF5 file.
 
-from utils import get_project_root, LDCPlotter, GhiaValidator
+from utils import get_project_root, LDCPlotter, GhiaValidator, plot_validation
+
+# Configuration
+Re = 100
+N = 32  # Grid size (number of cells)
+Re_str = f"Re{int(Re)}"
 
 project_root = get_project_root()
 data_dir = project_root / "data" / "FV-Solver"
 fig_dir = project_root / "figures" / "FV-Solver"
 fig_dir.mkdir(parents=True, exist_ok=True)
 
-plotter = LDCPlotter(data_dir / "LDC_Re100.h5")
-print(f"Loaded solution from: {data_dir / 'LDC_Re100.h5'}")
+# File path
+solution_path = data_dir / f"LDC_N{N}_{Re_str}.h5"
 
-# %%
-# Convergence History
-# -------------------
-# Visualize how the residual decreased during the SIMPLE iteration process.
+# Validate path exists
+if not solution_path.exists():
+    raise FileNotFoundError(f"Solution not found: {solution_path}")
 
-plotter.plot_convergence(output_path=fig_dir / "LDC_Re100_convergence.pdf")
-print("  ✓ Convergence plot saved")
+# Load solution
+plotter = LDCPlotter(solution_path)
+validator = GhiaValidator(solution_path, Re=Re, method_label='FV-SIMPLE')
 
-# %%
-# Velocity Fields
-# ---------------
-# Generate velocity vector field visualizations for the u and v components.
-
-plotter.plot_velocity_fields(output_path=fig_dir / "LDC_Re100_velocity.pdf")
-print("  ✓ Velocity field plots saved")
-
-# %%
-# Pressure Field
-# --------------
-# Generate pressure contour visualization.
-
-plotter.plot_pressure(output_path=fig_dir / "LDC_Re100_pressure.pdf")
-print("  ✓ Pressure field plot saved")
+print(f"Loaded solution: {solution_path.name}")
 
 # %%
 # Ghia Benchmark Validation
 # --------------------------
 # Compare computed velocity profiles with the Ghia et al. (1982) benchmark data.
 
-validator = GhiaValidator(h5_path=data_dir / "LDC_Re100.h5")
-validator.plot_validation(output_path=fig_dir / "LDC_Re100_ghia_validation.pdf")
-print("  ✓ Ghia validation plot saved")
+plot_validation(
+    validator,
+    output_path=fig_dir / f"ghia_validation_{Re_str}.pdf"
+)
+print(f"  ✓ Ghia validation saved")
 
-print(f"\nAll figures saved to: {fig_dir}")
+# %%
+# Convergence History
+# -------------------
+# Visualize how the residual decreased during the SIMPLE iteration process.
+
+plotter.plot_convergence(output_path=fig_dir / f"convergence_{Re_str}.pdf")
+print(f"  ✓ Convergence saved")
+
+# %%
+# Velocity Fields
+# ---------------
+# Generate velocity vector field visualizations for the u and v components.
+
+plotter.plot_velocity_fields(output_path=fig_dir / f"velocity_fields_{Re_str}.pdf")
+print(f"  ✓ Velocity fields saved")
+
+# %%
+# Pressure Field
+# --------------
+# Generate pressure contour visualization.
+
+plotter.plot_pressure(output_path=fig_dir / f"pressure_{Re_str}.pdf")
+print(f"  ✓ Pressure saved")
+
+# %%
+# Velocity Magnitude with Streamlines
+# ------------------------------------
+# Velocity magnitude with streamlines overlaid
+
+plotter.plot_velocity_magnitude(output_path=fig_dir / f"velocity_magnitude_{Re_str}.pdf")
+print(f"  ✓ Velocity magnitude saved")
