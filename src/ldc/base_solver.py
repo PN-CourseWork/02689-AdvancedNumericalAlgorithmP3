@@ -1,4 +1,16 @@
 """Abstract base solver for lid-driven cavity problem."""
+# --- Force project root onto sys.path so "ldc" is importable when run directly ---
+import sys
+from pathlib import Path
+
+# Path to: <project-root>/src
+PROJECT_ROOT = Path(__file__).resolve().parents[2]   # go from src/ldc/base_solver.py to project root
+SRC_PATH = PROJECT_ROOT / "src"
+
+# Insert only if not present (avoid duplicates)
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+# -------------------------------------------------------------------------------
 
 from abc import ABC, abstractmethod
 import numpy as np
