@@ -12,6 +12,7 @@ from .datastructures import FVinfo, FVResultFields, FVSolverFields
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
+from fv.linear_solvers.petsc_solver import petsc_solver
 from fv.linear_solvers.scipy_solver import scipy_solver
 from fv.assembly.rhie_chow import mdot_calculation, rhie_chow_velocity
 from fv.assembly.pressure_correction_eq_assembly import assemble_pressure_correction_matrix
@@ -72,7 +73,7 @@ class FVSolver(LidDrivenCavitySolver):
         # Cache commonly used values
         self.n_cells = n_cells
 
-    def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component):
+    def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, ksp):
         """Solve a single momentum equation (u or v).
 
         Parameters
@@ -87,6 +88,8 @@ class FVSolver(LidDrivenCavitySolver):
             Previous iteration velocity component
         grad_p_component : ndarray
             Pressure gradient component (x or y)
+        ksp : PETSc.KSP or None
+            Reusable KSP solver object (updated in-place)
 
         Returns
         -------
@@ -94,6 +97,8 @@ class FVSolver(LidDrivenCavitySolver):
             Predicted velocity component
         A_diag : ndarray
             Diagonal of momentum matrix (needed for pressure correction)
+        ksp : PETSc.KSP
+            Updated KSP solver object for reuse
         """
         # Assemble momentum equation
         row, col, data, b = assemble_diffusion_convection_matrix(
@@ -109,10 +114,21 @@ class FVSolver(LidDrivenCavitySolver):
         relaxed_A_diag, rhs = relax_momentum_equation(rhs, A_diag, phi_prev_iter, self.config.alpha_uv)
         A.setdiag(relaxed_A_diag)
 
-        # Solve
-        phi_star = scipy_solver(A, rhs)
+        # Solve with selected linear solver
+        if self.config.linear_solver == "petsc":
+            phi_star, ksp = petsc_solver(
+                A, rhs, ksp=ksp,
+                tolerance=1e-6,
+                solver_type="bcgs",
+                preconditioner="gamg"
+            )
+        elif self.config.linear_solver == "scipy":
+            phi_star = scipy_solver(A, rhs)
+            ksp = None  # SciPy doesn't use KSP objects
+        else:
+            raise ValueError(f"Unknown linear_solver: {self.config.linear_solver}. Use 'petsc' or 'scipy'.")
 
-        return phi_star, A_diag
+        return phi_star, A_diag, ksp
 
     def step(self):
         """Perform one SIMPLE iteration.
@@ -136,9 +152,13 @@ class FVSolver(LidDrivenCavitySolver):
         compute_cell_gradients_structured(self.mesh, a.u_prev, use_limiter=True, out=a.grad_u)
         compute_cell_gradients_structured(self.mesh, a.v_prev, use_limiter=True, out=a.grad_v)
 
-        # Solve momentum equations
-        u_star, A_u_diag = self._solve_momentum_equation(0, a.u_prev, a.grad_u, a.u_prev, a.grad_p[:, 0])
-        v_star, A_v_diag = self._solve_momentum_equation(1, a.v_prev, a.grad_v, a.v_prev, a.grad_p[:, 1])
+        # Solve momentum equations (reuse KSP objects)
+        u_star, A_u_diag, a.ksp_u = self._solve_momentum_equation(
+            0, a.u_prev, a.grad_u, a.u_prev, a.grad_p[:, 0], a.ksp_u
+        )
+        v_star, A_v_diag, a.ksp_v = self._solve_momentum_equation(
+            1, a.v_prev, a.grad_v, a.v_prev, a.grad_p[:, 1], a.ksp_v
+        )
 
         # Pressure correction - reuse buffers
         bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag, out=a.bold_D)
@@ -150,24 +170,29 @@ class FVSolver(LidDrivenCavitySolver):
 
         # Assemble pressure correction matrix
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
-
-        # Pin node 0 to remove nullspace (efficiently in COO format)
-        # Remove all entries in row 0
-        mask = row != 0
-        row_pinned = row[mask]
-        col_pinned = col[mask]
-        data_pinned = data[mask]
-
-        # Add identity for node 0
-        row_pinned = np.append(row_pinned, 0)
-        col_pinned = np.append(col_pinned, 0)
-        data_pinned = np.append(data_pinned, 1.0)
-
-        A_p = csr_matrix((data_pinned, (row_pinned, col_pinned)), shape=(self.n_cells, self.n_cells))
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
-        rhs_p[0] = 0.0
 
-        p_prime = scipy_solver(A_p, rhs_p, use_cg=False)
+        # Solve pressure correction
+        if self.config.linear_solver == "petsc":
+            # PETSc handles nullspace internally - no need to manually pin nodes
+            A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
+            p_prime, a.ksp_p = petsc_solver(
+                A_p, rhs_p, ksp=a.ksp_p,
+                tolerance=1e-6,
+                solver_type="bcgs",
+                preconditioner="gamg",
+                remove_nullspace=True
+            )
+        elif self.config.linear_solver == "scipy":
+            # Manually pin node 0 to remove nullspace (efficiently in COO format)
+            mask = row != 0
+            row_pinned = np.append(row[mask], 0)
+            col_pinned = np.append(col[mask], 0)
+            data_pinned = np.append(data[mask], 1.0)
+            A_p = csr_matrix((data_pinned, (row_pinned, col_pinned)), shape=(self.n_cells, self.n_cells))
+            rhs_p[0] = 0.0
+            p_prime = scipy_solver(A_p, rhs_p, use_cg=False)
+            a.ksp_p = None
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)

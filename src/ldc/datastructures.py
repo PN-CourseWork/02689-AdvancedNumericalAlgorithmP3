@@ -133,6 +133,7 @@ class FVinfo(MetaConfig):
     limiter: str = "MUSCL"
     alpha_uv: float = 0.6
     alpha_p: float = 0.4
+    linear_solver: str = "petsc"  # "petsc" (fast, with preconditioner) or "scipy" (slower, no preconditioner)
 
 
 @dataclass
@@ -172,6 +173,11 @@ class FVSolverFields:
     v_prime: np.ndarray
     mdot_star: np.ndarray
     mdot_prime: np.ndarray
+
+    # PETSc KSP objects for solver reuse (optional, None if using SciPy)
+    ksp_u: object = None
+    ksp_v: object = None
+    ksp_p: object = None
 
     @classmethod
     def allocate(cls, n_cells: int, n_faces: int):

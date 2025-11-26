@@ -26,18 +26,21 @@ solver = FVSolver(
     alpha_uv=0.7,            # Velocity under-relaxation factor
     alpha_p=0.3,             # Pressure under-relaxation factor
     convection_scheme="TVD", # Use TVD scheme with MUSCL limiter (higher-order, less diffusive)
-    limiter="MUSCL"          # MUSCL limiter for TVD scheme
+    limiter="MUSCL",         # MUSCL limiter for TVD scheme
+    linear_solver="petsc"    # Use PETSc with GAMG preconditioner (fast!) - or "scipy" for SciPy BiCGSTAB (slower)
 )
 
 print(f"Solver configured: Re={solver.config.Re}, Grid={solver.config.nx}x{solver.config.ny}")
 print(f"  Convection scheme: {solver.config.convection_scheme} with {solver.config.limiter} limiter")
+print(f"  Linear solver: {solver.config.linear_solver.upper()}" +
+      (" (PETSc BiCGSTAB + GAMG preconditioner)" if solver.config.linear_solver == "petsc" else " (SciPy BiCGSTAB, no preconditioner)"))
 
 # %%
 # Run SIMPLE Iteration
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-7, max_iter=4000)
+solver.solve(tolerance=1e-7, max_iter=50000)
 
 # %%
 # Convergence Results
