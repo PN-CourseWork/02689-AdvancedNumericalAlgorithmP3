@@ -6,6 +6,18 @@ def assemble_pressure_correction_matrix(mesh, rho):
     """
     Assemble pressure correction equation matrix.
     Optimized for memory access patterns with pre-fetched static data.
+
+    Parameters
+    ----------
+    mesh : Mesh
+        The mesh structure
+    rho : float
+        Density
+
+    Returns
+    -------
+    row, col, data : ndarray
+        COO format arrays for sparse matrix construction
     """
     n_internal = mesh.internal_faces.shape[0]
 

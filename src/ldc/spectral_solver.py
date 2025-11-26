@@ -372,3 +372,44 @@ class SpectralSolver(LidDrivenCavitySolver):
             u_prev=self.arrays.u_prev,
             v_prev=self.arrays.v_prev,
         )
+
+    def _compute_derivatives(self):
+        """Compute velocity and pressure derivatives using spectral differentiation.
+
+        Returns
+        -------
+        dict
+            Dictionary with velocity/pressure derivatives and Laplacians.
+        """
+        # Compute velocity derivatives using spectral differentiation matrices
+        du_dx = self.Dx @ self.arrays.u
+        du_dy = self.Dy @ self.arrays.u
+        dv_dx = self.Dx @ self.arrays.v
+        dv_dy = self.Dy @ self.arrays.v
+
+        # Compute velocity Laplacians
+        lap_u = self.Laplacian @ self.arrays.u
+        lap_v = self.Laplacian @ self.arrays.v
+
+        # Compute pressure gradient and interpolate to full grid
+        # Pressure lives on inner grid for PN-PN-2
+        dp_dx_inner = self.Dx_inner @ self.arrays.p
+        dp_dy_inner = self.Dy_inner @ self.arrays.p
+
+        # Interpolate pressure gradient from inner to full grid
+        dp_dx_inner_2d = dp_dx_inner.reshape(self.shape_inner)
+        dp_dy_inner_2d = dp_dy_inner.reshape(self.shape_inner)
+
+        dp_dx_full_2d = self._extrapolate_to_full_grid(dp_dx_inner_2d)
+        dp_dy_full_2d = self._extrapolate_to_full_grid(dp_dy_inner_2d)
+
+        return {
+            'du_dx': du_dx,
+            'du_dy': du_dy,
+            'dv_dx': dv_dx,
+            'dv_dy': dv_dy,
+            'dp_dx': dp_dx_full_2d.ravel(),
+            'dp_dy': dp_dy_full_2d.ravel(),
+            'lap_u': lap_u,
+            'lap_v': lap_v
+        }

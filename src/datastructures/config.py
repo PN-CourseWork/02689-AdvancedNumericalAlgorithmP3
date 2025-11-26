@@ -1,5 +1,6 @@
 """Configuration and metadata data structures."""
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import pandas as pd
 
 
 @dataclass
@@ -54,6 +55,16 @@ class Info:
     iterations: int = None
     converged: bool = False
     final_residual: float = None
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert config/metadata to single-row DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+            Single-row DataFrame with all configuration and metadata fields.
+        """
+        return pd.DataFrame([asdict(self)])
 
 
 @dataclass

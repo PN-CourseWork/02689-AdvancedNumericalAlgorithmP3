@@ -15,16 +15,16 @@ from ldc import SpectralSolver
 from utils import get_project_root
 
 project_root = get_project_root()
-data_dir = project_root / "data" / "Spectral-Solver"
+data_dir = project_root / "data" / "Spectral-Solver" / "Chebyshev"
 data_dir.mkdir(parents=True, exist_ok=True)
-N = 15
+N = 19  # Polynomial order (nodes = N+1 = 16)
 
 solver = SpectralSolver(
     Re=100.0,            # Reynolds number
     Nx=N,               # Polynomial order in x (nodes = Nx+1 = 16)
     Ny=N,               # Polynomial order in y (nodes = Ny+1 = 16)
     basis_type="chebyshev",  # Use Chebyshev-Gauss-Lobatto (Zhang et al. 2010)
-    CFL=0.90,            # CFL number for adaptive time stepping
+    CFL=0.70,            # CFL number for adaptive time stepping
     beta_squared=5.0,    # Artificial compressibility coefficient
     corner_smoothing=0.15 # Lid velocity smoothing near corners
 )
@@ -36,7 +36,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Run Pseudo Time-Stepping
 # -------------------------
 
-solver.solve(tolerance=1e-5, max_iter=60000)
+solver.solve(tolerance=1e-8, max_iter=80000)
 
 # %%
 # Convergence Results
@@ -53,7 +53,9 @@ if solver.config.final_residual is not None:
 # Save Solution
 # -------------
 
-output_file = data_dir / "LDC_Spectral_Chebyshev_Re100.h5"
+N = solver.config.Nx + 1  # Number of nodes
+Re = int(solver.config.Re)
+output_file = data_dir / f"LDC_N{N}_Re{Re}.h5"
 solver.save(output_file)
 
 print(f"\nResults saved to: {output_file}")

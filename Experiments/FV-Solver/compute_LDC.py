@@ -20,21 +20,27 @@ data_dir = project_root / "data" / "FV-Solver"
 data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
-    Re=100.0,       # Reynolds number
-    nx=32,          # Grid cells in x-direction
-    ny=32,          # Grid cells in y-direction
-    alpha_uv=0.6,   # Velocity under-relaxation factor
-    alpha_p=0.2     # Pressure under-relaxation factor
+    Re=100.0,                # Reynolds number
+    nx=64,                   # Grid cells in x-direction
+    ny=64,                   # Grid cells in y-direction
+    alpha_uv=0.7,            # Velocity under-relaxation factor
+    alpha_p=0.3,             # Pressure under-relaxation factor
+    convection_scheme="TVD", # Use TVD scheme with MUSCL limiter (higher-order, less diffusive)
+    limiter="MUSCL",         # MUSCL limiter for TVD scheme
+    linear_solver="petsc"    # Use PETSc with GAMG preconditioner (fast!) - or "scipy" for SciPy BiCGSTAB (slower)
 )
 
 print(f"Solver configured: Re={solver.config.Re}, Grid={solver.config.nx}x{solver.config.ny}")
+print(f"  Convection scheme: {solver.config.convection_scheme} with {solver.config.limiter} limiter")
+print(f"  Linear solver: {solver.config.linear_solver.upper()}" +
+      (" (PETSc BiCGSTAB + GAMG preconditioner)" if solver.config.linear_solver == "petsc" else " (SciPy BiCGSTAB, no preconditioner)"))
 
 # %%
 # Run SIMPLE Iteration
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-5, max_iter=10000)
+solver.solve(tolerance=1e-7, max_iter=50000)
 
 # %%
 # Convergence Results
@@ -51,7 +57,9 @@ print(f"  Final residual: {solver.metadata.final_residual:.6e}")
 # -------------
 # Export the complete solution (velocity, pressure fields, and metadata) to HDF5.
 
-output_file = data_dir / "LDC_Re100.h5"
+N = solver.config.nx  # Number of grid cells
+Re = int(solver.config.Re)
+output_file = data_dir / f"LDC_N{N}_Re{Re}.h5"
 solver.save(output_file)
 
 print(f"\nResults saved to: {output_file}")

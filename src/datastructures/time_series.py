@@ -1,6 +1,7 @@
 """Time series data structures."""
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List
+import pandas as pd
 
 
 @dataclass
@@ -23,3 +24,14 @@ class TimeSeries:
     v_residual: List[float] = None
     continuity_residual: List[float] = None
     #TODO: Add the quantities stuff from the paper
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert time series to DataFrame for analysis and plotting.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns for each residual type.
+            Index represents iteration number.
+        """
+        return pd.DataFrame(asdict(self))

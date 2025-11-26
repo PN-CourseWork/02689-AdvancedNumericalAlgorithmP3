@@ -1,6 +1,7 @@
 """Field data structures for solver results."""
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import numpy as np
+import pandas as pd
 
 
 @dataclass
@@ -28,6 +29,21 @@ class Fields:
     x: np.ndarray
     y: np.ndarray
     grid_points: np.ndarray
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert fields to DataFrame for analysis and plotting.
+
+        Returns
+        -------
+        pd.DataFrame
+            Wide-format DataFrame with columns: x, y, u, v, p.
+            Each row represents one grid point.
+            Excludes grid_points since x and y are already present.
+        """
+        data = asdict(self)
+        # Remove grid_points since we have x and y separately
+        data.pop('grid_points')
+        return pd.DataFrame(data)
 
 
 @dataclass

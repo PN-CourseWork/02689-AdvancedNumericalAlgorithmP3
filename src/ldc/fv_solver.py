@@ -12,6 +12,7 @@ from .datastructures import FVinfo, FVResultFields, FVSolverFields
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
+from fv.linear_solvers.petsc_solver import petsc_solver
 from fv.linear_solvers.scipy_solver import scipy_solver
 from fv.assembly.rhie_chow import mdot_calculation, rhie_chow_velocity
 from fv.assembly.pressure_correction_eq_assembly import assemble_pressure_correction_matrix
@@ -72,7 +73,7 @@ class FVSolver(LidDrivenCavitySolver):
         # Cache commonly used values
         self.n_cells = n_cells
 
-    def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component):
+    def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, ksp):
         """Solve a single momentum equation (u or v).
 
         Parameters
@@ -87,6 +88,8 @@ class FVSolver(LidDrivenCavitySolver):
             Previous iteration velocity component
         grad_p_component : ndarray
             Pressure gradient component (x or y)
+        ksp : PETSc.KSP or None
+            Reusable KSP solver object (updated in-place)
 
         Returns
         -------
@@ -94,6 +97,8 @@ class FVSolver(LidDrivenCavitySolver):
             Predicted velocity component
         A_diag : ndarray
             Diagonal of momentum matrix (needed for pressure correction)
+        ksp : PETSc.KSP
+            Updated KSP solver object for reuse
         """
         # Assemble momentum equation
         row, col, data, b = assemble_diffusion_convection_matrix(
@@ -109,10 +114,21 @@ class FVSolver(LidDrivenCavitySolver):
         relaxed_A_diag, rhs = relax_momentum_equation(rhs, A_diag, phi_prev_iter, self.config.alpha_uv)
         A.setdiag(relaxed_A_diag)
 
-        # Solve
-        phi_star = scipy_solver(A, rhs)
+        # Solve with selected linear solver
+        if self.config.linear_solver == "petsc":
+            phi_star, ksp = petsc_solver(
+                A, rhs, ksp=ksp,
+                tolerance=1e-6,
+                solver_type="bcgs",
+                preconditioner="gamg"
+            )
+        elif self.config.linear_solver == "scipy":
+            phi_star = scipy_solver(A, rhs)
+            ksp = None  # SciPy doesn't use KSP objects
+        else:
+            raise ValueError(f"Unknown linear_solver: {self.config.linear_solver}. Use 'petsc' or 'scipy'.")
 
-        return phi_star, A_diag
+        return phi_star, A_diag, ksp
 
     def step(self):
         """Perform one SIMPLE iteration.
@@ -136,9 +152,13 @@ class FVSolver(LidDrivenCavitySolver):
         compute_cell_gradients_structured(self.mesh, a.u_prev, use_limiter=True, out=a.grad_u)
         compute_cell_gradients_structured(self.mesh, a.v_prev, use_limiter=True, out=a.grad_v)
 
-        # Solve momentum equations
-        u_star, A_u_diag = self._solve_momentum_equation(0, a.u_prev, a.grad_u, a.u_prev, a.grad_p[:, 0])
-        v_star, A_v_diag = self._solve_momentum_equation(1, a.v_prev, a.grad_v, a.v_prev, a.grad_p[:, 1])
+        # Solve momentum equations (reuse KSP objects)
+        u_star, A_u_diag, a.ksp_u = self._solve_momentum_equation(
+            0, a.u_prev, a.grad_u, a.u_prev, a.grad_p[:, 0], a.ksp_u
+        )
+        v_star, A_v_diag, a.ksp_v = self._solve_momentum_equation(
+            1, a.v_prev, a.grad_v, a.v_prev, a.grad_p[:, 1], a.ksp_v
+        )
 
         # Pressure correction - reuse buffers
         bold_Dv_calculation(self.mesh, A_u_diag, A_v_diag, out=a.bold_D)
@@ -148,18 +168,31 @@ class FVSolver(LidDrivenCavitySolver):
 
         mdot_calculation(self.mesh, self.rho, a.U_star_rc, out=a.mdot_star)
 
+        # Assemble pressure correction matrix
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
-        A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        # Pin node 0 to remove nullspace: set row 0 to identity
-        A_p = A_p.tolil()
-        A_p[0, :] = 0.0
-        A_p[0, 0] = 1.0
-        A_p = A_p.tocsr()
-        rhs_p[0] = 0.0
-
-        p_prime = scipy_solver(A_p, rhs_p)
+        # Solve pressure correction
+        if self.config.linear_solver == "petsc":
+            # PETSc handles nullspace internally - no need to manually pin nodes
+            A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
+            p_prime, a.ksp_p = petsc_solver(
+                A_p, rhs_p, ksp=a.ksp_p,
+                tolerance=1e-6,
+                solver_type="bcgs",
+                preconditioner="gamg",
+                remove_nullspace=True
+            )
+        elif self.config.linear_solver == "scipy":
+            # Manually pin node 0 to remove nullspace (efficiently in COO format)
+            mask = row != 0
+            row_pinned = np.append(row[mask], 0)
+            col_pinned = np.append(col[mask], 0)
+            data_pinned = np.append(data[mask], 1.0)
+            A_p = csr_matrix((data_pinned, (row_pinned, col_pinned)), shape=(self.n_cells, self.n_cells))
+            rhs_p[0] = 0.0
+            p_prime = scipy_solver(A_p, rhs_p, use_cg=False)
+            a.ksp_p = None
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)
@@ -193,3 +226,93 @@ class FVSolver(LidDrivenCavitySolver):
             v_prev=self.arrays.v_prev,
             mdot=self.arrays.mdot,
         )
+
+    def _compute_derivatives(self):
+        """Compute velocity and pressure derivatives for residual computation.
+
+        Returns
+        -------
+        dict
+            Dictionary with velocity/pressure derivatives and Laplacians.
+        """
+        # Compute gradients using FV method
+        grad_u = np.zeros((self.n_cells, 2))
+        grad_v = np.zeros((self.n_cells, 2))
+        grad_p = np.zeros((self.n_cells, 2))
+
+        compute_cell_gradients_structured(self.mesh, self.arrays.u, use_limiter=False, out=grad_u)
+        compute_cell_gradients_structured(self.mesh, self.arrays.v, use_limiter=False, out=grad_v)
+        compute_cell_gradients_structured(self.mesh, self.arrays.p, use_limiter=False, out=grad_p)
+
+        # Compute Laplacians using second-order centered differences on structured grid
+        nx, ny = self.config.nx, self.config.ny
+        dx, dy = self.config.Lx / nx, self.config.Ly / ny
+
+        u_2d = self.arrays.u.reshape(ny, nx)
+        v_2d = self.arrays.v.reshape(ny, nx)
+
+        # Laplacian with zero Neumann BCs at boundaries
+        lap_u_2d = np.zeros((ny, nx))
+        lap_v_2d = np.zeros((ny, nx))
+
+        # Interior points: standard 5-point stencil
+        lap_u_2d[1:-1, 1:-1] = (
+            (u_2d[1:-1, 2:] - 2*u_2d[1:-1, 1:-1] + u_2d[1:-1, :-2]) / dx**2 +
+            (u_2d[2:, 1:-1] - 2*u_2d[1:-1, 1:-1] + u_2d[:-2, 1:-1]) / dy**2
+        )
+        lap_v_2d[1:-1, 1:-1] = (
+            (v_2d[1:-1, 2:] - 2*v_2d[1:-1, 1:-1] + v_2d[1:-1, :-2]) / dx**2 +
+            (v_2d[2:, 1:-1] - 2*v_2d[1:-1, 1:-1] + v_2d[:-2, 1:-1]) / dy**2
+        )
+
+        # Boundary points (one-sided differences)
+        # Left boundary (i=0)
+        lap_u_2d[1:-1, 0] = (
+            (u_2d[1:-1, 1] - u_2d[1:-1, 0]) / dx**2 +
+            (u_2d[2:, 0] - 2*u_2d[1:-1, 0] + u_2d[:-2, 0]) / dy**2
+        )
+        lap_v_2d[1:-1, 0] = (
+            (v_2d[1:-1, 1] - v_2d[1:-1, 0]) / dx**2 +
+            (v_2d[2:, 0] - 2*v_2d[1:-1, 0] + v_2d[:-2, 0]) / dy**2
+        )
+
+        # Right boundary (i=nx-1)
+        lap_u_2d[1:-1, -1] = (
+            (-u_2d[1:-1, -1] + u_2d[1:-1, -2]) / dx**2 +
+            (u_2d[2:, -1] - 2*u_2d[1:-1, -1] + u_2d[:-2, -1]) / dy**2
+        )
+        lap_v_2d[1:-1, -1] = (
+            (-v_2d[1:-1, -1] + v_2d[1:-1, -2]) / dx**2 +
+            (v_2d[2:, -1] - 2*v_2d[1:-1, -1] + v_2d[:-2, -1]) / dy**2
+        )
+
+        # Bottom boundary (j=0)
+        lap_u_2d[0, 1:-1] = (
+            (u_2d[0, 2:] - 2*u_2d[0, 1:-1] + u_2d[0, :-2]) / dx**2 +
+            (u_2d[1, 1:-1] - u_2d[0, 1:-1]) / dy**2
+        )
+        lap_v_2d[0, 1:-1] = (
+            (v_2d[0, 2:] - 2*v_2d[0, 1:-1] + v_2d[0, :-2]) / dx**2 +
+            (v_2d[1, 1:-1] - v_2d[0, 1:-1]) / dy**2
+        )
+
+        # Top boundary (j=ny-1)
+        lap_u_2d[-1, 1:-1] = (
+            (u_2d[-1, 2:] - 2*u_2d[-1, 1:-1] + u_2d[-1, :-2]) / dx**2 +
+            (-u_2d[-1, 1:-1] + u_2d[-2, 1:-1]) / dy**2
+        )
+        lap_v_2d[-1, 1:-1] = (
+            (v_2d[-1, 2:] - 2*v_2d[-1, 1:-1] + v_2d[-1, :-2]) / dx**2 +
+            (-v_2d[-1, 1:-1] + v_2d[-2, 1:-1]) / dy**2
+        )
+
+        return {
+            'du_dx': grad_u[:, 0],
+            'du_dy': grad_u[:, 1],
+            'dv_dx': grad_v[:, 0],
+            'dv_dy': grad_v[:, 1],
+            'dp_dx': grad_p[:, 0],
+            'dp_dy': grad_p[:, 1],
+            'lap_u': lap_u_2d.ravel(),
+            'lap_v': lap_v_2d.ravel()
+        }

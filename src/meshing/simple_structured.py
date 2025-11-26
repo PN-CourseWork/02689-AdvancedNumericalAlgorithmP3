@@ -182,9 +182,10 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
     # v3---v2
     # |    |
     # v0---v1
+    # Loop order: j (y) outer, i (x) inner for C-order (row-major) storage
     cells = []
-    for i in range(nx):
-        for j in range(ny):
+    for j in range(ny):
+        for i in range(nx):
             # Vertex indices for cell (i,j)
             v0 = i * (ny + 1) + j
             v1 = (i + 1) * (ny + 1) + j

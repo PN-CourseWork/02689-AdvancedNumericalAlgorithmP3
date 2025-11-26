@@ -38,6 +38,9 @@ dependencies = [
   "pyvista>=0.46.4",
   "h5py>=3.15.1",
   "snakeviz>=2.2.2",
+  "tables>=3.10.2",
+  "pyamg>=5.3.0",
+  # petsc4py is installed separately via pip (see setup.sh)
 ]
 
 [tool.setuptools]

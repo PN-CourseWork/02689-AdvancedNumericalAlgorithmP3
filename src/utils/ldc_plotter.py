@@ -1,20 +1,17 @@
 """LDC results plotter for single and multiple runs."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-import h5py
+import numpy as np
 
 
 class LDCPlotter:
     """Plotter for lid-driven cavity simulation results.
 
-    Handles both single and multiple runs for comparison using HDF5 files.
+    Clean DataFrame-native implementation for plotting LDC solutions.
 
     Parameters
     ----------
@@ -23,6 +20,15 @@ class LDCPlotter:
         - str/Path: Path to HDF5 file
         - dict: Dictionary with 'h5_path' (and optionally 'label')
         - list: List of any of the above (requires 'label' in dicts)
+
+    Attributes
+    ----------
+    fields : pd.DataFrame
+        Spatial fields (x, y, u, v, p) for all runs
+    time_series : pd.DataFrame
+        Time series data (residuals) for all runs
+    metadata : pd.DataFrame
+        Configuration and convergence metadata for all runs
 
     Examples
     --------
@@ -37,135 +43,117 @@ class LDCPlotter:
     ... ])
     """
 
-    def __init__(self, runs: dict | str | Path | list):
-        """Initialize plotter and load data."""
-        # Normalize to list of dicts
-        if isinstance(runs, (str, Path)):
-            self.runs = [{"h5_path": runs}]
-            self.single_run = True
-        elif isinstance(runs, dict):
-            self.runs = [runs]
-            self.single_run = True
-        else:
-            self.runs = runs
-            self.single_run = False
-
-        # Validate and load all runs
-        self.run_data = []
-        for i, run in enumerate(self.runs):
-            # Normalize run to dict if it's a path
-            if isinstance(run, (str, Path)):
-                run = {"h5_path": run}
-            run_info = self._load_run(run, run_idx=i)
-            self.run_data.append(run_info)
-
-        # For single run, expose data at top level
-        if self.single_run:
-            rd = self.run_data[0]
-            self.Re = rd["Re"]
-            self.iter_residuals = rd["iter_residuals"]
-            self.x = rd["x"]
-            self.y = rd["y"]
-            self.u = rd["u"]
-            self.v = rd["v"]
-            self.p = rd["p"]
-            self.vel_mag = rd["vel_mag"]
-            self.h5_path = rd["h5_path"]
-
-    def _load_run(self, run: dict, run_idx: int) -> dict:
-        """Load data for a single run from HDF5 file."""
-        h5_path = Path(run["h5_path"])
-
-        if not h5_path.exists():
-            raise FileNotFoundError(f"HDF5 file not found: {h5_path}")
-
-        with h5py.File(h5_path, "r") as f:
-            # Load metadata
-            Re = f.attrs["Re"]
-
-            # Load time-series
-            iter_residuals = f["time_series/residual"][:]
-
-            # Load spatial fields
-            grid_points = f["grid_points"][:]
-            x = grid_points[:, 0]
-            y = grid_points[:, 1]
-            u = f["fields/u"][:]
-            v = f["fields/v"][:]
-            p = f["fields/p"][:]
-            vel_mag = f["fields/velocity_magnitude"][:]
-
-        # Get label (use provided or generate from filename)
-        if not self.single_run and "label" not in run:
-            raise ValueError(
-                f"Run {run_idx} missing 'label' key (required for multiple runs)"
-            )
-        label = run.get("label", h5_path.stem)
-
-        return {
-            "Re": Re,
-            "iter_residuals": iter_residuals,
-            "x": x,
-            "y": y,
-            "u": u,
-            "v": v,
-            "p": p,
-            "vel_mag": vel_mag,
-            "label": label,
-            "h5_path": h5_path,
-        }
-
-    def plot_convergence(
-        self, output_path: Optional[Path | str] = None, show: bool = False
-    ):
-        """Plot convergence history using seaborn.
-
-        Automatically handles single or multiple runs using hue.
+    def __init__(self, runs):
+        """Initialize plotter and load data as DataFrames.
 
         Parameters
         ----------
-        output_path : Path or str, optional
-            Path to save figure. If None, figure is not saved.
-        show : bool, default False
-            Whether to show the plot.
+        runs : dict, str, Path, or list
+            Single run or list of runs to load.
         """
-        # Create DataFrame for all runs
-        dfs = []
-        for rd in self.run_data:
-            df = pd.DataFrame(
-                {
-                    "Iteration": range(len(rd["iter_residuals"])),
-                    "Residual": rd["iter_residuals"],
-                    "Run": rd["label"],
-                }
+        # Normalize to list
+        if not isinstance(runs, list):
+            runs = [runs]
+
+        # Load all runs
+        fields_list = []
+        time_series_list = []
+        metadata_list = []
+
+        for run in runs:
+            # Normalize run to dict
+            if isinstance(run, (str, Path)):
+                run = {"h5_path": run, "label": Path(run).stem}
+
+            h5_path = Path(run["h5_path"])
+            if not h5_path.exists():
+                raise FileNotFoundError(f"HDF5 file not found: {h5_path}")
+
+            label = run.get("label", h5_path.stem)
+
+            # Load DataFrames and add metadata
+            metadata_df = pd.read_hdf(h5_path, 'metadata').assign(run=label)
+            fields_df = pd.read_hdf(h5_path, 'fields').assign(run=label)
+            time_series_df = pd.read_hdf(h5_path, 'time_series').assign(
+                run=label,
+                iteration=lambda df: range(len(df))
             )
-            dfs.append(df)
 
-        combined_df = pd.concat(dfs, ignore_index=True)
+            fields_list.append(fields_df)
+            time_series_list.append(time_series_df)
+            metadata_list.append(metadata_df)
 
-        # Create plot using seaborn relplot
+        # Concatenate all runs
+        self.fields = pd.concat(fields_list, ignore_index=True)
+        self.time_series = pd.concat(time_series_list, ignore_index=True)
+        self.metadata = pd.concat(metadata_list, ignore_index=True)
+
+    def _require_single_run(self):
+        """Check that only single run is loaded (for field plotting)."""
+        if self.metadata['run'].nunique() > 1:
+            raise ValueError("Field plotting only available for single run.")
+
+    def plot_convergence(self, output_path=None, normalization_iters=5):
+        """Plot all time series residuals normalized by early iteration maximum.
+
+        Uses STAR-CCM+ style "Auto" normalization: normalizes by the maximum
+        value observed in the first N iterations.
+
+        Parameters
+        ----------
+        output_path : str or Path, optional
+            Path to save figure. If None, figure is not saved.
+        normalization_iters : int, optional
+            Number of initial iterations to use for computing normalization
+            reference (default: 5, following STAR-CCM+ convention).
+        """
+        n_runs = self.metadata['run'].nunique()
+
+        # Get residual columns (exclude 'iteration' and 'run')
+        residual_cols = [col for col in self.time_series.columns
+                        if col not in ['iteration', 'run']]
+
+        # Melt to long format
+        df_long = self.time_series.melt(
+            id_vars=['iteration', 'run'],
+            value_vars=residual_cols,
+            var_name='residual_type',
+            value_name='residual_value'
+        )
+
+        # Normalize each (run, residual_type) group by max of first N iterations
+        def normalize_group(group):
+            # Get maximum value from first N iterations
+            first_n = group.head(normalization_iters)
+            ref_value = first_n.max()
+            if ref_value != 0:
+                return group / ref_value
+            return group
+
+        df_long['normalized_residual'] = df_long.groupby(['run', 'residual_type'])['residual_value'].transform(normalize_group)
+
+        # Plot with seaborn
         g = sns.relplot(
-            data=combined_df,
-            x="Iteration",
-            y="Residual",
-            hue="Run" if not self.single_run else None,
+            data=df_long,
+            x="iteration",
+            y="normalized_residual",
+            hue="residual_type",
+            style="run" if n_runs > 1 else None,
             kind="line",
             height=5,
             aspect=1.6,
             linewidth=2,
-            legend="auto" if not self.single_run else False,
+            legend="auto",
         )
 
-        # Set log scale for y-axis
         g.ax.set_yscale("log")
         g.ax.grid(True, alpha=0.3)
+        g.ax.set_xlabel("Iteration")
+        g.ax.set_ylabel("Normalized Metric")
 
-        # Set title based on single/multi run
-        if self.single_run:
-            g.ax.set_title(
-                f"Convergence History (Re = {self.run_data[0]['Re']:.0f})",
-                fontweight="bold",
-            )
+        if n_runs == 1:
+            Re = self.metadata['Re'].iloc[0]
+            g.ax.set_title(f"Convergence History (Re = {Re:.0f})", fontweight="bold")
         else:
             g.ax.set_title("Convergence Comparison", fontweight="bold")
 
@@ -173,75 +161,174 @@ class LDCPlotter:
             g.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Convergence plot saved to: {output_path}")
 
-    def plot_velocity_fields(
-        self, output_path: Optional[Path | str] = None, show: bool = False
-    ):
-        """Plot velocity components using matplotlib tricontourf.
+    def plot_fields(self, output_path=None, interp_resolution=200):
+        """Plot all solution fields (pressure, u velocity, v velocity).
+
+        Only available for single-run plotting.
 
         Parameters
         ----------
-        output_path : Path or str, optional
+        output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
-        show : bool, default False
-            Whether to show the plot.
+        interp_resolution : int, optional
+            Resolution for interpolated grid. If > original resolution,
+            uses spectral interpolation for smooth visualization. Default 200.
         """
-        if not self.single_run:
-            raise ValueError("Field plotting only available for single run.")
+        self._require_single_run()
+
+        Re = self.metadata['Re'].iloc[0]
+
+        # Determine grid size and reshape to 2D
+        nx = self.fields['x'].nunique()
+        ny = self.fields['y'].nunique()
+
+        # Get unique x and y coordinates (sorted)
+        x_unique = np.sort(self.fields['x'].unique())
+        y_unique = np.sort(self.fields['y'].unique())
+
+        # Sort data by (y, x) to ensure consistent ordering for reshape
+        sorted_fields = self.fields.sort_values(['y', 'x'])
+        P_orig = sorted_fields['p'].values.reshape(ny, nx)
+        U_orig = sorted_fields['u'].values.reshape(ny, nx)
+        V_orig = sorted_fields['v'].values.reshape(ny, nx)
+
+        # Interpolate to finer grid if requested
+        if interp_resolution > max(nx, ny):
+            from scipy.interpolate import BarycentricInterpolator
+
+            # Create fine grid
+            x_fine = np.linspace(x_unique[0], x_unique[-1], interp_resolution)
+            y_fine = np.linspace(y_unique[0], y_unique[-1], interp_resolution)
+            X, Y = np.meshgrid(x_fine, y_fine)
+
+            # Tensor product barycentric interpolation
+            def interp_2d(field_2d):
+                # First interpolate along x for each y
+                temp = np.array([BarycentricInterpolator(x_unique, row)(x_fine)
+                                 for row in field_2d])
+                # Then interpolate along y for each x
+                result = np.array([BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
+                                   for i in range(interp_resolution)]).T
+                return result
+
+            P = interp_2d(P_orig)
+            U = interp_2d(U_orig)
+            V = interp_2d(V_orig)
+        else:
+            X, Y = np.meshgrid(x_unique, y_unique)
+            P, U, V = P_orig, U_orig, V_orig
 
         fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
-        # U velocity
-        axes[0].tricontourf(self.x, self.y, self.u, levels=20, cmap="RdBu_r")
+        # Pressure
+        cf_p = axes[0].contourf(X, Y, P, levels=20, cmap="coolwarm")
         axes[0].set_xlabel("x")
         axes[0].set_ylabel("y")
-        axes[0].set_title("U velocity")
+        axes[0].set_title("Pressure", fontweight="bold")
         axes[0].set_aspect("equal")
+        plt.colorbar(cf_p, ax=axes[0], label="p")
 
-        # V velocity
-        axes[1].tricontourf(self.x, self.y, self.v, levels=20, cmap="RdBu_r")
+        # U velocity
+        cf_u = axes[1].contourf(X, Y, U, levels=20, cmap="RdBu_r")
         axes[1].set_xlabel("x")
         axes[1].set_ylabel("y")
-        axes[1].set_title("V velocity")
+        axes[1].set_title("U velocity", fontweight="bold")
         axes[1].set_aspect("equal")
+        plt.colorbar(cf_u, ax=axes[1], label="u")
 
-        # Velocity magnitude
-        axes[2].tricontourf(self.x, self.y, self.vel_mag, levels=20, cmap="viridis")
+        # V velocity
+        cf_v = axes[2].contourf(X, Y, V, levels=20, cmap="RdBu_r")
         axes[2].set_xlabel("x")
         axes[2].set_ylabel("y")
-        axes[2].set_title("Velocity magnitude")
+        axes[2].set_title("V velocity", fontweight="bold")
         axes[2].set_aspect("equal")
+        plt.colorbar(cf_v, ax=axes[2], label="v")
 
-        plt.suptitle(f"Lid-Driven Cavity: Re = {self.Re:.0f}", fontweight="bold")
+        fig.suptitle(f"Solution Fields (Re = {Re:.0f})", fontweight="bold")
         plt.tight_layout()
 
         if output_path:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
-            print(f"Velocity plot saved to: {output_path}")
+            print(f"Fields plot saved to: {output_path}")
 
-    def plot_pressure(
-        self, output_path: Optional[Path | str] = None, show: bool = False
-    ):
-        """Plot pressure field using matplotlib tricontourf.
+    def plot_streamlines(self, output_path=None, interp_resolution=200):
+        """Plot velocity magnitude with streamlines.
+
+        Only available for single-run plotting.
 
         Parameters
         ----------
-        output_path : Path or str, optional
+        output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
-        show : bool, default False
-            Whether to show the plot.
+        interp_resolution : int, optional
+            Resolution for interpolated grid. Default 200.
         """
-        if not self.single_run:
-            raise ValueError("Field plotting only available for single run.")
+        self._require_single_run()
+
+        Re = self.metadata['Re'].iloc[0]
+
+        # Determine grid size and reshape to 2D
+        nx = self.fields['x'].nunique()
+        ny = self.fields['y'].nunique()
+
+        # Get unique x and y coordinates (sorted)
+        x_unique = np.sort(self.fields['x'].unique())
+        y_unique = np.sort(self.fields['y'].unique())
+
+        # Sort data by (y, x) to ensure consistent ordering for reshape
+        sorted_fields = self.fields.sort_values(['y', 'x'])
+        U_orig = sorted_fields['u'].values.reshape(ny, nx)
+        V_orig = sorted_fields['v'].values.reshape(ny, nx)
+
+        # Interpolate to finer grid if requested
+        if interp_resolution > max(nx, ny):
+            from scipy.interpolate import BarycentricInterpolator
+
+            # Create fine grid
+            x_fine = np.linspace(x_unique[0], x_unique[-1], interp_resolution)
+            y_fine = np.linspace(y_unique[0], y_unique[-1], interp_resolution)
+            X, Y = np.meshgrid(x_fine, y_fine)
+
+            # Tensor product barycentric interpolation
+            def interp_2d(field_2d):
+                temp = np.array([BarycentricInterpolator(x_unique, row)(x_fine)
+                                 for row in field_2d])
+                result = np.array([BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
+                                   for i in range(interp_resolution)]).T
+                return result
+
+            U = interp_2d(U_orig)
+            V = interp_2d(V_orig)
+        else:
+            X, Y = np.meshgrid(x_unique, y_unique)
+            U, V = U_orig, V_orig
+
+        vel_mag = np.sqrt(U**2 + V**2)
 
         fig, ax = plt.subplots(figsize=(8, 7))
-        cf = ax.tricontourf(self.x, self.y, self.p, levels=20, cmap="coolwarm")
+
+        # Velocity magnitude contour
+        cf = ax.contourf(X, Y, vel_mag, levels=20, cmap="coolwarm")
+
+        # Get coordinates for streamlines
+        x_stream = X[0, :]  # 1D x coordinates
+        y_stream = Y[:, 0]  # 1D y coordinates
+
+        # Streamlines using the (already interpolated) velocity field
+        stream = ax.streamplot(
+            x_stream, y_stream, U, V,
+            color='white', linewidth=1, density=1.5,
+            arrowsize=1.2, arrowstyle='->'
+        )
+        stream.lines.set_alpha(0.6)
+
         ax.set_xlabel("x")
         ax.set_ylabel("y")
-        ax.set_title(f"Pressure field (Re = {self.Re:.0f})")
+        ax.set_title(f"Velocity Magnitude with Streamlines (Re = {Re:.0f})", fontweight="bold")
         ax.set_aspect("equal")
-        plt.colorbar(cf, ax=ax, label="Pressure")
+        plt.colorbar(cf, ax=ax, label="Velocity magnitude")
         plt.tight_layout()
 
         if output_path:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
-            print(f"Pressure plot saved to: {output_path}")
+            print(f"Streamlines plot saved to: {output_path}")

@@ -3,7 +3,8 @@
 from pathlib import Path
 from . import plotting
 from .ldc_plotter import LDCPlotter
-from .ghia_validator import GhiaValidator
+from .ghia_validator import GhiaValidator, plot_validation
+from .field_interpolator import UnifiedFieldInterpolator
 from .data_io import (
     load_run_data,
     load_fields,
@@ -16,6 +17,8 @@ __all__ = [
     "get_project_root",
     "LDCPlotter",
     "GhiaValidator",
+    "plot_validation",
+    "UnifiedFieldInterpolator",
     "load_run_data",
     "load_fields",
     "load_metadata",
