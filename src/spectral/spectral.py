@@ -275,11 +275,77 @@ def fourier_diff_matrix_on_interval(
     return scale * base
 
 
+def barycentric_weights(nodes: np.ndarray) -> np.ndarray:
+    """Compute barycentric interpolation weights for given nodes.
+
+    Parameters
+    ----------
+    nodes : np.ndarray
+        Interpolation nodes
+
+    Returns
+    -------
+    np.ndarray
+        Barycentric weights
+    """
+    n = len(nodes)
+    w = np.ones(n)
+    for j in range(n):
+        for k in range(n):
+            if k != j:
+                w[j] /= (nodes[j] - nodes[k])
+    return w
+
+
+def barycentric_interpolate(nodes: np.ndarray, values: np.ndarray,
+                            x_new: np.ndarray, weights: np.ndarray = None) -> np.ndarray:
+    """Barycentric Lagrange interpolation.
+
+    Evaluates the polynomial interpolant at new points using the
+    numerically stable barycentric formula.
+
+    Parameters
+    ----------
+    nodes : np.ndarray
+        Original interpolation nodes
+    values : np.ndarray
+        Function values at nodes
+    x_new : np.ndarray
+        Points where to evaluate the interpolant
+    weights : np.ndarray, optional
+        Precomputed barycentric weights
+
+    Returns
+    -------
+    np.ndarray
+        Interpolated values at x_new
+    """
+    if weights is None:
+        weights = barycentric_weights(nodes)
+
+    x_new = np.atleast_1d(x_new)
+    result = np.zeros_like(x_new, dtype=float)
+
+    for i, x in enumerate(x_new):
+        # Check if x coincides with a node
+        diff = x - nodes
+        if np.any(np.abs(diff) < 1e-14):
+            idx = np.argmin(np.abs(diff))
+            result[i] = values[idx]
+        else:
+            # Barycentric formula
+            terms = weights / diff
+            result[i] = np.sum(terms * values) / np.sum(terms)
+
+    return result
+
+
 class SpectralBasis(ABC):
     """Abstract interface for nodal spectral bases."""
 
     def __init__(self, domain: tuple[float, float] | None = None):
         self.domain = domain
+        self._cached_weights = {}  # Cache barycentric weights
 
     @abstractmethod
     def nodes(self, num_points: int) -> np.ndarray:
@@ -320,6 +386,37 @@ class SpectralBasis(ABC):
         Subclasses can override when a closed-form expression is available.
         """
         raise NotImplementedError("Basis does not define a mass matrix.")
+
+    def interpolate(self, nodes: np.ndarray, values: np.ndarray,
+                    x_new: np.ndarray) -> np.ndarray:
+        """Interpolate values from nodes to new points using barycentric formula.
+
+        Parameters
+        ----------
+        nodes : np.ndarray
+            Original collocation nodes (in physical domain)
+        values : np.ndarray
+            Function values at nodes
+        x_new : np.ndarray
+            New points where to evaluate (in physical domain)
+
+        Returns
+        -------
+        np.ndarray
+            Interpolated values at x_new
+        """
+        # Map to reference domain for numerical stability
+        a, b = self.domain
+        nodes_ref = 2.0 * (nodes - a) / (b - a) - 1.0
+        x_new_ref = 2.0 * (x_new - a) / (b - a) - 1.0
+
+        # Get or compute barycentric weights
+        n = len(nodes)
+        if n not in self._cached_weights:
+            self._cached_weights[n] = barycentric_weights(nodes_ref)
+
+        return barycentric_interpolate(nodes_ref, values, x_new_ref,
+                                       self._cached_weights[n])
 
 
 class LegendreLobattoBasis(SpectralBasis):

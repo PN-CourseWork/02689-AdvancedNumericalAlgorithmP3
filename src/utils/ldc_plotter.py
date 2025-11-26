@@ -161,7 +161,7 @@ class LDCPlotter:
             g.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Convergence plot saved to: {output_path}")
 
-    def plot_fields(self, output_path=None):
+    def plot_fields(self, output_path=None, interp_resolution=200):
         """Plot all solution fields (pressure, u velocity, v velocity).
 
         Only available for single-run plotting.
@@ -170,6 +170,9 @@ class LDCPlotter:
         ----------
         output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
+        interp_resolution : int, optional
+            Resolution for interpolated grid. If > original resolution,
+            uses spectral interpolation for smooth visualization. Default 200.
         """
         self._require_single_run()
 
@@ -183,13 +186,43 @@ class LDCPlotter:
         x_unique = np.sort(self.fields['x'].unique())
         y_unique = np.sort(self.fields['y'].unique())
 
-        # Create meshgrid
-        X, Y = np.meshgrid(x_unique, y_unique)
+        # Sort data by (y, x) to ensure consistent ordering for reshape
+        sorted_fields = self.fields.sort_values(['y', 'x'])
+        P_orig = sorted_fields['p'].values.reshape(ny, nx)
+        U_orig = sorted_fields['u'].values.reshape(ny, nx)
+        V_orig = sorted_fields['v'].values.reshape(ny, nx)
 
-        # Reshape fields to 2D - data is stored in C-order (row-major)
-        P = self.fields['p'].values.reshape(ny, nx)
-        U = self.fields['u'].values.reshape(ny, nx)
-        V = self.fields['v'].values.reshape(ny, nx)
+        # Interpolate to finer grid if requested
+        if interp_resolution > max(nx, ny):
+            from spectral.spectral import barycentric_weights, barycentric_interpolate
+
+            # Create fine grid
+            x_fine = np.linspace(x_unique[0], x_unique[-1], interp_resolution)
+            y_fine = np.linspace(y_unique[0], y_unique[-1], interp_resolution)
+            X, Y = np.meshgrid(x_fine, y_fine)
+
+            # Compute barycentric weights once
+            wx = barycentric_weights(x_unique)
+            wy = barycentric_weights(y_unique)
+
+            # Interpolate each field (2D tensor product interpolation)
+            def interp_2d(field_2d):
+                # First interpolate along x for each y
+                temp = np.zeros((ny, interp_resolution))
+                for j in range(ny):
+                    temp[j, :] = barycentric_interpolate(x_unique, field_2d[j, :], x_fine, wx)
+                # Then interpolate along y for each x
+                result = np.zeros((interp_resolution, interp_resolution))
+                for i in range(interp_resolution):
+                    result[:, i] = barycentric_interpolate(y_unique, temp[:, i], y_fine, wy)
+                return result
+
+            P = interp_2d(P_orig)
+            U = interp_2d(U_orig)
+            V = interp_2d(V_orig)
+        else:
+            X, Y = np.meshgrid(x_unique, y_unique)
+            P, U, V = P_orig, U_orig, V_orig
 
         fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
@@ -224,7 +257,7 @@ class LDCPlotter:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Fields plot saved to: {output_path}")
 
-    def plot_streamlines(self, output_path=None):
+    def plot_streamlines(self, output_path=None, interp_resolution=200):
         """Plot velocity magnitude with streamlines.
 
         Only available for single-run plotting.
@@ -233,9 +266,9 @@ class LDCPlotter:
         ----------
         output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
+        interp_resolution : int, optional
+            Resolution for interpolated grid. Default 200.
         """
-        from scipy.interpolate import RectBivariateSpline
-
         self._require_single_run()
 
         Re = self.metadata['Re'].iloc[0]
@@ -248,35 +281,54 @@ class LDCPlotter:
         x_unique = np.sort(self.fields['x'].unique())
         y_unique = np.sort(self.fields['y'].unique())
 
-        # Reshape velocity fields to 2D - data is stored in C-order (row-major)
-        U = self.fields['u'].values.reshape(ny, nx)
-        V = self.fields['v'].values.reshape(ny, nx)
-        vel_mag = np.sqrt(U**2 + V**2)
+        # Sort data by (y, x) to ensure consistent ordering for reshape
+        sorted_fields = self.fields.sort_values(['y', 'x'])
+        U_orig = sorted_fields['u'].values.reshape(ny, nx)
+        V_orig = sorted_fields['v'].values.reshape(ny, nx)
 
-        # Create meshgrid for plotting
-        X, Y = np.meshgrid(x_unique, y_unique)
+        # Interpolate to finer grid if requested
+        if interp_resolution > max(nx, ny):
+            from spectral.spectral import barycentric_weights, barycentric_interpolate
+
+            # Create fine grid
+            x_fine = np.linspace(x_unique[0], x_unique[-1], interp_resolution)
+            y_fine = np.linspace(y_unique[0], y_unique[-1], interp_resolution)
+            X, Y = np.meshgrid(x_fine, y_fine)
+
+            # Compute barycentric weights once
+            wx = barycentric_weights(x_unique)
+            wy = barycentric_weights(y_unique)
+
+            # Interpolate each field (2D tensor product interpolation)
+            def interp_2d(field_2d):
+                temp = np.zeros((ny, interp_resolution))
+                for j in range(ny):
+                    temp[j, :] = barycentric_interpolate(x_unique, field_2d[j, :], x_fine, wx)
+                result = np.zeros((interp_resolution, interp_resolution))
+                for i in range(interp_resolution):
+                    result[:, i] = barycentric_interpolate(y_unique, temp[:, i], y_fine, wy)
+                return result
+
+            U = interp_2d(U_orig)
+            V = interp_2d(V_orig)
+        else:
+            X, Y = np.meshgrid(x_unique, y_unique)
+            U, V = U_orig, V_orig
+
+        vel_mag = np.sqrt(U**2 + V**2)
 
         fig, ax = plt.subplots(figsize=(8, 7))
 
         # Velocity magnitude contour
         cf = ax.contourf(X, Y, vel_mag, levels=20, cmap="coolwarm")
 
-        # Interpolate velocity onto finer uniform grid for smooth streamlines
-        n_grid = 100
-        x_fine = np.linspace(x_unique.min(), x_unique.max(), n_grid)
-        y_fine = np.linspace(y_unique.min(), y_unique.max(), n_grid)
-        X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
+        # Get coordinates for streamlines
+        x_stream = X[0, :]  # 1D x coordinates
+        y_stream = Y[:, 0]  # 1D y coordinates
 
-        # Use RectBivariateSpline for structured grid interpolation
-        u_interp = RectBivariateSpline(y_unique, x_unique, U)
-        v_interp = RectBivariateSpline(y_unique, x_unique, V)
-
-        U_fine = u_interp(y_fine, x_fine)
-        V_fine = v_interp(y_fine, x_fine)
-
-        # Streamlines
+        # Streamlines using the (already interpolated) velocity field
         stream = ax.streamplot(
-            x_fine, y_fine, U_fine, V_fine,
+            x_stream, y_stream, U, V,
             color='white', linewidth=1, density=1.5,
             arrowsize=1.2, arrowstyle='->'
         )

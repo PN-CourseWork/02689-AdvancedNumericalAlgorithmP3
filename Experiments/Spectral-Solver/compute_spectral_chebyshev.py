@@ -17,7 +17,7 @@ from utils import get_project_root
 project_root = get_project_root()
 data_dir = project_root / "data" / "Spectral-Solver" / "Chebyshev"
 data_dir.mkdir(parents=True, exist_ok=True)
-N = 16
+N = 15  # Polynomial order (nodes = N+1 = 16)
 
 solver = SpectralSolver(
     Re=100.0,            # Reynolds number
