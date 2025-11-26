@@ -23,7 +23,7 @@ solver = FVSolver(
     Re=100.0,                # Reynolds number
     nx=64,                   # Grid cells in x-direction
     ny=64,                   # Grid cells in y-direction
-    alpha_uv=0.7,            # Velocity under-relaxation factor
+    alpha_uv=0.6,            # Velocity under-relaxation factor
     alpha_p=0.3,             # Pressure under-relaxation factor
     convection_scheme="TVD", # Use TVD scheme with MUSCL limiter (higher-order, less diffusive)
     limiter="MUSCL",         # MUSCL limiter for TVD scheme
@@ -40,7 +40,7 @@ print(f"  Linear solver: {solver.config.linear_solver.upper()}" +
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-7, max_iter=50000)
+solver.solve(tolerance=1e-8, max_iter=50000)
 
 # %%
 # Convergence Results
