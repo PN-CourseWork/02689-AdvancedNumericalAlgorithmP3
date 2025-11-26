@@ -188,6 +188,9 @@ class GhiaValidator:
     def compute_errors(self):
         """Compute error metrics against Ghia benchmark data.
 
+        Note: Excludes boundary points (y=0, y=1 for u; x=0, x=1 for v)
+        since collocated grids store values at cell centers, not boundaries.
+
         Returns
         -------
         dict
@@ -203,14 +206,22 @@ class GhiaValidator:
         y_sim, u_sim = self._extract_centerline('u', 'y')
         x_sim, v_sim = self._extract_centerline('v', 'x')
 
-        # Interpolate simulation results at Ghia benchmark points
+        # Filter out boundary points from Ghia data
+        # For u-velocity: exclude y=0 and y=1
+        eps = 1e-6
+        ghia_u_interior = self.ghia_u[(self.ghia_u['y'] > eps) & (self.ghia_u['y'] < 1.0 - eps)]
+
+        # For v-velocity: exclude x=0 and x=1
+        ghia_v_interior = self.ghia_v[(self.ghia_v['x'] > eps) & (self.ghia_v['x'] < 1.0 - eps)]
+
+        # Interpolate simulation results at interior Ghia benchmark points
         u_interp_func = interp1d(y_sim, u_sim, kind='cubic', fill_value='extrapolate')
-        u_sim_at_ghia = u_interp_func(self.ghia_u['y'].values)
-        u_error = u_sim_at_ghia - self.ghia_u['u'].values
+        u_sim_at_ghia = u_interp_func(ghia_u_interior['y'].values)
+        u_error = u_sim_at_ghia - ghia_u_interior['u'].values
 
         v_interp_func = interp1d(x_sim, v_sim, kind='cubic', fill_value='extrapolate')
-        v_sim_at_ghia = v_interp_func(self.ghia_v['x'].values)
-        v_error = v_sim_at_ghia - self.ghia_v['v'].values
+        v_sim_at_ghia = v_interp_func(ghia_v_interior['x'].values)
+        v_error = v_sim_at_ghia - ghia_v_interior['v'].values
 
         # Compute error norms
         return {
@@ -232,6 +243,7 @@ class GhiaValidator:
         print(f"  Reynolds number: Re = {self.Re:.0f}")
         print(f"  Benchmark: Ghia et al. (1982), Re = {self.Re:.0f}")
         print(f"  Solution file: {self.h5_path.name}")
+        print(f"  Note: Boundary points excluded (interior points only)")
         print("-"*70)
         print(f"{'ERROR METRICS':^70}")
         print("-"*70)

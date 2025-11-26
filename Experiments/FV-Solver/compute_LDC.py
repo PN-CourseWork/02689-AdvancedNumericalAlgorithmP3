@@ -20,21 +20,24 @@ data_dir = project_root / "data" / "FV-Solver"
 data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
-    Re=100.0,       # Reynolds number
-    nx=64,          # Grid cells in x-direction
-    ny=64,          # Grid cells in y-direction
-    alpha_uv=0.7,   # Velocity under-relaxation factor
-    alpha_p=0.3     # Pressure under-relaxation factor
+    Re=100.0,                # Reynolds number
+    nx=64,                   # Grid cells in x-direction
+    ny=64,                   # Grid cells in y-direction
+    alpha_uv=0.7,            # Velocity under-relaxation factor
+    alpha_p=0.3,             # Pressure under-relaxation factor
+    convection_scheme="TVD", # Use TVD scheme with MUSCL limiter (higher-order, less diffusive)
+    limiter="MUSCL"          # MUSCL limiter for TVD scheme
 )
 
 print(f"Solver configured: Re={solver.config.Re}, Grid={solver.config.nx}x{solver.config.ny}")
+print(f"  Convection scheme: {solver.config.convection_scheme} with {solver.config.limiter} limiter")
 
 # %%
 # Run SIMPLE Iteration
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-6, max_iter=10000)
+solver.solve(tolerance=1e-7, max_iter=4000)
 
 # %%
 # Convergence Results

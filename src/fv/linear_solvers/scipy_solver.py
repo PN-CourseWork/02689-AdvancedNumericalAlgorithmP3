@@ -6,8 +6,8 @@ from scipy.sparse.linalg import bicgstab
 import pyamg
 
 
-def scipy_solver(A_csr: csr_matrix, b_np: np.ndarray):
-    """Solve A x = b using BiCGSTAB with PyAMG smoothed aggregation preconditioner.
+def scipy_solver(A_csr: csr_matrix, b_np: np.ndarray, use_cg: bool = False):
+    """Solve A x = b using BiCGSTAB with PyAMG preconditioner.
 
     Parameters
     ----------
@@ -15,19 +15,17 @@ def scipy_solver(A_csr: csr_matrix, b_np: np.ndarray):
         Coefficient matrix in CSR format
     b_np : np.ndarray
         Right-hand side vector
+    use_cg : bool, optional
+        Unused parameter kept for API compatibility
 
     Returns
     -------
     np.ndarray
         Solution vector
     """
-    # Create PyAMG smoothed aggregation preconditioner
-    #ml = pyamg.smoothed_aggregation_solver(A_csr)
-    #M = ml.aspreconditioner()
-
-    # Solve using BiCGSTAB with preconditioner
-    #x, info = bicgstab(A_csr, b_np, M=M, rtol=1e-8, atol=1e-8)
-    x, info = bicgstab(A_csr, b_np,rtol=1e-6)
+    # Solve using BiCGSTAB without preconditioner
+    # PyAMG preconditioner can cause numerical issues on early iterations
+    x, info = bicgstab(A_csr, b_np, rtol=1e-6, atol=0)
 
     if info != 0:
         raise RuntimeError(f"BiCGSTAB failed to converge (info={info})")

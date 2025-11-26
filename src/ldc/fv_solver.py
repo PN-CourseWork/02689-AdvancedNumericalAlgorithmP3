@@ -148,18 +148,26 @@ class FVSolver(LidDrivenCavitySolver):
 
         mdot_calculation(self.mesh, self.rho, a.U_star_rc, out=a.mdot_star)
 
+        # Assemble pressure correction matrix
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
-        A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
-        rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        # Pin node 0 to remove nullspace: set row 0 to identity
-        A_p = A_p.tolil()
-        A_p[0, :] = 0.0
-        A_p[0, 0] = 1.0
-        A_p = A_p.tocsr()
+        # Pin node 0 to remove nullspace (efficiently in COO format)
+        # Remove all entries in row 0
+        mask = row != 0
+        row_pinned = row[mask]
+        col_pinned = col[mask]
+        data_pinned = data[mask]
+
+        # Add identity for node 0
+        row_pinned = np.append(row_pinned, 0)
+        col_pinned = np.append(col_pinned, 0)
+        data_pinned = np.append(data_pinned, 1.0)
+
+        A_p = csr_matrix((data_pinned, (row_pinned, col_pinned)), shape=(self.n_cells, self.n_cells))
+        rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
         rhs_p[0] = 0.0
 
-        p_prime = scipy_solver(A_p, rhs_p)
+        p_prime = scipy_solver(A_p, rhs_p, use_cg=False)
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)
