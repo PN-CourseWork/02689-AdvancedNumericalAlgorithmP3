@@ -194,27 +194,21 @@ class LDCPlotter:
 
         # Interpolate to finer grid if requested
         if interp_resolution > max(nx, ny):
-            from spectral.spectral import barycentric_weights, barycentric_interpolate
+            from scipy.interpolate import BarycentricInterpolator
 
             # Create fine grid
             x_fine = np.linspace(x_unique[0], x_unique[-1], interp_resolution)
             y_fine = np.linspace(y_unique[0], y_unique[-1], interp_resolution)
             X, Y = np.meshgrid(x_fine, y_fine)
 
-            # Compute barycentric weights once
-            wx = barycentric_weights(x_unique)
-            wy = barycentric_weights(y_unique)
-
-            # Interpolate each field (2D tensor product interpolation)
+            # Tensor product barycentric interpolation
             def interp_2d(field_2d):
                 # First interpolate along x for each y
-                temp = np.zeros((ny, interp_resolution))
-                for j in range(ny):
-                    temp[j, :] = barycentric_interpolate(x_unique, field_2d[j, :], x_fine, wx)
+                temp = np.array([BarycentricInterpolator(x_unique, row)(x_fine)
+                                 for row in field_2d])
                 # Then interpolate along y for each x
-                result = np.zeros((interp_resolution, interp_resolution))
-                for i in range(interp_resolution):
-                    result[:, i] = barycentric_interpolate(y_unique, temp[:, i], y_fine, wy)
+                result = np.array([BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
+                                   for i in range(interp_resolution)]).T
                 return result
 
             P = interp_2d(P_orig)
@@ -288,25 +282,19 @@ class LDCPlotter:
 
         # Interpolate to finer grid if requested
         if interp_resolution > max(nx, ny):
-            from spectral.spectral import barycentric_weights, barycentric_interpolate
+            from scipy.interpolate import BarycentricInterpolator
 
             # Create fine grid
             x_fine = np.linspace(x_unique[0], x_unique[-1], interp_resolution)
             y_fine = np.linspace(y_unique[0], y_unique[-1], interp_resolution)
             X, Y = np.meshgrid(x_fine, y_fine)
 
-            # Compute barycentric weights once
-            wx = barycentric_weights(x_unique)
-            wy = barycentric_weights(y_unique)
-
-            # Interpolate each field (2D tensor product interpolation)
+            # Tensor product barycentric interpolation
             def interp_2d(field_2d):
-                temp = np.zeros((ny, interp_resolution))
-                for j in range(ny):
-                    temp[j, :] = barycentric_interpolate(x_unique, field_2d[j, :], x_fine, wx)
-                result = np.zeros((interp_resolution, interp_resolution))
-                for i in range(interp_resolution):
-                    result[:, i] = barycentric_interpolate(y_unique, temp[:, i], y_fine, wy)
+                temp = np.array([BarycentricInterpolator(x_unique, row)(x_fine)
+                                 for row in field_2d])
+                result = np.array([BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
+                                   for i in range(interp_resolution)]).T
                 return result
 
             U = interp_2d(U_orig)
