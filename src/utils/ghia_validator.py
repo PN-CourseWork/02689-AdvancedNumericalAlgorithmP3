@@ -3,9 +3,10 @@
 from pathlib import Path
 
 import numpy as np
-from scipy.interpolate import RectBivariateSpline, interp1d
+from scipy.interpolate import interp1d
 
 from utils.plotting import plt, pd
+from utils.field_interpolator import UnifiedFieldInterpolator
 
 
 class GhiaValidator:
@@ -56,9 +57,12 @@ class GhiaValidator:
         """
         self.h5_path = Path(h5_path)
 
-        # Load DataFrames from HDF5
+        # Create unified interpolator (handles both FV and Spectral grids)
+        self.interpolator = UnifiedFieldInterpolator(self.h5_path)
+        self.fields = self.interpolator.fields  # For compatibility
+
+        # Load metadata
         metadata = pd.read_hdf(self.h5_path, 'metadata')
-        self.fields = pd.read_hdf(self.h5_path, 'fields')
 
         # Get Reynolds number
         self.Re = Re if Re is not None else metadata['Re'].iloc[0]
@@ -96,7 +100,7 @@ class GhiaValidator:
         self.ghia_v = pd.read_csv(v_file)
 
     def _extract_centerline(self, field, centerline_axis):
-        """Extract velocity along centerline using interpolation.
+        """Extract velocity along centerline using unified interpolator.
 
         Parameters
         ----------
@@ -114,30 +118,12 @@ class GhiaValidator:
         velocity : np.ndarray
             Velocity values along centerline
         """
-        # Extract coordinates and field values
-        x = self.fields['x'].values
-        y = self.fields['y'].values
-        field_values = self.fields[field].values
-
-        # Get unique sorted coordinates
-        x_unique = np.sort(np.unique(x))
-        y_unique = np.sort(np.unique(y))
-
-        # Reshape to 2D grid
-        sort_indices = np.lexsort((x, y))
-        field_grid = field_values[sort_indices].reshape((len(y_unique), len(x_unique)))
-
-        # Create bicubic spline interpolator
-        interp = RectBivariateSpline(y_unique, x_unique, field_grid, kx=3, ky=3)
-
-        # Extract centerline
-        if centerline_axis == 'y':  # Vertical centerline at x=0.5
-            position = np.linspace(0, 1, 200)
-            velocity = interp(position, 0.5, grid=False)
-        else:  # Horizontal centerline at y=0.5
-            position = np.linspace(0, 1, 200)
-            velocity = interp(0.5, position, grid=False)
-
+        # Use unified interpolator (handles both FV and Spectral grids consistently)
+        position, velocity = self.interpolator.extract_centerline(
+            field=field,
+            axis=centerline_axis,
+            n_points=200
+        )
         return position, velocity
 
     def get_validation_dataframe(self):
