@@ -50,9 +50,21 @@ class Fields:
 
 @dataclass
 class TimeSeries:
-    """Time series data common to all solvers."""
+    """Time series data common to all solvers.
 
-    residual: List[float]
+    Attributes
+    ----------
+    rel_iter_residual : List[float]
+        Relative iteration residual: max(||u^{n+1}-u^n||/||u^n||, ||v^{n+1}-v^n||/||v^n||)
+    u_residual : List[float]
+        U-velocity relative iteration residual: ||u^{n+1}-u^n||/||u^n||
+    v_residual : List[float]
+        V-velocity relative iteration residual: ||v^{n+1}-v^n||/||v^n||
+    continuity_residual : Optional[List[float]]
+        Continuity equation residual (solver-specific, may be None)
+    """
+
+    rel_iter_residual: List[float]
     u_residual: List[float]
     v_residual: List[float]
     continuity_residual: Optional[List[float]]
@@ -67,7 +79,9 @@ class TimeSeries:
             DataFrame with columns for each residual type.
             Index represents iteration number.
         """
-        return pd.DataFrame(asdict(self))
+        # Filter out None values to avoid object dtype
+        data = {k: v for k, v in asdict(self).items() if v is not None}
+        return pd.DataFrame(data)
 
 
 @dataclass

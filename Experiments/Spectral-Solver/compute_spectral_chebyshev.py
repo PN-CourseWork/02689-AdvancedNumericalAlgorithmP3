@@ -36,7 +36,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Run Pseudo Time-Stepping
 # -------------------------
 
-solver.solve(tolerance=1e-5, max_iter=60000)
+solver.solve(tolerance=1e-6, max_iter=60000)
 
 # %%
 # Convergence Results

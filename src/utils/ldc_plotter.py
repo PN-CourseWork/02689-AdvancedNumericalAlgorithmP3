@@ -93,32 +93,63 @@ class LDCPlotter:
         if self.metadata['run'].nunique() > 1:
             raise ValueError("Field plotting only available for single run.")
 
-    def plot_convergence(self, output_path=None):
-        """Plot convergence history using seaborn.
+    def plot_convergence(self, output_path=None, normalization_iters=5):
+        """Plot all time series residuals normalized by early iteration maximum.
+
+        Uses STAR-CCM+ style "Auto" normalization: normalizes by the maximum
+        value observed in the first N iterations.
 
         Parameters
         ----------
         output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
+        normalization_iters : int, optional
+            Number of initial iterations to use for computing normalization
+            reference (default: 5, following STAR-CCM+ convention).
         """
         n_runs = self.metadata['run'].nunique()
 
+        # Get residual columns (exclude 'iteration' and 'run')
+        residual_cols = [col for col in self.time_series.columns
+                        if col not in ['iteration', 'run']]
+
+        # Melt to long format
+        df_long = self.time_series.melt(
+            id_vars=['iteration', 'run'],
+            value_vars=residual_cols,
+            var_name='residual_type',
+            value_name='residual_value'
+        )
+
+        # Normalize each (run, residual_type) group by max of first N iterations
+        def normalize_group(group):
+            # Get maximum value from first N iterations
+            first_n = group.head(normalization_iters)
+            ref_value = first_n.max()
+            if ref_value != 0:
+                return group / ref_value
+            return group
+
+        df_long['normalized_residual'] = df_long.groupby(['run', 'residual_type'])['residual_value'].transform(normalize_group)
+
+        # Plot with seaborn
         g = sns.relplot(
-            data=self.time_series,
+            data=df_long,
             x="iteration",
-            y="residual",
-            hue="run" if n_runs > 1 else None,
+            y="normalized_residual",
+            hue="residual_type",
+            style="run" if n_runs > 1 else None,
             kind="line",
             height=5,
             aspect=1.6,
             linewidth=2,
-            legend="auto" if n_runs > 1 else False,
+            legend="auto",
         )
 
         g.ax.set_yscale("log")
         g.ax.grid(True, alpha=0.3)
         g.ax.set_xlabel("Iteration")
-        g.ax.set_ylabel("Residual")
+        g.ax.set_ylabel("Normalized Metric")
 
         if n_runs == 1:
             Re = self.metadata['Re'].iloc[0]
@@ -130,8 +161,8 @@ class LDCPlotter:
             g.savefig(output_path, bbox_inches="tight", dpi=300)
             print(f"Convergence plot saved to: {output_path}")
 
-    def plot_velocity_fields(self, output_path=None):
-        """Plot velocity components (u and v) using matplotlib tricontourf.
+    def plot_fields(self, output_path=None):
+        """Plot all solution fields (pressure, u velocity, v velocity).
 
         Only available for single-run plotting.
 
@@ -143,68 +174,57 @@ class LDCPlotter:
         self._require_single_run()
 
         Re = self.metadata['Re'].iloc[0]
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-        # U velocity
-        cf_u = axes[0].tricontourf(
-            self.fields['x'], self.fields['y'], self.fields['u'],
-            levels=20, cmap="RdBu_r"
-        )
+        # Determine grid size and reshape to 2D
+        nx = self.fields['x'].nunique()
+        ny = self.fields['y'].nunique()
+
+        # Get unique x and y coordinates (sorted)
+        x_unique = np.sort(self.fields['x'].unique())
+        y_unique = np.sort(self.fields['y'].unique())
+
+        # Create meshgrid
+        X, Y = np.meshgrid(x_unique, y_unique)
+
+        # Reshape fields to 2D - data is stored in C-order (row-major)
+        P = self.fields['p'].values.reshape(ny, nx)
+        U = self.fields['u'].values.reshape(ny, nx)
+        V = self.fields['v'].values.reshape(ny, nx)
+
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+        # Pressure
+        cf_p = axes[0].contourf(X, Y, P, levels=20, cmap="coolwarm")
         axes[0].set_xlabel("x")
         axes[0].set_ylabel("y")
-        axes[0].set_title("U velocity", fontweight="bold")
+        axes[0].set_title("Pressure", fontweight="bold")
         axes[0].set_aspect("equal")
-        plt.colorbar(cf_u, ax=axes[0], label="u")
+        plt.colorbar(cf_p, ax=axes[0], label="p")
 
-        # V velocity
-        cf_v = axes[1].tricontourf(
-            self.fields['x'], self.fields['y'], self.fields['v'],
-            levels=20, cmap="RdBu_r"
-        )
+        # U velocity
+        cf_u = axes[1].contourf(X, Y, U, levels=20, cmap="RdBu_r")
         axes[1].set_xlabel("x")
         axes[1].set_ylabel("y")
-        axes[1].set_title("V velocity", fontweight="bold")
+        axes[1].set_title("U velocity", fontweight="bold")
         axes[1].set_aspect("equal")
-        plt.colorbar(cf_v, ax=axes[1], label="v")
+        plt.colorbar(cf_u, ax=axes[1], label="u")
 
-        fig.suptitle(f"Velocity Components (Re = {Re:.0f})", fontweight="bold")
+        # V velocity
+        cf_v = axes[2].contourf(X, Y, V, levels=20, cmap="RdBu_r")
+        axes[2].set_xlabel("x")
+        axes[2].set_ylabel("y")
+        axes[2].set_title("V velocity", fontweight="bold")
+        axes[2].set_aspect("equal")
+        plt.colorbar(cf_v, ax=axes[2], label="v")
+
+        fig.suptitle(f"Solution Fields (Re = {Re:.0f})", fontweight="bold")
         plt.tight_layout()
 
         if output_path:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
-            print(f"Velocity fields plot saved to: {output_path}")
+            print(f"Fields plot saved to: {output_path}")
 
-    def plot_pressure(self, output_path=None):
-        """Plot pressure field using matplotlib tricontourf.
-
-        Only available for single-run plotting.
-
-        Parameters
-        ----------
-        output_path : str or Path, optional
-            Path to save figure. If None, figure is not saved.
-        """
-        self._require_single_run()
-
-        Re = self.metadata['Re'].iloc[0]
-        fig, ax = plt.subplots(figsize=(8, 7))
-
-        cf = ax.tricontourf(
-            self.fields['x'], self.fields['y'], self.fields['p'],
-            levels=20, cmap="coolwarm"
-        )
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        ax.set_title(f"Pressure Field (Re = {Re:.0f})", fontweight="bold")
-        ax.set_aspect("equal")
-        plt.colorbar(cf, ax=ax, label="Pressure")
-        plt.tight_layout()
-
-        if output_path:
-            plt.savefig(output_path, bbox_inches="tight", dpi=300)
-            print(f"Pressure plot saved to: {output_path}")
-
-    def plot_velocity_magnitude(self, output_path=None):
+    def plot_streamlines(self, output_path=None):
         """Plot velocity magnitude with streamlines.
 
         Only available for single-run plotting.
@@ -214,41 +234,49 @@ class LDCPlotter:
         output_path : str or Path, optional
             Path to save figure. If None, figure is not saved.
         """
-        from scipy.interpolate import griddata
+        from scipy.interpolate import RectBivariateSpline
 
         self._require_single_run()
 
         Re = self.metadata['Re'].iloc[0]
 
-        # Compute velocity magnitude
-        u = self.fields['u'].values
-        v = self.fields['v'].values
-        vel_mag = np.sqrt(u**2 + v**2)
+        # Determine grid size and reshape to 2D
+        nx = self.fields['x'].nunique()
+        ny = self.fields['y'].nunique()
+
+        # Get unique x and y coordinates (sorted)
+        x_unique = np.sort(self.fields['x'].unique())
+        y_unique = np.sort(self.fields['y'].unique())
+
+        # Reshape velocity fields to 2D - data is stored in C-order (row-major)
+        U = self.fields['u'].values.reshape(ny, nx)
+        V = self.fields['v'].values.reshape(ny, nx)
+        vel_mag = np.sqrt(U**2 + V**2)
+
+        # Create meshgrid for plotting
+        X, Y = np.meshgrid(x_unique, y_unique)
 
         fig, ax = plt.subplots(figsize=(8, 7))
 
         # Velocity magnitude contour
-        cf = ax.tricontourf(
-            self.fields['x'], self.fields['y'], vel_mag,
-            levels=20, cmap="coolwarm"
-        )
+        cf = ax.contourf(X, Y, vel_mag, levels=20, cmap="coolwarm")
 
-        # Create uniform grid for streamlines
-        x = self.fields['x'].values
-        y = self.fields['y'].values
-        n_grid = 50
-        x_uniform = np.linspace(x.min(), x.max(), n_grid)
-        y_uniform = np.linspace(y.min(), y.max(), n_grid)
-        X_uniform, Y_uniform = np.meshgrid(x_uniform, y_uniform)
+        # Interpolate velocity onto finer uniform grid for smooth streamlines
+        n_grid = 100
+        x_fine = np.linspace(x_unique.min(), x_unique.max(), n_grid)
+        y_fine = np.linspace(y_unique.min(), y_unique.max(), n_grid)
+        X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
 
-        # Interpolate velocity onto uniform grid
-        points = np.column_stack((x, y))
-        u_uniform = griddata(points, u, (X_uniform, Y_uniform), method='cubic')
-        v_uniform = griddata(points, v, (X_uniform, Y_uniform), method='cubic')
+        # Use RectBivariateSpline for structured grid interpolation
+        u_interp = RectBivariateSpline(y_unique, x_unique, U)
+        v_interp = RectBivariateSpline(y_unique, x_unique, V)
+
+        U_fine = u_interp(y_fine, x_fine)
+        V_fine = v_interp(y_fine, x_fine)
 
         # Streamlines
         stream = ax.streamplot(
-            x_uniform, y_uniform, u_uniform, v_uniform,
+            x_fine, y_fine, U_fine, V_fine,
             color='white', linewidth=1, density=1.5,
             arrowsize=1.2, arrowstyle='->'
         )
@@ -263,4 +291,4 @@ class LDCPlotter:
 
         if output_path:
             plt.savefig(output_path, bbox_inches="tight", dpi=300)
-            print(f"Velocity magnitude plot saved to: {output_path}")
+            print(f"Streamlines plot saved to: {output_path}")

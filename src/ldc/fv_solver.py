@@ -193,3 +193,93 @@ class FVSolver(LidDrivenCavitySolver):
             v_prev=self.arrays.v_prev,
             mdot=self.arrays.mdot,
         )
+
+    def _compute_derivatives(self):
+        """Compute velocity and pressure derivatives for residual computation.
+
+        Returns
+        -------
+        dict
+            Dictionary with velocity/pressure derivatives and Laplacians.
+        """
+        # Compute gradients using FV method
+        grad_u = np.zeros((self.n_cells, 2))
+        grad_v = np.zeros((self.n_cells, 2))
+        grad_p = np.zeros((self.n_cells, 2))
+
+        compute_cell_gradients_structured(self.mesh, self.arrays.u, use_limiter=False, out=grad_u)
+        compute_cell_gradients_structured(self.mesh, self.arrays.v, use_limiter=False, out=grad_v)
+        compute_cell_gradients_structured(self.mesh, self.arrays.p, use_limiter=False, out=grad_p)
+
+        # Compute Laplacians using second-order centered differences on structured grid
+        nx, ny = self.config.nx, self.config.ny
+        dx, dy = self.config.Lx / nx, self.config.Ly / ny
+
+        u_2d = self.arrays.u.reshape(ny, nx)
+        v_2d = self.arrays.v.reshape(ny, nx)
+
+        # Laplacian with zero Neumann BCs at boundaries
+        lap_u_2d = np.zeros((ny, nx))
+        lap_v_2d = np.zeros((ny, nx))
+
+        # Interior points: standard 5-point stencil
+        lap_u_2d[1:-1, 1:-1] = (
+            (u_2d[1:-1, 2:] - 2*u_2d[1:-1, 1:-1] + u_2d[1:-1, :-2]) / dx**2 +
+            (u_2d[2:, 1:-1] - 2*u_2d[1:-1, 1:-1] + u_2d[:-2, 1:-1]) / dy**2
+        )
+        lap_v_2d[1:-1, 1:-1] = (
+            (v_2d[1:-1, 2:] - 2*v_2d[1:-1, 1:-1] + v_2d[1:-1, :-2]) / dx**2 +
+            (v_2d[2:, 1:-1] - 2*v_2d[1:-1, 1:-1] + v_2d[:-2, 1:-1]) / dy**2
+        )
+
+        # Boundary points (one-sided differences)
+        # Left boundary (i=0)
+        lap_u_2d[1:-1, 0] = (
+            (u_2d[1:-1, 1] - u_2d[1:-1, 0]) / dx**2 +
+            (u_2d[2:, 0] - 2*u_2d[1:-1, 0] + u_2d[:-2, 0]) / dy**2
+        )
+        lap_v_2d[1:-1, 0] = (
+            (v_2d[1:-1, 1] - v_2d[1:-1, 0]) / dx**2 +
+            (v_2d[2:, 0] - 2*v_2d[1:-1, 0] + v_2d[:-2, 0]) / dy**2
+        )
+
+        # Right boundary (i=nx-1)
+        lap_u_2d[1:-1, -1] = (
+            (-u_2d[1:-1, -1] + u_2d[1:-1, -2]) / dx**2 +
+            (u_2d[2:, -1] - 2*u_2d[1:-1, -1] + u_2d[:-2, -1]) / dy**2
+        )
+        lap_v_2d[1:-1, -1] = (
+            (-v_2d[1:-1, -1] + v_2d[1:-1, -2]) / dx**2 +
+            (v_2d[2:, -1] - 2*v_2d[1:-1, -1] + v_2d[:-2, -1]) / dy**2
+        )
+
+        # Bottom boundary (j=0)
+        lap_u_2d[0, 1:-1] = (
+            (u_2d[0, 2:] - 2*u_2d[0, 1:-1] + u_2d[0, :-2]) / dx**2 +
+            (u_2d[1, 1:-1] - u_2d[0, 1:-1]) / dy**2
+        )
+        lap_v_2d[0, 1:-1] = (
+            (v_2d[0, 2:] - 2*v_2d[0, 1:-1] + v_2d[0, :-2]) / dx**2 +
+            (v_2d[1, 1:-1] - v_2d[0, 1:-1]) / dy**2
+        )
+
+        # Top boundary (j=ny-1)
+        lap_u_2d[-1, 1:-1] = (
+            (u_2d[-1, 2:] - 2*u_2d[-1, 1:-1] + u_2d[-1, :-2]) / dx**2 +
+            (-u_2d[-1, 1:-1] + u_2d[-2, 1:-1]) / dy**2
+        )
+        lap_v_2d[-1, 1:-1] = (
+            (v_2d[-1, 2:] - 2*v_2d[-1, 1:-1] + v_2d[-1, :-2]) / dx**2 +
+            (-v_2d[-1, 1:-1] + v_2d[-2, 1:-1]) / dy**2
+        )
+
+        return {
+            'du_dx': grad_u[:, 0],
+            'du_dy': grad_u[:, 1],
+            'dv_dx': grad_v[:, 0],
+            'dv_dy': grad_v[:, 1],
+            'dp_dx': grad_p[:, 0],
+            'dp_dy': grad_p[:, 1],
+            'lap_u': lap_u_2d.ravel(),
+            'lap_v': lap_v_2d.ravel()
+        }
