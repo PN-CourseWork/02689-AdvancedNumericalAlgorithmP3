@@ -17,7 +17,7 @@ from utils import get_project_root
 project_root = get_project_root()
 data_dir = project_root / "data" / "Spectral-Solver" / "Chebyshev"
 data_dir.mkdir(parents=True, exist_ok=True)
-N = 15  # Polynomial order (nodes = N+1 = 16)
+N = 19  # Polynomial order (nodes = N+1 = 16)
 
 solver = SpectralSolver(
     Re=100.0,            # Reynolds number
@@ -36,7 +36,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Run Pseudo Time-Stepping
 # -------------------------
 
-solver.solve(tolerance=1e-8, max_iter=60000)
+solver.solve(tolerance=1e-8, max_iter=80000)
 
 # %%
 # Convergence Results
