@@ -87,12 +87,12 @@ class SpectralSolver(LidDrivenCavitySolver):
         # Full grid: (Nx+1) × (Ny+1)
         x_nodes = self.basis_x.nodes(self.config.Nx + 1)
         y_nodes = self.basis_y.nodes(self.config.Ny + 1)
-        self.x_full, self.y_full = np.meshgrid(x_nodes, y_nodes, indexing='xy')
+        self.x_full, self.y_full = np.meshgrid(x_nodes, y_nodes, indexing='ij')
 
         # Reduced grid for pressure: (Nx-1) × (Ny-1) - interior points only
         self.x_inner = x_nodes[1:-1]
         self.y_inner = y_nodes[1:-1]
-        self.x_reduced, self.y_reduced = np.meshgrid(self.x_inner, self.y_inner, indexing='xy')
+        self.x_reduced, self.y_reduced = np.meshgrid(self.x_inner, self.y_inner, indexing='ij')
 
         # Grid spacing (minimum) for CFL calculation
         self.dx_min = np.min(np.diff(x_nodes))
@@ -104,22 +104,19 @@ class SpectralSolver(LidDrivenCavitySolver):
         Parameters
         ----------
         u_2d : np.ndarray
-            2D velocity array on full grid (ny, nx) with indexing='xy', modified in place
+            2D velocity array on full grid (Nx+1, Ny+1), modified in place
         """
         if self.config.corner_smoothing > 0:
             Nx = self.config.Nx
             smooth_width = int(self.config.corner_smoothing * Nx)
             if smooth_width > 0:
                 # Vectorized corner smoothing
-                # With indexing='xy', shape is (ny, nx)
-                # Top boundary is at u_2d[-1, :] (last row)
-                # Smooth along x-direction at left and right corners
                 i_values = np.arange(smooth_width)
                 factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
 
-                # Left and right corners on top boundary
-                u_2d[-1, i_values] = factors * self.config.lid_velocity
-                u_2d[-1, Nx - i_values] = factors * self.config.lid_velocity
+                # Left and right corners
+                u_2d[i_values, -1] = factors * self.config.lid_velocity
+                u_2d[Nx - i_values, -1] = factors * self.config.lid_velocity
 
     def _extrapolate_to_full_grid(self, inner_2d):
         """Extrapolate field from inner grid (Nx-1, Ny-1) to full grid (Nx+1, Ny+1).
@@ -280,23 +277,20 @@ class SpectralSolver(LidDrivenCavitySolver):
             Velocity fields (1D flat arrays) to modify in place
         """
         # Create 2D views (cheap - just metadata)
-        # With indexing='xy', shape is (ny, nx):
-        #   First dimension = y (rows): 0=South, -1=North
-        #   Second dimension = x (cols): 0=West, -1=East
         u_2d = u.reshape(self.shape_full)
         v_2d = v.reshape(self.shape_full)
 
         # No-slip on all boundaries
-        u_2d[0, :] = 0.0   # South (bottom, y=0)
-        u_2d[:, 0] = 0.0   # West (left, x=0)
-        u_2d[:, -1] = 0.0  # East (right, x=max)
-        v_2d[0, :] = 0.0   # South (bottom, y=0)
-        v_2d[:, 0] = 0.0   # West (left, x=0)
-        v_2d[:, -1] = 0.0  # East (right, x=max)
-        v_2d[-1, :] = 0.0  # North (top, y=max)
+        u_2d[0, :] = 0.0   # West
+        u_2d[-1, :] = 0.0  # East
+        u_2d[:, 0] = 0.0   # South
+        v_2d[0, :] = 0.0   # West
+        v_2d[-1, :] = 0.0  # East
+        v_2d[:, 0] = 0.0   # South
+        v_2d[:, -1] = 0.0  # North
 
-        # Moving lid on north boundary (top, y=max)
-        u_2d[-1, :] = self.config.lid_velocity
+        # Moving lid on north boundary
+        u_2d[:, -1] = self.config.lid_velocity
         self._apply_corner_smoothing(u_2d)
 
     def _compute_adaptive_timestep(self):
@@ -388,20 +382,19 @@ class SpectralSolver(LidDrivenCavitySolver):
             Dictionary with velocity/pressure derivatives and Laplacians.
         """
         # Compute velocity derivatives using spectral differentiation matrices
-        du_dx = (self.Dx @ self.arrays.u)
-        du_dy = (self.Dy @ self.arrays.u)
-        dv_dx = (self.Dx @ self.arrays.v)
-        dv_dy = (self.Dy @ self.arrays.v)
+        du_dx = self.Dx @ self.arrays.u
+        du_dy = self.Dy @ self.arrays.u
+        dv_dx = self.Dx @ self.arrays.v
+        dv_dy = self.Dy @ self.arrays.v
 
         # Compute velocity Laplacians
-        lap_u = (self.Laplacian @ self.arrays.u)
-        lap_v = (self.Laplacian @ self.arrays.v)
+        lap_u = self.Laplacian @ self.arrays.u
+        lap_v = self.Laplacian @ self.arrays.v
 
         # Compute pressure gradient and interpolate to full grid
         # Pressure lives on inner grid for PN-PN-2
-        p_inner_2d = self.arrays.p.reshape(self.shape_inner)
-        dp_dx_inner = (self.Dx_inner @ self.arrays.p)
-        dp_dy_inner = (self.Dy_inner @ self.arrays.p)
+        dp_dx_inner = self.Dx_inner @ self.arrays.p
+        dp_dy_inner = self.Dy_inner @ self.arrays.p
 
         # Interpolate pressure gradient from inner to full grid
         dp_dx_inner_2d = dp_dx_inner.reshape(self.shape_inner)
