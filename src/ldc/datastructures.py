@@ -68,7 +68,10 @@ class TimeSeries:
     u_residual: List[float]
     v_residual: List[float]
     continuity_residual: Optional[List[float]]
-    # TODO: Add the quantities stuff from the paper
+    # Conserved quantities (Saad reference data comparison)
+    energy: Optional[List[float]] = None
+    enstrophy: Optional[List[float]] = None
+    palinstrophy: Optional[List[float]] = None
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert time series to DataFrame for analysis and plotting.

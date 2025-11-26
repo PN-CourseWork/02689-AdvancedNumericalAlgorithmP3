@@ -21,8 +21,8 @@ data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
     Re=100.0,                # Reynolds number
-    nx=64,                   # Grid cells in x-direction
-    ny=64,                   # Grid cells in y-direction
+    nx=32,                   # Grid cells in x-direction
+    ny=32,                   # Grid cells in y-direction
     alpha_uv=0.6,            # Velocity under-relaxation factor
     alpha_p=0.3,             # Pressure under-relaxation factor
     convection_scheme="TVD", # Use TVD scheme with MUSCL limiter (higher-order, less diffusive)

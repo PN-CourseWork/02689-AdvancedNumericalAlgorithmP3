@@ -73,6 +73,10 @@ class FVSolver(LidDrivenCavitySolver):
         # Cache commonly used values
         self.n_cells = n_cells
 
+        # Grid spacing for quantity calculations
+        self.dx_min = self.config.Lx / self.config.nx
+        self.dy_min = self.config.Ly / self.config.ny
+
     def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, ksp):
         """Solve a single momentum equation (u or v).
 

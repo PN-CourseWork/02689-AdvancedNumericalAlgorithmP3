@@ -126,7 +126,8 @@ class LidDrivenCavitySolver(ABC):
             'continuity_residual': np.linalg.norm(R_c)
         }
 
-    def _store_results(self, residual_history, final_iter_count, is_converged):
+    def _store_results(self, residual_history, final_iter_count, is_converged,
+                       energy_history=None, enstrophy_history=None, palinstrophy_history=None):
         """Store solve results in self.fields, self.time_series, and self.metadata."""
         # Extract residuals
         rel_iter_residuals = [r['rel_iter'] for r in residual_history]
@@ -147,6 +148,9 @@ class LidDrivenCavitySolver(ABC):
             u_residual=u_residuals,
             v_residual=v_residuals,
             continuity_residual=continuity_residuals,
+            energy=energy_history,
+            enstrophy=enstrophy_history,
+            palinstrophy=palinstrophy_history,
         )
 
         # Update metadata with convergence info
@@ -190,6 +194,11 @@ class LidDrivenCavitySolver(ABC):
         # Residual history
         residual_history = []
 
+        # Quantity tracking (energy, enstrophy, palinstrophy)
+        energy_history = []
+        enstrophy_history = []
+        palinstrophy_history = []
+
         time_start = time.time()
         final_iter_count = 0
         is_converged = False
@@ -222,6 +231,10 @@ class LidDrivenCavitySolver(ABC):
                     "v_eq": eq_residuals['v_residual'],
                     "continuity": eq_residuals.get('continuity_residual', None)
                 })
+                # Calculate and store conserved quantities
+                energy_history.append(self._compute_energy())
+                enstrophy_history.append(self._compute_enstrophy())
+                palinstrophy_history.append(self._compute_palinstrophy())
 
             # Update previous iteration
             u_prev = self.arrays.u.copy()
@@ -244,7 +257,10 @@ class LidDrivenCavitySolver(ABC):
         print(f"Solver finished in {time_end - time_start:.2f} seconds.")
 
         # Store results
-        self._store_results(residual_history, final_iter_count, is_converged)
+        self._store_results(
+            residual_history, final_iter_count, is_converged,
+            energy_history, enstrophy_history, palinstrophy_history
+        )
 
     def save(self, filepath):
         """Save results to HDF5 file using pandas HDFStore.
@@ -265,3 +281,62 @@ class LidDrivenCavitySolver(ABC):
             store['metadata'] = self.metadata.to_dataframe()
             store['fields'] = self.fields.to_dataframe()
             store['time_series'] = self.time_series.to_dataframe()
+
+    # =========================================================================
+    # Conserved Quantity Calculations (for comparison with Saad reference data)
+    # =========================================================================
+
+    def _compute_energy(self) -> float:
+        """Compute kinetic energy: E = 0.5 * ∫ (u² + v²) dA."""
+        u = self.arrays.u
+        v = self.arrays.v
+        dA = self._get_cell_area()
+        return 0.5 * float(np.sum(u * u + v * v) * dA)
+
+    def _compute_enstrophy(self) -> float:
+        """Compute enstrophy: Z = 0.5 * ∫ ω² dA, where ω = ∂v/∂x - ∂u/∂y."""
+        omega = self._compute_vorticity()
+        dA = self._get_cell_area()
+        return 0.5 * float(np.sum(omega * omega) * dA)
+
+    def _compute_palinstrophy(self) -> float:
+        """Compute palinstrophy: P = ∫ (∂ω/∂x)² + (∂ω/∂y)² dA."""
+        omega = self._compute_vorticity()
+        domega_dx, domega_dy = self._compute_gradient(omega)
+        dA = self._get_cell_area()
+        return float(np.sum(domega_dx**2 + domega_dy**2) * dA)
+
+    def _compute_vorticity(self) -> np.ndarray:
+        """Compute vorticity ω = ∂v/∂x - ∂u/∂y."""
+        deriv = self._compute_derivatives()
+        return deriv['dv_dx'] - deriv['du_dy']
+
+    def _compute_gradient(self, field: np.ndarray) -> tuple:
+        """Compute gradient of a scalar field. Subclasses should override for accuracy."""
+        # Default implementation uses finite differences
+        dx = getattr(self, 'dx_min', 1.0 / np.sqrt(len(field)))
+        dy = getattr(self, 'dy_min', dx)
+
+        # Try to reshape to 2D grid
+        n = len(field)
+        nx = int(np.sqrt(n))
+        if nx * nx == n:
+            field_2d = field.reshape(nx, nx)
+            df_dx = np.zeros_like(field_2d)
+            df_dy = np.zeros_like(field_2d)
+            # Central differences (interior)
+            df_dx[1:-1, :] = (field_2d[2:, :] - field_2d[:-2, :]) / (2 * dx)
+            df_dy[:, 1:-1] = (field_2d[:, 2:] - field_2d[:, :-2]) / (2 * dy)
+            return df_dx.ravel(), df_dy.ravel()
+        else:
+            return np.zeros_like(field), np.zeros_like(field)
+
+    def _get_cell_area(self) -> float:
+        """Get cell area for integration. Subclasses should override."""
+        dx = getattr(self, 'dx_min', None)
+        dy = getattr(self, 'dy_min', None)
+        if dx is not None and dy is not None:
+            return dx * dy
+        # Fallback: assume unit domain
+        n = len(self.arrays.u)
+        return 1.0 / n
