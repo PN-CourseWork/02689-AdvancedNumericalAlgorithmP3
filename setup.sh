@@ -1,47 +1,63 @@
-#!/bin/bash
-# Setup script for ANA Project 3 with PETSc support
-# This script creates a clean virtual environment with petsc4py installed
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e  # Exit on error
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "=========================================="
-echo "Setting up ANA Project 3 Environment"
-echo "=========================================="
+echo "================================================================"
+echo "  Project 3 Environment Setup"
+echo "  Location: $PROJECT_ROOT"
+echo "================================================================"
 
-# Remove existing venv
+cd "$PROJECT_ROOT"
+
+# ---------------------------------------------------------------
+# 1. Remove existing venv
+# ---------------------------------------------------------------
 if [ -d ".venv" ]; then
-    echo "Removing existing .venv..."
+    echo "[1/5] Removing existing .venv ..."
     rm -rf .venv
+else
+    echo "[1/5] No existing .venv found — skipping removal."
 fi
 
-# Remove stray pip directory if it exists
-if [ -d "pip" ]; then
-    echo "Removing stray pip directory..."
-    rm -rf pip
-fi
 
-# Create fresh uv venv with pip included
-echo "Creating fresh virtual environment with uv..."
-uv venv --seed
+# ---------------------------------------------------------------
+# 2. Create a fresh uv venv (Python 3.12) with pip seeded
+# ---------------------------------------------------------------
+echo "[2/5] Creating new uv virtual environment (Python 3.12, seeded)..."
+uv venv --python 3.12 --seed .venv
 
-# First sync with uv to install all dependencies
-echo "Running uv sync..."
+
+# ---------------------------------------------------------------
+# 3. Install pyproject dependencies via uv sync
+# ---------------------------------------------------------------
+echo "[3/5] Installing pyproject dependencies via uv sync..."
+source .venv/bin/activate
 uv sync
 
-# Then install petsc4py via pip AFTER uv sync
-# (so it doesn't get removed by uv sync)
-echo "Installing petsc4py with pip..."
-source .venv/bin/activate
-pip install petsc4py
 
-echo ""
-echo "=========================================="
-echo "Setup complete!"
-echo "=========================================="
-echo ""
-echo "To activate the environment, run:"
-echo "  source .venv/bin/activate"
-echo ""
-echo "To verify PETSc installation, run:"
-echo "  python -c 'from petsc4py import PETSc; print(\"PETSc version:\", PETSc.Sys.getVersion())'"
-echo ""
+# ---------------------------------------------------------------
+# 4. Install PETSc + petsc4py using pip inside the venv
+# ---------------------------------------------------------------
+echo "[4/5] Installing PETSc + petsc4py via pip..."
+
+python -m pip install --upgrade pip wheel
+python -m pip install petsc petsc4py
+
+
+# ---------------------------------------------------------------
+# 5. Sanity check PETSc
+# ---------------------------------------------------------------
+echo "[5/5] Verifying PETSc installation..."
+
+python - <<'EOF'
+import petsc4py
+from petsc4py import PETSc
+petsc4py.init()
+print(" petsc4py version:", petsc4py.__version__)
+print(" PETSc version:", PETSc.Sys.getVersion())
+EOF
+
+echo "================================================================"
+echo " Setup complete!"
+echo "================================================================"

@@ -6,7 +6,6 @@ for lid-driven cavity solvers (both FV and spectral).
 
 from .config import Info, FVinfo, SpectralInfo
 from .fields import Fields, FVFields
-from .time_series import TimeSeries
 
 __all__ = [
     # Configuration and metadata
@@ -17,5 +16,4 @@ __all__ = [
     "Fields",
     "FVFields",
     # Time series
-    "TimeSeries",
 ]
