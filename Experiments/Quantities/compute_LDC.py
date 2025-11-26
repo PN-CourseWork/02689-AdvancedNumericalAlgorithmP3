@@ -32,9 +32,9 @@ data_dir = project_root / "data" / "Quantities"
 data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
-    Re=400.0,  # Reynolds number
-    nx=128,  # Grid cells in x-direction
-    ny=128,  # Grid cells in y-direction
+    Re=100.0,  # Reynolds number
+    nx=32,  # Grid cells in x-direction
+    ny=32,  # Grid cells in y-direction
     alpha_uv=0.5,  # Velocity under-relaxation factor
     alpha_p=0.5,  # Pressure under-relaxation factor
     convection_scheme="TVD",

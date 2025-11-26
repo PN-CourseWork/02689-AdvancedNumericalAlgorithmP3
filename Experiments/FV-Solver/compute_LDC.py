@@ -21,8 +21,8 @@ data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
     Re=100.0,  # Reynolds number
-    nx=16,  # Grid cells in x-direction
-    ny=16,  # Grid cells in y-direction
+    nx=32,  # Grid cells in x-direction
+    ny=32,  # Grid cells in y-direction
     alpha_uv=0.7,  # Velocity under-relaxation factor
     alpha_p=0.3,  # Pressure under-relaxation factor
     convection_scheme="TVD",
@@ -37,7 +37,7 @@ print(
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-5, max_iter=10000)
+solver.solve(tolerance=1e-6, max_iter=10000)
 
 # %%
 # Convergence Results
