@@ -33,8 +33,8 @@ data_dir.mkdir(parents=True, exist_ok=True)
 
 solver = FVSolver(
     Re=100.0,  # Reynolds number
-    nx=32,  # Grid cells in x-direction
-    ny=32,  # Grid cells in y-direction
+    nx=128,  # Grid cells in x-direction
+    ny=128,  # Grid cells in y-direction
     alpha_uv=0.5,  # Velocity under-relaxation factor
     alpha_p=0.5,  # Pressure under-relaxation factor
     convection_scheme="TVD",
@@ -49,7 +49,7 @@ print(
 # --------------------
 # Solve the incompressible Navier-Stokes equations using the SIMPLE algorithm.
 
-solver.solve(tolerance=1e-5, max_iter=10000)
+solver.solve(tolerance=1e-5, max_iter=20000)
 
 # --------------------------------------------------
 # DIAGNOSTIC BLOCK: prints spacing, ops, and robust recomputation

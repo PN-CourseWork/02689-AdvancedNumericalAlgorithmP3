@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Compare our solver conserved quantities (from quantities.csv) with
-Saad table values read from saad_Re1000_quantities.csv, and also plot the comparison.
+Compare our solver conserved quantities (from quantities_normalized.csv if present,
+otherwise from HDF5) with Saad table values read from saad_Re1000_quantities.csv,
+and also plot the comparison.
 
 Saves:
  - data/Quantities/compare_quantities_report.csv
@@ -28,6 +29,9 @@ except Exception:
 import h5py
 import numpy as np
 
+# -----------------------------
+# utility that already existed
+# -----------------------------
 def compute_fv_quantities_from_hdf5(h5_path):
     """
     Compute energy, enstrophy, palinstrophy directly from FV data stored in HDF5.
@@ -42,14 +46,14 @@ def compute_fv_quantities_from_hdf5(h5_path):
         grid = f["fields/grid_points"][()]
 
     # infer uniform grid spacing
-    xs = np.unique(grid[:,0])
-    ys = np.unique(grid[:,1])
+    xs = np.unique(grid[:, 0])
+    ys = np.unique(grid[:, 1])
     dx = xs[1] - xs[0]
     dy = ys[1] - ys[0]
     dA = dx * dy
 
     # ----- Energy -----
-    energy = 0.5 * np.sum(u*u + v*v) * dA
+    energy = 0.5 * np.sum(u * u + v * v) * dA
 
     # ----- Enstrophy -----
     # finite-difference gradients
@@ -59,19 +63,21 @@ def compute_fv_quantities_from_hdf5(h5_path):
     U = u.reshape(Ny, Nx)
     V = v.reshape(Ny, Nx)
 
-    dudy = (np.roll(U, -1, axis=0) - np.roll(U, 1, axis=0)) / (2*dy)
-    dvdx = (np.roll(V, -1, axis=1) - np.roll(V, 1, axis=1)) / (2*dx)
+    dudy = (np.roll(U, -1, axis=0) - np.roll(U, 1, axis=0)) / (2 * dy)
+    dvdx = (np.roll(V, -1, axis=1) - np.roll(V, 1, axis=1)) / (2 * dx)
 
     omega = dvdx - dudy
-    enstrophy = 0.5 * np.sum(omega*omega) * dA
+    enstrophy = 0.5 * np.sum(omega * omega) * dA
 
     # ----- Palinstrophy -----
-    omegax = (np.roll(omega, -1, axis=1) - np.roll(omega, 1, axis=1)) / (2*dx)
-    omegay = (np.roll(omega, -1, axis=0) - np.roll(omega, 1, axis=0)) / (2*dy)
+    omegax = (np.roll(omega, -1, axis=1) - np.roll(omega, 1, axis=1)) / (2 * dx)
+    omegay = (np.roll(omega, -1, axis=0) - np.roll(omega, 1, axis=0)) / (2 * dy)
 
-    palinstropy = np.sum(omegax*omegax + omegay*omegay) * dA
+    palinstropy = np.sum(omegax * omegax + omegay * omegay) * dA
 
     return float(energy), float(enstrophy), float(palinstropy)
+
+
 # Paths
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data" / "Quantities"
@@ -81,14 +87,38 @@ SAAD_DIR = PROJECT_ROOT / "data" / "validation" / "ghia"
 SAAD_TABLE = SAAD_DIR / "saad_Re1000_quantities.csv"
 FALLBACK_SAAD_TABLE = Path("/mnt/data/saad_quantities.csv")
 
-OUR_CSV = DATA_DIR / "quantities.csv"                 # produced by plot_LDC.py
+OUR_NORMALIZED_CSV = DATA_DIR / "quantities_normalized.csv"
+OUR_RAW_CSV = DATA_DIR / "quantities.csv"                 # produced by plot_LDC.py
+H5_FILE = DATA_DIR / "LDC_Re100_quantities.h5"
 OUT_REPORT = DATA_DIR / "compare_quantities_report.csv"
 OUT_PNG = DATA_DIR / "compare_quantities.png"
 OUT_PDF = DATA_DIR / "compare_quantities.pdf"
 
 
+def read_our_normalized_quantities(norm_csv_path):
+    """
+    Read quantities_normalized.csv and return final normalized values:
+      Energy_norm, Enstrophy_norm, Palinstropy_norm
+    """
+    if not norm_csv_path.exists():
+        raise FileNotFoundError(f"Normalized quantities CSV not found: {norm_csv_path}")
+    with open(norm_csv_path, "r", newline="") as fh:
+        rdr = csv.reader(fh)
+        hdr = next(rdr)
+        rows = [row for row in rdr if row and any(cell.strip() for cell in row)]
+    if not rows:
+        raise ValueError(f"No data rows in {norm_csv_path}")
+    last = rows[-1]
+    idx = {name: i for i, name in enumerate(hdr)}
+    # attempt common normalized column names, fallback to indices
+    e_norm = float(last[idx.get("Energy_norm", idx.get("Energy_norm".capitalize(), 1))]) if "Energy_norm" in idx or "Energy_norm".capitalize() in idx else float(last[1])
+    en_norm = float(last[idx.get("Enstrophy_norm", 2)])
+    p_norm = float(last[idx.get("Palinstropy_norm", 3)])
+    return e_norm, en_norm, p_norm
+
+
 def read_our_final_quantities(csv_path):
-    """Read our quantities.csv and return final energy, enstrophy, palinstropy (floats)."""
+    """(Legacy) Read our quantities.csv and return final energy, enstrophy, palinstropy (floats)."""
     if not csv_path.exists():
         raise FileNotFoundError(f"Our quantities CSV not found: {csv_path}")
     with open(csv_path, "r", newline="") as fh:
@@ -146,13 +176,13 @@ def make_plot(our_vals, ref_vals, out_png, out_pdf):
     width = 0.35
 
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 4))
-    bars1 = ax.bar(x - width/2, our, width, label="Our (final)")
+    bars1 = ax.bar(x - width/2, our, width, label="Our (normalized)")
     bars2 = ax.bar(x + width/2, ref, width, label="Saad (table)")
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylabel("Value (units as in code)")
-    ax.set_title("Comparison of conserved quantities (Our vs Saad table)")
+    ax.set_title("Comparison of conserved quantities (Our (normalized) vs Saad table)")
     ax.legend()
 
     # add numeric labels on bars
@@ -171,13 +201,53 @@ def make_plot(our_vals, ref_vals, out_png, out_pdf):
 
 
 def main():
-    # Read our final values
-    H5_FILE = DATA_DIR / "LDC_Re100_quantities.h5"
-    our_energy, our_ens, our_pal = compute_fv_quantities_from_hdf5(H5_FILE)
-    print("Our final quantities (from quantities.csv):")
-    print(f"  Energy     = {our_energy:.6e}")
-    print(f"  Enstrophy  = {our_ens:.6e}")
-    print(f"  Palinstropy= {our_pal:.6e}\n")
+    # Prefer the normalized CSV (produced by plot_LDC2.py). If missing, fall back to recompute+normalize from HDF5.
+    our_normalized_exists = OUR_NORMALIZED_CSV.exists()
+    if our_normalized_exists:
+        try:
+            our_e_norm, our_en_norm, our_p_norm = read_our_normalized_quantities(OUR_NORMALIZED_CSV)
+            print("Using our normalized values from:", OUR_NORMALIZED_CSV)
+        except Exception as e:
+            print("Failed reading normalized CSV:", e)
+            our_normalized_exists = False
+
+    if not our_normalized_exists:
+        # fallback: compute raw quantities from HDF5 and normalize by first time step if available
+        try:
+            # compute raw from HDF5
+            e_raw, en_raw, p_raw = compute_fv_quantities_from_hdf5(H5_FILE)
+            # try to read first values from quantities.csv to normalize; else normalize by raw values themselves
+            try:
+                with open(OUR_RAW_CSV, "r", newline="") as fh:
+                    rdr = csv.reader(fh)
+                    hdr = next(rdr)
+                    rows = [row for row in rdr if row and any(cell.strip() for cell in row)]
+                if rows:
+                    first = rows[0]
+                    idx = {name: i for i, name in enumerate(hdr)}
+                    e0 = float(first[idx.get("Energy", 1)])
+                    en0 = float(first[idx.get("Enstrophy", 2)])
+                    p0 = float(first[idx.get("Palinstropy", 3)])
+                else:
+                    e0 = e_raw if e_raw != 0 else 1.0
+                    en0 = en_raw if en_raw != 0 else 1.0
+                    p0 = p_raw if p_raw != 0 else 1.0
+            except Exception:
+                e0 = e_raw if e_raw != 0 else 1.0
+                en0 = en_raw if en_raw != 0 else 1.0
+                p0 = p_raw if p_raw != 0 else 1.0
+
+            our_e_norm = e_raw / e0
+            our_en_norm = en_raw / en0
+            our_p_norm = p_raw / p0
+            print("Computed our normalized values from HDF5 (fallback).")
+        except Exception as e:
+            raise SystemExit(f"Failed to obtain our normalized values (no normalized CSV and HDF5 fallback failed): {e}")
+
+    print("Our (normalized) final quantities:")
+    print(f"  Energy_norm     = {our_e_norm:.6e}")
+    print(f"  Enstrophy_norm  = {our_en_norm:.6e}")
+    print(f"  Palinstropy_norm= {our_p_norm:.6e}\n")
 
     # Determine Saad table path (repo first, fallback to debug copy)
     table_path = SAAD_TABLE
@@ -190,34 +260,34 @@ def main():
                 f"Saad quantities CSV not found at {SAAD_TABLE} and no fallback at {FALLBACK_SAAD_TABLE}"
             )
 
-    # Read Saad table values (no centerline integration)
+    # Read Saad table (absolute values)
     e_ref, ens_ref, pal_ref = read_saad_table(table_path)
     print("Saad table values (taken from saad_Re1000_quantities.csv):")
     print(f"  Energy     = {e_ref:.6e}")
     print(f"  Enstrophy  = {ens_ref:.6e}")
     print(f"  Palinstropy= {pal_ref:.6e}\n")
 
-    # Comparison
-    print("Comparison (our_final vs Saad_table):")
+    # Comparison: NOTE we're comparing our *normalized* values to Saad's absolute table.
+    print("Comparison (our_normalized vs Saad_table):")
     print("-----------------------------------------------------------")
-    print(f"Energy:      our = {our_energy:.6e}   ref = {e_ref:.6e}   rel.err = {rel_err(our_energy, e_ref):+.4%}")
-    print(f"Enstrophy:   our = {our_ens:.6e}   ref = {ens_ref:.6e}   rel.err = {rel_err(our_ens, ens_ref):+.4%}")
-    print(f"Palinstropy: our = {our_pal:.6e}   ref = {pal_ref:.6e}   rel.err = {rel_err(our_pal, pal_ref):+.4%}")
+    print(f"Energy:      our_norm = {our_e_norm:.6e}   saad = {e_ref:.6e}   rel.err = {rel_err(our_e_norm, e_ref):+.4%}")
+    print(f"Enstrophy:   our_norm = {our_en_norm:.6e}   saad = {ens_ref:.6e}   rel.err = {rel_err(our_en_norm, ens_ref):+.4%}")
+    print(f"Palinstropy: our_norm = {our_p_norm:.6e}   saad = {pal_ref:.6e}   rel.err = {rel_err(our_p_norm, pal_ref):+.4%}")
     print("-----------------------------------------------------------")
 
     # Save report CSV
     with open(OUT_REPORT, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["quantity", "our_final", "saad_table", "relative_error"])
-        w.writerow(["energy", our_energy, e_ref, rel_err(our_energy, e_ref)])
-        w.writerow(["enstrophy", our_ens, ens_ref, rel_err(our_ens, ens_ref)])
-        w.writerow(["palinstropy", our_pal, pal_ref, rel_err(our_pal, pal_ref)])
+        w.writerow(["quantity", "our_normalized", "saad_table", "relative_error"])
+        w.writerow(["energy", our_e_norm, e_ref, rel_err(our_e_norm, e_ref)])
+        w.writerow(["enstrophy", our_en_norm, ens_ref, rel_err(our_en_norm, ens_ref)])
+        w.writerow(["palinstropy", our_p_norm, pal_ref, rel_err(our_p_norm, pal_ref)])
     print(f"\nReport written to: {OUT_REPORT}")
 
     # Plot if matplotlib is available
     if HAS_MPL:
         try:
-            make_plot((our_energy, our_ens, our_pal), (e_ref, ens_ref, pal_ref), OUT_PNG, OUT_PDF)
+            make_plot((our_e_norm, our_en_norm, our_p_norm), (e_ref, ens_ref, pal_ref), OUT_PNG, OUT_PDF)
             print(f"Figures written to: {OUT_PNG} and {OUT_PDF}")
         except Exception as e:
             print("Plotting failed:", e)
