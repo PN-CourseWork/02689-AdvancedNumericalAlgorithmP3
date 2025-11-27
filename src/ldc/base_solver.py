@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 import numpy as np
-from dataclasses import replace
+from dataclasses import replace, asdict
+import mlflow
 
 from .datastructures import TimeSeries
 
@@ -340,3 +341,36 @@ class LidDrivenCavitySolver(ABC):
         # Fallback: assume unit domain
         n = len(self.arrays.u)
         return 1.0 / n
+
+    # ========================================================================
+    # MLflow
+    # ========================================================================
+
+    def mlflow_start(self, experiment_name, run_name):
+        """Start MLflow run (rank 0 only)."""
+
+        mlflow.login()
+
+        # Databricks requires absolute paths
+        experiment_name = f"/Shared/ANA-P3/{experiment_name}"
+
+        if mlflow.get_experiment_by_name(experiment_name) is None:
+            mlflow.create_experiment(name=experiment_name)
+
+        mlflow.set_experiment(experiment_name)
+        mlflow.start_run(log_system_metrics=True, run_name=run_name)
+        mlflow.log_params(asdict(self.config))
+        #mlflow.log_params(dict(self.Config))
+
+    def mlflow_end(self):
+        """End MLflow run with metrics (rank 0 only)."""
+
+
+        mlflow.log_metrics({
+            "Iterations": self.config.iterations,
+            "Converged": self.config.converged,
+            "FinalResidual": self.config.final_residual,
+        })
+        mlflow.end_run()
+
+

@@ -17,9 +17,11 @@ project_root = get_project_root()
 data_dir = project_root / "data" / "Spectral-Solver" / "Chebyshev"
 data_dir.mkdir(parents=True, exist_ok=True)
 N = 19  # Polynomial order (nodes = N+1 = 16)
+Re_number = 100
+print("Initializing solver object")
 
 solver = SpectralSolver(
-    Re=100.0,            # Reynolds number
+    Re=Re_number,            # Reynolds number
     Nx=N,               # Polynomial order in x (nodes = Nx+1 = 16)
     Ny=N,               # Polynomial order in y (nodes = Ny+1 = 16)
     basis_type="chebyshev",  # Use Chebyshev-Gauss-Lobatto (Zhang et al. 2010)
@@ -34,8 +36,11 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # %%
 # Run Pseudo Time-Stepping
 # -------------------------
+solver.mlflow_start("Spectral-Chubby", f"Re_{Re_number}_N_{N}")
 
-solver.solve(tolerance=1e-7, max_iter=100000)
+solver.solve(tolerance=1e-7, max_iter=500)
+
+solver.mlflow_end()
 
 # %%
 # Convergence Results
