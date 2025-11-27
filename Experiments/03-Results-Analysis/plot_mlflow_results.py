@@ -13,10 +13,9 @@ Usage::
 # Setup
 # -----
 
-import mlflow
-from utils import load_runs
+from utils import load_runs, setup_mlflow_auth
 
-mlflow.login()
+setup_mlflow_auth()
 
 # %%
 # Finite Volume Experiment

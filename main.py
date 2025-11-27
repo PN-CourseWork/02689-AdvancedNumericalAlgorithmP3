@@ -326,7 +326,7 @@ def fetch_mlflow():
         fv_paths = download_artifacts_with_naming("HPC-FV-Solver", fv_dir)
         print(f"  ✓ Downloaded {len(fv_paths)} files to data/FV-Solver/")
 
-        spectral_dir = REPO_ROOT / "data" / "Spectral-Solver"
+        spectral_dir = REPO_ROOT / "data" / "Spectral-Solver" / "Chebyshev"
         print("\nSpectral:")
         spectral_paths = download_artifacts_with_naming("HPC-Spectral-Chebyshev", spectral_dir)
         print(f"  ✓ Downloaded {len(spectral_paths)} files to data/Spectral-Solver/")

@@ -14,10 +14,9 @@ Usage::
 # Setup
 # -----
 
-import mlflow
-from utils import get_project_root, download_artifacts_with_naming
+from utils import get_project_root, download_artifacts_with_naming, setup_mlflow_auth
 
-mlflow.login()
+setup_mlflow_auth()
 project_root = get_project_root()
 
 # %%
@@ -33,7 +32,7 @@ print(f"Downloaded {len(fv_paths)} files to {fv_dir}\n")
 # Spectral Artifacts
 # ------------------
 
-spectral_dir = project_root / "data" / "Spectral-Solver"
+spectral_dir = project_root / "data" / "Spectral-Solver" / "Chebyshev"
 print("Downloading Spectral artifacts...")
 spectral_paths = download_artifacts_with_naming("HPC-Spectral-Chebyshev", spectral_dir)
 print(f"Downloaded {len(spectral_paths)} files to {spectral_dir}")
