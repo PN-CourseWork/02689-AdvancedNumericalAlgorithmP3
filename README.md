@@ -11,6 +11,42 @@ Run the setup script from project root:
 bash setup.sh
 ```
 
+## HPC (LSF Cluster)
+
+Submit parameter sweeps using job packs:
+
+```bash
+# Preview jobs without submitting
+uv run python main.py --hpc spectral --dry-run
+
+# Submit spectral solver jobs
+uv run python main.py --hpc spectral
+
+# Submit FV solver jobs
+uv run python main.py --hpc fv
+
+# Submit all jobs
+uv run python main.py --hpc all
+```
+
+Edit `Experiments/*/generate_pack.sh` to customize resources and parameter sweep values.
+
+### Monitoring and Managing Jobs
+
+```bash
+# Check job status
+bstat
+
+# Kill a specific job by name
+bkill -J Spectral-N23-Re100
+
+# Kill a job by ID
+bkill 27198795
+
+# Kill all your jobs
+bkill 0
+```
+
 ## References
 
 ### SIMPLE for Spectral

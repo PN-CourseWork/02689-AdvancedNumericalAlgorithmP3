@@ -190,6 +190,7 @@ class LidDrivenCavitySolver(ABC):
         palinstrophy_history = []
 
         time_start = time.time()
+        mlflow_time = 0.0  # Track time spent on MLflow logging
         final_iter_count = 0
         is_converged = False
 
@@ -239,13 +240,29 @@ class LidDrivenCavitySolver(ABC):
             if i % 50 == 0 or is_converged:
                 print(f"Iteration {i}: u_res={u_solution_change:.6e}, v_res={v_solution_change:.6e}")
 
+                # Live MLflow logging every 50 iterations (timed separately)
+                if mlflow.active_run():
+                    t_log_start = time.time()
+                    live_metrics = {
+                        "rel_iter_residual": rel_iter_residual,
+                        "u_residual": eq_residuals['u_residual'],
+                        "v_residual": eq_residuals['v_residual'],
+                    }
+                    if 'continuity_residual' in eq_residuals:
+                        live_metrics["continuity_residual"] = eq_residuals['continuity_residual']
+                    if i >= 10:  # After warmup, also log conserved quantities
+                        live_metrics["energy"] = energy_history[-1]
+                        live_metrics["enstrophy"] = enstrophy_history[-1]
+                    mlflow.log_metrics(live_metrics, step=i)
+                    mlflow_time += time.time() - t_log_start
+
             if is_converged:
                 print(f"Converged at iteration {i}")
                 break
 
         time_end = time.time()
-        wall_time = time_end - time_start
-        print(f"Solver finished in {wall_time:.2f} seconds.")
+        wall_time = time_end - time_start - mlflow_time  # Exclude MLflow logging time
+        print(f"Solver finished in {wall_time:.2f} seconds (excl. {mlflow_time:.2f}s logging).")
 
         # Store results
         self._store_results(
@@ -254,25 +271,26 @@ class LidDrivenCavitySolver(ABC):
         )
 
     def save(self, filepath):
-        """Save results to HDF5 file using pandas HDFStore.
+        """Save complete solver state to HDF5 file.
+
+        Saves params, metrics, time_series, and fields for later analysis.
 
         Parameters
         ----------
         filepath : str or Path
-            Output file path.
+            Output file path (use .h5 extension).
         """
         from pathlib import Path
-        import pandas as pd
 
         filepath = Path(filepath)
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert dataclasses to DataFrames
-        with pd.HDFStore(filepath, 'w') as store:
+        import pandas as pd
+        with pd.HDFStore(filepath, mode='w', complevel=5) as store:
             store['params'] = self.params.to_dataframe()
             store['metrics'] = self.metrics.to_dataframe()
-            store['fields'] = self.fields.to_dataframe()
             store['time_series'] = self.time_series.to_dataframe()
+            store['fields'] = self.fields.to_dataframe()
 
     # =========================================================================
     # Conserved Quantity Calculations (for comparison with Saad reference data)
@@ -404,21 +422,10 @@ class LidDrivenCavitySolver(ABC):
             description += ")"
             mlflow.set_tag("mlflow.note.content", description)
 
-    def mlflow_end(self, log_time_series: bool = True):
-        """End MLflow run and log metrics.
-
-        Parameters
-        ----------
-        log_time_series : bool, optional
-            If True, logs the full convergence history as step-based metrics.
-            Default is True.
-        """
+    def mlflow_end(self):
+        """End MLflow run and log final metrics."""
         # Log final metrics from the metrics dataclass
         mlflow.log_metrics(asdict(self.metrics))
-
-        # Log time series as step-based metrics (traces)
-        if log_time_series and hasattr(self, 'time_series'):
-            self._mlflow_log_time_series()
 
         # End child run
         mlflow.end_run()
@@ -426,24 +433,6 @@ class LidDrivenCavitySolver(ABC):
         # End parent run if nested
         if getattr(self, '_mlflow_nested', False):
             mlflow.end_run()
-
-    def _mlflow_log_time_series(self):
-        """Log time series as step-based metrics using async batch logging."""
-        from mlflow.entities import Metric
-
-        run_id = mlflow.active_run().info.run_id
-        client = mlflow.tracking.MlflowClient()
-        timestamp = int(time.time() * 1000)
-
-        # Build all metrics
-        metrics = []
-        ts_dict = {k: v for k, v in asdict(self.time_series).items() if v is not None}
-        for name, values in ts_dict.items():
-            for step, value in enumerate(values):
-                metrics.append(Metric(name, float(value), timestamp, step))
-
-        # Async batch log (non-blocking)
-        client.log_batch(run_id, metrics=metrics, synchronous=False)
 
     def mlflow_log_artifact(self, filepath: str):
         """Log an artifact (e.g., saved HDF5 file) to MLflow.

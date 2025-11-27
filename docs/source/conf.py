@@ -44,8 +44,8 @@ autodoc_default_options = {
     "show-inheritance": True,
 }
 
-# Mock heavy runtime dependencies
-# autodoc_mock_imports = ["numba", "pyarrow", "matplotlib"]  # Disabled - causing import issues
+# Mock heavy runtime dependencies (petsc4py requires PETSc installation)
+autodoc_mock_imports = ["petsc4py", "petsc4py.PETSc"]
 
 # -- Numpydoc configuration --------------------------------------------------
 

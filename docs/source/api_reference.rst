@@ -10,7 +10,7 @@ This page provides an overview of the project modules.
    :maxdepth: 2
 
    api/ldc
-   api/fv
-   api/spectral
+   api/base_solver
+   api/fv_solver
+   api/spectral_solver
    api/datastructures
-   api/utils

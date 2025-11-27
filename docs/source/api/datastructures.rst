@@ -1,17 +1,19 @@
-Data Structures Package (``datastructures``)
-=============================================
+Data Structures (``ldc.datastructures``)
+========================================
 
 Configuration and result data structures for solvers.
 
-.. currentmodule:: datastructures
+.. currentmodule:: ldc.datastructures
 
 .. autosummary::
    :toctree: ../generated
    :nosignatures:
 
-   Info
-   FVinfo
-   SpectralInfo
+   Parameters
+   FVParameters
+   SpectralParameters
+   Metrics
    Fields
-   FVFields
    TimeSeries
+   FVSolverFields
+   SpectralSolverFields

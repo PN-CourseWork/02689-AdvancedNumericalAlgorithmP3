@@ -11,6 +11,11 @@ from .data_io import (
     load_metadata,
     load_multiple_runs,
 )
+from .mlflow_io import (
+    load_runs,
+    download_artifacts,
+    download_artifacts_with_naming,
+)
 
 __all__ = [
     "plotting",
@@ -23,6 +28,9 @@ __all__ = [
     "load_fields",
     "load_metadata",
     "load_multiple_runs",
+    "load_runs",
+    "download_artifacts",
+    "download_artifacts_with_naming",
 ]
 
 

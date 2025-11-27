@@ -1,5 +1,5 @@
-Lid-Driven Cavity Package (``ldc``)
-====================================
+Lid-Driven Cavity Solvers (``ldc``)
+===================================
 
 Solvers for lid-driven cavity flow simulations.
 
@@ -11,3 +11,4 @@ Solvers for lid-driven cavity flow simulations.
 
    LidDrivenCavitySolver
    FVSolver
+   SpectralSolver

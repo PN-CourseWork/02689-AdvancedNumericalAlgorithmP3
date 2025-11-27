@@ -17,6 +17,8 @@ Contents
    Gallery of computational experiments and visualizations for lid-driven cavity flow.
 :doc:`api_reference`
    Complete API reference for finite volume, spectral methods, and utility modules.
+:doc:`hpc_guide`
+   Guide for running parameter sweeps on the DTU HPC cluster.
 
 .. toctree::
    :maxdepth: 2
@@ -32,6 +34,7 @@ Contents
    :caption: Reference
 
    api_reference
+   hpc_guide
 
 Installation
 ------------

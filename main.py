@@ -1,4 +1,4 @@
-kj#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Main script to run all examples."""
 
 import argparse
@@ -238,6 +238,109 @@ def clean_all():
     print()
 
 
+def hpc_submit(solver: str, dry_run: bool = False):
+    """Generate and submit HPC job pack.
+
+    Parameters
+    ----------
+    solver : str
+        Which solver to submit: 'spectral', 'fv', or 'all'
+    dry_run : bool
+        If True, only print the jobs without submitting
+    """
+    solvers = []
+    if solver in ("spectral", "all"):
+        solvers.append(("Spectral-Solver", REPO_ROOT / "Experiments" / "Spectral-Solver"))
+    if solver in ("fv", "all"):
+        solvers.append(("FV-Solver", REPO_ROOT / "Experiments" / "FV-Solver"))
+
+    for name, solver_dir in solvers:
+        generator = solver_dir / "generate_pack.sh"
+        pack_file = solver_dir / "jobs.pack"
+
+        if not generator.exists():
+            print(f"  ✗ {name}: generate_pack.sh not found")
+            continue
+
+        print(f"\n{name}:")
+
+        # Generate pack file
+        try:
+            result = subprocess.run(
+                ["bash", str(generator)],
+                capture_output=True,
+                text=True,
+                cwd=str(solver_dir),
+            )
+            jobs = result.stdout.strip()
+
+            if not jobs:
+                print("  ✗ No jobs generated")
+                continue
+
+            job_count = len(jobs.split('\n'))
+            print(f"  Generated {job_count} jobs")
+
+            if dry_run:
+                print("\n  Jobs to submit:")
+                for line in jobs.split('\n'):
+                    # Extract job name from -J flag
+                    parts = line.split()
+                    job_name = parts[1] if len(parts) > 1 else "unknown"
+                    print(f"    - {job_name}")
+            else:
+                # Write pack file
+                pack_file.write_text(jobs)
+
+                # Submit to LSF from repo root
+                result = subprocess.run(
+                    ["bsub", "-pack", str(pack_file)],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(REPO_ROOT),
+                )
+
+                if result.returncode == 0:
+                    print(f"  ✓ Submitted {job_count} jobs")
+                    print(f"  {result.stdout.strip()}")
+                else:
+                    print(f"  ✗ Submission failed: {result.stderr}")
+
+        except FileNotFoundError:
+            print("  ✗ bsub not found (are you on HPC?)")
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+
+
+def fetch_mlflow():
+    """Fetch artifacts from MLflow for all converged runs."""
+    print("\nFetching MLflow artifacts...")
+
+    try:
+        import mlflow
+        from utils import download_artifacts_with_naming
+
+        mlflow.login()
+
+        fv_dir = REPO_ROOT / "data" / "FV-Solver"
+        print("\nFinite Volume:")
+        fv_paths = download_artifacts_with_naming("HPC-FV-Solver", fv_dir)
+        print(f"  ✓ Downloaded {len(fv_paths)} files to data/FV-Solver/")
+
+        spectral_dir = REPO_ROOT / "data" / "Spectral-Solver"
+        print("\nSpectral:")
+        spectral_paths = download_artifacts_with_naming("HPC-Spectral-Chebyshev", spectral_dir)
+        print(f"  ✓ Downloaded {len(spectral_paths)} files to data/Spectral-Solver/")
+
+        print()
+
+    except ImportError as e:
+        print(f"  ✗ Missing dependency: {e}")
+        print("    Install with: uv sync")
+    except Exception as e:
+        print(f"  ✗ Failed to fetch: {e}\n")
+
+
 def ruff_check():
     """Run ruff linter."""
     print("\nRunning ruff check...")
@@ -317,12 +420,15 @@ def main():
 Examples:
   python main.py --compute                     Run data generation scripts
   python main.py --plot                        Run plotting scripts
+  python main.py --fetch                       Fetch artifacts from MLflow
   python main.py --build-docs                  Build Sphinx HTML documentation
   python main.py --clean-docs                  Clean built documentation
   python main.py --clean-all                   Clean all generated files and caches
   python main.py --lint                        Check code with ruff
   python main.py --format                      Format code with ruff
   python main.py --compute --plot              Run all example scripts
+  python main.py --hpc spectral                Submit spectral solver jobs to HPC
+  python main.py --hpc all --dry-run           Preview all HPC jobs without submitting
         """,
     )
 
@@ -341,6 +447,21 @@ Examples:
     )
     parser.add_argument("--lint", action="store_true", help="Run ruff linter")
     parser.add_argument("--format", action="store_true", help="Run ruff formatter")
+    parser.add_argument(
+        "--hpc",
+        choices=["spectral", "fv", "all"],
+        help="Submit jobs to HPC (spectral, fv, or all)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview HPC jobs without submitting",
+    )
+    parser.add_argument(
+        "--fetch",
+        action="store_true",
+        help="Fetch artifacts from MLflow for all converged runs",
+    )
 
     # Show help if no arguments provided
     if len(sys.argv) == 1:
@@ -363,6 +484,14 @@ Examples:
 
     if args.format:
         ruff_format()
+
+    # Handle HPC submission
+    if args.hpc:
+        hpc_submit(args.hpc, dry_run=args.dry_run)
+
+    # Handle MLflow fetch
+    if args.fetch:
+        fetch_mlflow()
 
     # Handle documentation commands
     if args.build_docs:
