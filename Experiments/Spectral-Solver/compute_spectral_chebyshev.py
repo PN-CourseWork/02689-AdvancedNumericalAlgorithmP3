@@ -13,7 +13,6 @@ as described in Zhang et al. (2010).
 
 from ldc import SpectralSolver
 from utils import get_project_root
-
 project_root = get_project_root()
 data_dir = project_root / "data" / "Spectral-Solver" / "Chebyshev"
 data_dir.mkdir(parents=True, exist_ok=True)
@@ -36,7 +35,7 @@ print(f"Total nodes: {(solver.config.Nx+1)*(solver.config.Ny+1)}")
 # Run Pseudo Time-Stepping
 # -------------------------
 
-solver.solve(tolerance=1e-8, max_iter=80000)
+solver.solve(tolerance=1e-7, max_iter=100000)
 
 # %%
 # Convergence Results
