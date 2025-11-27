@@ -22,10 +22,10 @@ fi
 
 
 # ---------------------------------------------------------------
-# 2. Create a fresh uv venv (Python 3.12) with pip seeded
+# 2. Create a fresh uv venv (Python 3.13) with pip seeded
 # ---------------------------------------------------------------
-echo "[2/5] Creating new uv virtual environment (Python 3.12, seeded)..."
-uv venv --python 3.12 --seed .venv
+echo "[2/5] Creating new uv virtual environment (Python 3.13, seeded)..."
+uv venv --python 3.13 --seed .venv
 
 
 # ---------------------------------------------------------------
