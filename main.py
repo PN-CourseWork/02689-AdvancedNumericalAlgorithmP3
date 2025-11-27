@@ -317,10 +317,9 @@ def fetch_mlflow():
     print("\nFetching MLflow artifacts...")
 
     try:
-        import mlflow
-        from utils import download_artifacts_with_naming
+        from utils import download_artifacts_with_naming, setup_mlflow_auth
 
-        mlflow.login()
+        setup_mlflow_auth()
 
         fv_dir = REPO_ROOT / "data" / "FV-Solver"
         print("\nFinite Volume:")

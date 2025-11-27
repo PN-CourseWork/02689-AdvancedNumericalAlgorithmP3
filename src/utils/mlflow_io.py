@@ -4,10 +4,28 @@ This module provides helpers for retrieving experiment data from
 MLflow/Databricks and downloading artifacts to the local data directory.
 """
 
+import os
 from pathlib import Path
 from typing import List, Optional
 import mlflow
 import pandas as pd
+
+
+def setup_mlflow_auth():
+    """Configure MLflow authentication.
+
+    Uses DATABRICKS_TOKEN environment variable if available (for CI),
+    otherwise falls back to interactive login.
+    """
+    token = os.environ.get("DATABRICKS_TOKEN")
+    if token:
+        # CI environment - use token-based auth
+        host = os.environ.get("DATABRICKS_HOST", "https://dbc-6756e917-e5fc.cloud.databricks.com")
+        mlflow.set_tracking_uri(host)
+        os.environ["MLFLOW_TRACKING_TOKEN"] = token
+    else:
+        # Local environment - interactive login
+        mlflow.login()
 
 
 def load_runs(

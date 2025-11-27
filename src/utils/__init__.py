@@ -12,6 +12,7 @@ from .data_io import (
     load_multiple_runs,
 )
 from .mlflow_io import (
+    setup_mlflow_auth,
     load_runs,
     download_artifacts,
     download_artifacts_with_naming,
@@ -28,6 +29,7 @@ __all__ = [
     "load_fields",
     "load_metadata",
     "load_multiple_runs",
+    "setup_mlflow_auth",
     "load_runs",
     "download_artifacts",
     "download_artifacts_with_naming",
