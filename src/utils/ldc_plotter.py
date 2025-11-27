@@ -71,8 +71,13 @@ class LDCPlotter:
 
             label = run.get("label", h5_path.stem)
 
-            # Load DataFrames and add metadata
-            metadata_df = pd.read_hdf(h5_path, 'metadata').assign(run=label)
+            # Load DataFrames and add run label
+            # New format uses 'params' and 'metrics' instead of 'metadata'
+            params_df = pd.read_hdf(h5_path, 'params')
+            metrics_df = pd.read_hdf(h5_path, 'metrics')
+            # Combine params and metrics into single metadata row
+            metadata_df = pd.concat([params_df, metrics_df], axis=1).assign(run=label)
+
             fields_df = pd.read_hdf(h5_path, 'fields').assign(run=label)
             time_series_df = pd.read_hdf(h5_path, 'time_series').assign(
                 run=label,

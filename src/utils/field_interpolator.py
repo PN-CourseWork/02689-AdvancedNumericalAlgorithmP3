@@ -36,9 +36,9 @@ class UnifiedFieldInterpolator:
         """Initialize interpolator from HDF5 file."""
         self.h5_path = Path(h5_path)
 
-        # Load fields
+        # Load fields and params (new format uses 'params' instead of 'metadata')
         self.fields = pd.read_hdf(self.h5_path, 'fields')
-        self.metadata = pd.read_hdf(self.h5_path, 'metadata')
+        self.params = pd.read_hdf(self.h5_path, 'params')
 
         # Detect grid type and create interpolators
         self._detect_grid_type()

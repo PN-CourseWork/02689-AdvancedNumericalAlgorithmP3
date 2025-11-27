@@ -1,135 +1,113 @@
 """Abstract base solver for lid-driven cavity problem."""
 
 from abc import ABC, abstractmethod
+import os
+import time
+
 import numpy as np
-from dataclasses import replace, asdict
 import mlflow
 
-from .datastructures import TimeSeries
+from dataclasses import asdict
+from .datastructures import TimeSeries, Metrics, Fields
 
 
 class LidDrivenCavitySolver(ABC):
     """Abstract base solver for lid-driven cavity problem.
 
     Handles:
-    - Configuration management
+    - Parameter management (input configuration)
+    - Metrics tracking (output results)
     - Iteration loop with residual computation
-    - Result storage
+    - MLflow logging
 
     Subclasses must:
-    - Set Config and ResultFields class attributes
+    - Set Parameters class attribute (e.g., FVParameters)
     - Implement step() - perform one iteration
-    - Implement _create_result_fields() - create result dataclass
-    - Extend __init__() for solver-specific setup
+    - Call _init_fields(x, y) after setting up grid
+    - Implement _compute_algebraic_residuals() for Ax-b residuals
     """
 
-    Config = None
-    ResultFields = None
+    Parameters = None  # Subclasses set this to FVParameters or SpectralParameters
 
-    def __init__(self, config=None, **kwargs):
-        """Initialize solver with configuration.
+    def __init__(self, params=None, **kwargs):
+        """Initialize solver with parameters.
 
         Parameters
         ----------
-        config : Config, optional
-            Configuration object. If not provided, kwargs are used to create config.
+        params : Parameters, optional
+            Parameters object. If not provided, kwargs are used to create params.
         **kwargs
-            Configuration parameters passed to Config class if config is None.
+            Configuration parameters passed to Parameters class if params is None.
         """
-        # Create config from kwargs if not provided
-        if config is None:
-            if self.Config is None:
-                raise ValueError("Subclass must define Config class attribute")
-            config = self.Config(**kwargs)
+        if params is None:
+            if self.Parameters is None:
+                raise ValueError("Subclass must define Parameters class attribute")
+            params = self.Parameters(**kwargs)
 
-        self.config = config
+        self.params = params
+        self.metrics = Metrics()
+        self.fields = None  # Initialized by subclass via _init_fields()
+        self.time_series = None  # Populated after solve()
+
+    def _init_fields(self, x: np.ndarray, y: np.ndarray):
+        """Initialize output fields with grid coordinates.
+
+        Called by subclass after setting up grid. Pre-allocates the Fields
+        dataclass that will hold the final solution.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            X coordinates of all grid points (1D array)
+        y : np.ndarray
+            Y coordinates of all grid points (1D array)
+        """
+        n_points = len(x)
+        self.fields = Fields(
+            u=np.zeros(n_points),
+            v=np.zeros(n_points),
+            p=np.zeros(n_points),
+            x=x.copy(),
+            y=y.copy(),
+        )
 
     @abstractmethod
     def step(self):
         """Perform one iteration/time step of the solver.
 
-        This method should:
-        1. Update the solution fields (u, v, p)
-        2. Return the updated fields as a tuple (u, v, p)
-
-        The fields should be stored as instance variables that can be accessed
-        for residual computation.
-
         Returns
         -------
-        u : np.ndarray
-            Updated u velocity field
-        v : np.ndarray
-            Updated v velocity field
-        p : np.ndarray
-            Updated pressure field
+        u, v, p : np.ndarray
+            Updated velocity and pressure fields
         """
         pass
+
+    def _finalize_fields(self):
+        """Copy final solution from internal arrays to output fields.
+
+        Default implementation copies directly. Override if transformation
+        is needed (e.g., spectral pressure interpolation from inner grid).
+        """
+        self.fields.u[:] = self.arrays.u
+        self.fields.v[:] = self.arrays.v
+        self.fields.p[:] = self.arrays.p
 
     @abstractmethod
-    def _create_result_fields(self):
-        """Create result fields dataclass with solver-specific data.
-
-        Must return an instance of self.ResultFields.
-        """
-        pass
-
-    @abstractmethod
-    def _compute_derivatives(self):
-        """Compute velocity and pressure derivatives needed for residuals.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-            - 'du_dx', 'du_dy', 'dv_dx', 'dv_dy': velocity derivatives
-            - 'dp_dx', 'dp_dy': pressure gradient components
-            - 'lap_u', 'lap_v': velocity Laplacians
-            All arrays should be 1D and have same length (all grid points).
-        """
-        pass
-
-    def _compute_equation_residuals(self):
-        """Compute physical equation residuals (discretization-independent).
-
-        Evaluates how well current solution satisfies:
-        - U-momentum: (u·∇)u + ∂p/∂x - (1/Re)∇²u = 0
-        - V-momentum: (u·∇)v + ∂p/∂y - (1/Re)∇²v = 0
-        - Continuity: ∂u/∂x + ∂v/∂y = 0
+    def _compute_algebraic_residuals(self):
+        """Compute algebraic residuals (Ax - b) for the discretized equations.
 
         Returns
         -------
         dict
             Dictionary with keys 'u_residual', 'v_residual', 'continuity_residual'
-            containing L2 norms of the equation residuals.
+            containing L2 norms of the algebraic residuals.
         """
-        # Get derivatives from solver-specific implementation
-        deriv = self._compute_derivatives()
-
-        u = self.arrays.u
-        v = self.arrays.v
-        nu = 1.0 / self.config.Re
-
-        # U-momentum residual: R_u = (u·∇)u + ∂p/∂x - (1/Re)∇²u
-        conv_u = u * deriv['du_dx'] + v * deriv['du_dy']
-        R_u = conv_u + deriv['dp_dx'] - nu * deriv['lap_u']
-
-        # V-momentum residual: R_v = (u·∇)v + ∂p/∂y - (1/Re)∇²v
-        conv_v = u * deriv['dv_dx'] + v * deriv['dv_dy']
-        R_v = conv_v + deriv['dp_dy'] - nu * deriv['lap_v']
-
-        # Continuity residual: R_c = ∂u/∂x + ∂v/∂y
-        R_c = deriv['du_dx'] + deriv['dv_dy']
-
-        return {
-            'u_residual': np.linalg.norm(R_u),
-            'v_residual': np.linalg.norm(R_v),
-            'continuity_residual': np.linalg.norm(R_c)
-        }
+        pass
 
     def _store_results(self, residual_history, final_iter_count, is_converged,
-                       energy_history=None, enstrophy_history=None, palinstrophy_history=None):
-        """Store solve results in self.fields, self.time_series, and self.metadata."""
+                       wall_time, energy_history=None, enstrophy_history=None,
+                       palinstrophy_history=None, max_timeseries_points: int = 1000):
+        """Store solve results in self.fields, self.time_series, and self.metrics."""
         # Extract residuals
         rel_iter_residuals = [r['rel_iter'] for r in residual_history]
         u_residuals = [r['u_eq'] for r in residual_history]
@@ -140,26 +118,39 @@ class LidDrivenCavitySolver(ABC):
         if all(c is None for c in continuity_residuals):
             continuity_residuals = None
 
-        # Create fields (subclasses can override _create_result_fields)
-        self.fields = self._create_result_fields()
+        # Copy final solution to output fields
+        self._finalize_fields()
 
-        # Create time series (same for all solvers)
+        # Downsample time series to max_timeseries_points
+        def downsample(data):
+            if data is None or len(data) <= max_timeseries_points:
+                return data
+            indices = np.linspace(0, len(data) - 1, max_timeseries_points, dtype=int)
+            return [data[i] for i in indices]
+
+        # Create time series (downsampled)
         self.time_series = TimeSeries(
-            rel_iter_residual=rel_iter_residuals,
-            u_residual=u_residuals,
-            v_residual=v_residuals,
-            continuity_residual=continuity_residuals,
-            energy=energy_history,
-            enstrophy=enstrophy_history,
-            palinstrophy=palinstrophy_history,
+            rel_iter_residual=downsample(rel_iter_residuals),
+            u_residual=downsample(u_residuals),
+            v_residual=downsample(v_residuals),
+            continuity_residual=downsample(continuity_residuals),
+            energy=downsample(energy_history),
+            enstrophy=downsample(enstrophy_history),
+            palinstrophy=downsample(palinstrophy_history),
         )
 
-        # Update metadata with convergence info
-        self.metadata = replace(
-            self.config,
+        # Update metrics with convergence info (use FINAL values, not downsampled)
+        self.metrics = Metrics(
             iterations=final_iter_count,
             converged=is_converged,
             final_residual=rel_iter_residuals[-1] if rel_iter_residuals else float('inf'),
+            wall_time_seconds=wall_time,
+            u_momentum_residual=u_residuals[-1] if u_residuals else 0.0,
+            v_momentum_residual=v_residuals[-1] if v_residuals else 0.0,
+            continuity_residual=continuity_residuals[-1] if continuity_residuals else 0.0,
+            final_energy=energy_history[-1] if energy_history else 0.0,
+            final_enstrophy=enstrophy_history[-1] if enstrophy_history else 0.0,
+            final_palinstrophy=palinstrophy_history[-1] if palinstrophy_history else 0.0,
         )
 
     def solve(self, tolerance: float = None, max_iter: int = None):
@@ -171,22 +162,20 @@ class LidDrivenCavitySolver(ABC):
         Stores results in solver attributes:
         - self.fields : Fields dataclass with solution fields
         - self.time_series : TimeSeries dataclass with time series data
-        - self.metadata : Metadata dataclass with solver metadata
+        - self.metrics : Metrics dataclass with solver metrics
 
         Parameters
         ----------
         tolerance : float, optional
-            Convergence tolerance. If None, uses config.tolerance.
+            Convergence tolerance. If None, uses params.tolerance.
         max_iter : int, optional
-            Maximum iterations. If None, uses config.max_iterations.
+            Maximum iterations. If None, uses params.max_iterations.
         """
-        import time
-
-        # Use config values if not explicitly provided
+        # Use params values if not explicitly provided
         if tolerance is None:
-            tolerance = self.config.tolerance
+            tolerance = self.params.tolerance
         if max_iter is None:
-            max_iter = self.config.max_iterations
+            max_iter = self.params.max_iterations
 
         # Store previous iteration for residual calculation
         u_prev = self.arrays.u.copy()
@@ -221,8 +210,8 @@ class LidDrivenCavitySolver(ABC):
             v_solution_change = v_change_norm / v_prev_norm
             rel_iter_residual = max(u_solution_change, v_solution_change)
 
-            # Compute equation residuals
-            eq_residuals = self._compute_equation_residuals()
+            # Compute algebraic residuals (Ax - b)
+            eq_residuals = self._compute_algebraic_residuals()
 
             # Only store residual history after first 10 iterations
             if i >= 10:
@@ -255,11 +244,12 @@ class LidDrivenCavitySolver(ABC):
                 break
 
         time_end = time.time()
-        print(f"Solver finished in {time_end - time_start:.2f} seconds.")
+        wall_time = time_end - time_start
+        print(f"Solver finished in {wall_time:.2f} seconds.")
 
         # Store results
         self._store_results(
-            residual_history, final_iter_count, is_converged,
+            residual_history, final_iter_count, is_converged, wall_time,
             energy_history, enstrophy_history, palinstrophy_history
         )
 
@@ -279,7 +269,8 @@ class LidDrivenCavitySolver(ABC):
 
         # Convert dataclasses to DataFrames
         with pd.HDFStore(filepath, 'w') as store:
-            store['metadata'] = self.metadata.to_dataframe()
+            store['params'] = self.params.to_dataframe()
+            store['metrics'] = self.metrics.to_dataframe()
             store['fields'] = self.fields.to_dataframe()
             store['time_series'] = self.time_series.to_dataframe()
 
@@ -307,30 +298,20 @@ class LidDrivenCavitySolver(ABC):
         dA = self._get_cell_area()
         return float(np.sum(domega_dx**2 + domega_dy**2) * dA)
 
-    def _compute_vorticity(self) -> np.ndarray:
-        """Compute vorticity ω = ∂v/∂x - ∂u/∂y."""
-        deriv = self._compute_derivatives()
-        return deriv['dv_dx'] - deriv['du_dy']
-
     def _compute_gradient(self, field: np.ndarray) -> tuple:
-        """Compute gradient of a scalar field. Subclasses should override for accuracy."""
-        # Default implementation uses finite differences
-        dx = getattr(self, 'dx_min', 1.0 / np.sqrt(len(field)))
-        dy = getattr(self, 'dy_min', dx)
+        """Compute gradient of scalar field using finite differences."""
+        dx, dy = self.dx_min, self.dy_min
+        shape = getattr(self, 'shape_full', (self.params.nx, self.params.ny))
+        field_2d = np.pad(field.reshape(shape), 1, mode='edge')
+        df_dx = (field_2d[1:-1, 2:] - field_2d[1:-1, :-2]) / (2 * dx)
+        df_dy = (field_2d[2:, 1:-1] - field_2d[:-2, 1:-1]) / (2 * dy)
+        return df_dx.ravel(), df_dy.ravel()
 
-        # Try to reshape to 2D grid
-        n = len(field)
-        nx = int(np.sqrt(n))
-        if nx * nx == n:
-            field_2d = field.reshape(nx, nx)
-            df_dx = np.zeros_like(field_2d)
-            df_dy = np.zeros_like(field_2d)
-            # Central differences (interior)
-            df_dx[1:-1, :] = (field_2d[2:, :] - field_2d[:-2, :]) / (2 * dx)
-            df_dy[:, 1:-1] = (field_2d[:, 2:] - field_2d[:, :-2]) / (2 * dy)
-            return df_dx.ravel(), df_dy.ravel()
-        else:
-            return np.zeros_like(field), np.zeros_like(field)
+    def _compute_vorticity(self) -> np.ndarray:
+        """Compute vorticity ω = ∂v/∂x - ∂u/∂y using finite differences."""
+        dv_dx, _ = self._compute_gradient(self.arrays.v)
+        _, du_dy = self._compute_gradient(self.arrays.u)
+        return dv_dx - du_dy
 
     def _get_cell_area(self) -> float:
         """Get cell area for integration. Subclasses should override."""
@@ -343,12 +324,22 @@ class LidDrivenCavitySolver(ABC):
         return 1.0 / n
 
     # ========================================================================
-    # MLflow
+    # MLflow Integration
     # ========================================================================
 
-    def mlflow_start(self, experiment_name, run_name):
-        """Start MLflow run (rank 0 only)."""
+    def mlflow_start(self, experiment_name: str, run_name: str, parent_run_name: str = None):
+        """Start MLflow run and log parameters.
 
+        Parameters
+        ----------
+        experiment_name : str
+            Name of the MLflow experiment.
+        run_name : str
+            Name of the run within the experiment.
+        parent_run_name : str, optional
+            If specified, creates a nested run under a parent with this name.
+            Parent is created if it doesn't exist, or resumed if it does.
+        """
         mlflow.login()
 
         # Databricks requires absolute paths
@@ -358,19 +349,110 @@ class LidDrivenCavitySolver(ABC):
             mlflow.create_experiment(name=experiment_name)
 
         mlflow.set_experiment(experiment_name)
-        mlflow.start_run(log_system_metrics=True, run_name=run_name)
-        mlflow.log_params(asdict(self.config))
-        #mlflow.log_params(dict(self.Config))
 
-    def mlflow_end(self):
-        """End MLflow run with metrics (rank 0 only)."""
+        # Handle parent run if specified
+        if parent_run_name:
+            experiment = mlflow.get_experiment_by_name(experiment_name)
+            client = mlflow.tracking.MlflowClient()
 
+            # Search for existing parent run
+            runs = client.search_runs(
+                experiment_ids=[experiment.experiment_id],
+                filter_string=f"tags.mlflow.runName = '{parent_run_name}' AND tags.is_parent = 'true'",
+                max_results=1
+            )
 
-        mlflow.log_metrics({
-            "Iterations": self.config.iterations,
-            "Converged": self.config.converged,
-            "FinalResidual": self.config.final_residual,
-        })
+            if runs:
+                # Resume existing parent
+                parent_run_id = runs[0].info.run_id
+            else:
+                # Create new parent run
+                parent_run = client.create_run(
+                    experiment_id=experiment.experiment_id,
+                    run_name=parent_run_name,
+                    tags={"is_parent": "true"}
+                )
+                parent_run_id = parent_run.info.run_id
+
+            # Start nested child run
+            mlflow.start_run(
+                run_id=parent_run_id,
+                log_system_metrics=False
+            )
+            mlflow.start_run(
+                run_name=run_name,
+                nested=True,
+                log_system_metrics=True
+            )
+            self._mlflow_nested = True
+        else:
+            mlflow.start_run(log_system_metrics=True, run_name=run_name)
+            self._mlflow_nested = False
+
+        # Log all parameters from the params dataclass
+        mlflow.log_params(asdict(self.params))
+
+        # Log HPC job info if running on LSF cluster
+        job_id = os.environ.get("LSB_JOBID")
+        if job_id:
+            mlflow.set_tag("lsf.job_id", job_id)
+            job_index = os.environ.get("LSB_JOBINDEX", "")
+            job_name = os.environ.get("LSB_JOBNAME", "")
+            description = f"HPC Job: {job_name} (ID: {job_id}"
+            if job_index:
+                description += f", Index: {job_index}"
+            description += ")"
+            mlflow.set_tag("mlflow.note.content", description)
+
+    def mlflow_end(self, log_time_series: bool = True):
+        """End MLflow run and log metrics.
+
+        Parameters
+        ----------
+        log_time_series : bool, optional
+            If True, logs the full convergence history as step-based metrics.
+            Default is True.
+        """
+        # Log final metrics from the metrics dataclass
+        mlflow.log_metrics(asdict(self.metrics))
+
+        # Log time series as step-based metrics (traces)
+        if log_time_series and hasattr(self, 'time_series'):
+            self._mlflow_log_time_series()
+
+        # End child run
         mlflow.end_run()
+
+        # End parent run if nested
+        if getattr(self, '_mlflow_nested', False):
+            mlflow.end_run()
+
+    def _mlflow_log_time_series(self):
+        """Log time series as step-based metrics using async batch logging."""
+        from mlflow.entities import Metric
+
+        run_id = mlflow.active_run().info.run_id
+        client = mlflow.tracking.MlflowClient()
+        timestamp = int(time.time() * 1000)
+
+        # Build all metrics
+        metrics = []
+        ts_dict = {k: v for k, v in asdict(self.time_series).items() if v is not None}
+        for name, values in ts_dict.items():
+            for step, value in enumerate(values):
+                metrics.append(Metric(name, float(value), timestamp, step))
+
+        # Async batch log (non-blocking)
+        client.log_batch(run_id, metrics=metrics, synchronous=False)
+
+    def mlflow_log_artifact(self, filepath: str):
+        """Log an artifact (e.g., saved HDF5 file) to MLflow.
+
+        Parameters
+        ----------
+        filepath : str
+            Path to the file to log as artifact.
+        """
+        mlflow.log_artifact(filepath)
 
 

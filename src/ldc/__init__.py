@@ -12,34 +12,35 @@ LidDrivenCavitySolver (abstract base - defines problem)
 
 from .base_solver import LidDrivenCavitySolver
 from .datastructures import (
-    MetaConfig,
-    FVinfo,
-    SpectralInfo,
+    # Base classes (shared by all solvers)
+    Parameters,
+    Metrics,
     Fields,
-    FVResultFields,
-    FVSolverFields,
-    SpectralResultFields,
-    SpectralSolverFields,
     TimeSeries,
+    # FV-specific
+    FVParameters,
+    FVSolverFields,
+    # Spectral-specific
+    SpectralParameters,
+    SpectralSolverFields,
 )
 from .fv_solver import FVSolver
 from .spectral_solver import SpectralSolver
 
 __all__ = [
-    # Base classes
+    # Base solver
     "LidDrivenCavitySolver",
-    # Configurations
-    "MetaConfig",
-    "FVinfo",
-    "SpectralInfo",
-    # Data structures
+    # Shared data structures
+    "Parameters",
+    "Metrics",
     "Fields",
-    "FVResultFields",
-    "FVSolverFields",
-    "SpectralResultFields",
-    "SpectralSolverFields",
     "TimeSeries",
-    # Concrete solvers
+    # FV solver
     "FVSolver",
+    "FVParameters",
+    "FVSolverFields",
+    # Spectral solver
     "SpectralSolver",
+    "SpectralParameters",
+    "SpectralSolverFields",
 ]

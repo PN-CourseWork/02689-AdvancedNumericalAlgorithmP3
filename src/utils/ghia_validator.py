@@ -61,11 +61,11 @@ class GhiaValidator:
         self.interpolator = UnifiedFieldInterpolator(self.h5_path)
         self.fields = self.interpolator.fields  # For compatibility
 
-        # Load metadata
-        metadata = pd.read_hdf(self.h5_path, 'metadata')
+        # Load params (new format uses 'params' instead of 'metadata')
+        params = pd.read_hdf(self.h5_path, 'params')
 
         # Get Reynolds number
-        self.Re = Re if Re is not None else metadata['Re'].iloc[0]
+        self.Re = Re if Re is not None else params['Re'].iloc[0]
 
         # Require exact match for Reynolds number
         if self.Re not in self.AVAILABLE_RE:

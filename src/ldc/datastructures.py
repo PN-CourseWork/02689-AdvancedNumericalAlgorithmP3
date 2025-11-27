@@ -2,6 +2,12 @@
 
 This module defines the configuration and result data structures
 for lid-driven cavity solvers (both FV and spectral).
+
+Structure:
+- Parameters: Input configuration (logged to MLflow at start)
+- Metrics: Output results (logged to MLflow at end)
+- Fields: Spatial solution data
+- TimeSeries: Convergence history
 """
 
 from dataclasses import dataclass, asdict
@@ -10,139 +16,109 @@ from typing import Optional, List
 import numpy as np
 import pandas as pd
 
+
 # ========================================================
-# Shared Data Classes
-# =======================================================
+# Parameters (Input Configuration)
+# ========================================================
+
+
+@dataclass
+class Parameters:
+    """Base solver parameters - input configuration for all solvers."""
+
+    Re: float = 100
+    lid_velocity: float = 1.0
+    Lx: float = 1.0
+    Ly: float = 1.0
+    nx: int = 64
+    ny: int = 64
+    max_iterations: int = 500
+    tolerance: float = 1e-4
+    method: str = ""
+
+    def to_dataframe(self): return pd.DataFrame([asdict(self)])
+
+
+# ========================================================
+# Metrics (Output Results)
+# ========================================================
+
+
+@dataclass
+class Metrics:
+    """Solver metrics - output results computed during/after solving."""
+
+    iterations: int = 0
+    converged: bool = False
+    final_residual: float = float('inf')
+    wall_time_seconds: float = 0.0
+    u_momentum_residual: float = 0.0
+    v_momentum_residual: float = 0.0
+    continuity_residual: float = 0.0
+    final_energy: float = 0.0
+    final_enstrophy: float = 0.0
+    final_palinstrophy: float = 0.0
+
+    def to_dataframe(self): return pd.DataFrame([asdict(self)])
+
+
+# ========================================================
+# Fields (Spatial Solution Data)
+# ========================================================
 
 
 @dataclass
 class Fields:
-    """Base spatial solution fields."""
+    """Spatial solution fields (u, v, p) on grid (x, y)."""
 
     u: np.ndarray
     v: np.ndarray
     p: np.ndarray
     x: np.ndarray
     y: np.ndarray
-    grid_points: np.ndarray
-    # Previous iteration (for under-relaxation)
-    u_prev: np.ndarray
-    v_prev: np.ndarray
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Convert fields to DataFrame for analysis and plotting.
+        """Convert to DataFrame with one row per grid point."""
+        return pd.DataFrame(asdict(self))
 
-        Returns
-        -------
-        pd.DataFrame
-            Wide-format DataFrame with columns: x, y, u, v, p.
-            Each row represents one grid point.
-            Excludes grid_points, u_prev, v_prev since they're not needed for analysis.
-        """
-        data = asdict(self)
-        # Remove grid_points and previous iteration fields
-        data.pop('grid_points', None)
-        data.pop('u_prev', None)
-        data.pop('v_prev', None)
-        data.pop('mdot', None)  # May not exist in all subclasses
-        return pd.DataFrame(data)
+
+# ========================================================
+# Time Series (Convergence History)
+# ========================================================
 
 
 @dataclass
 class TimeSeries:
-    """Time series data common to all solvers.
-
-    Attributes
-    ----------
-    rel_iter_residual : List[float]
-        Relative iteration residual: max(||u^{n+1}-u^n||/||u^n||, ||v^{n+1}-v^n||/||v^n||)
-    u_residual : List[float]
-        U-velocity relative iteration residual: ||u^{n+1}-u^n||/||u^n||
-    v_residual : List[float]
-        V-velocity relative iteration residual: ||v^{n+1}-v^n||/||v^n||
-    continuity_residual : Optional[List[float]]
-        Continuity equation residual (solver-specific, may be None)
-    """
+    """Convergence history (one value per iteration)."""
 
     rel_iter_residual: List[float]
     u_residual: List[float]
     v_residual: List[float]
     continuity_residual: Optional[List[float]]
-    # Conserved quantities (Saad reference data comparison)
     energy: Optional[List[float]] = None
     enstrophy: Optional[List[float]] = None
     palinstrophy: Optional[List[float]] = None
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Convert time series to DataFrame for analysis and plotting.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns for each residual type.
-            Index represents iteration number.
-        """
-        # Filter out None values to avoid object dtype
-        data = {k: v for k, v in asdict(self).items() if v is not None}
-        return pd.DataFrame(data)
-
-
-@dataclass
-class MetaConfig:
-    """Base solver metadata, config and convergence info."""
-
-    # Physics parameters (required)
-    Re: float = 100
-
-    # Grid parameters (with defaults)
-    nx: int = 16
-    ny: int = 16
-
-    # Physics parameters (with defaults)
-    lid_velocity: float = 1
-    Lx: float = 1
-    Ly: float = 1
-
-    # Solver config
-    max_iterations: int = 500
-    tolerance: float = 1e-4
-    method: str = ""
-
-    # Convergence info
-    iterations: int = 0
-    converged: bool = False
-    final_residual: float = 10000
-
-    def to_dataframe(self) -> pd.DataFrame:
-        """Convert config/metadata to single-row DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            Single-row DataFrame with all configuration and metadata fields.
-        """
-        return pd.DataFrame([asdict(self)])
+        """Convert to DataFrame with one row per iteration."""
+        return pd.DataFrame({k: v for k, v in asdict(self).items() if v is not None})
 
 
 # =============================================================
-# Finite Volume specific data classes
+# Finite Volume Specific
 # ============================================================
 
 
 @dataclass
-class FVinfo(MetaConfig):
-    """FV-specific metadata with discretization parameters."""
+class FVParameters(Parameters):
+    """FV solver parameters (extends Parameters with SIMPLE-specific settings)."""
+
     convection_scheme: str = "Upwind"
     limiter: str = "MUSCL"
-    alpha_uv: float = 0.6
-    alpha_p: float = 0.4
-    linear_solver: str = "petsc"  # "petsc" (fast, with preconditioner) or "scipy" (slower, no preconditioner)
-
-
-@dataclass
-class FVResultFields(Fields):
-    """FV result fields returned to user after solving."""
-    mdot: np.ndarray = None
+    alpha_uv: float = 0.6  # velocity under-relaxation
+    alpha_p: float = 0.4   # pressure under-relaxation
+    linear_solver_tol: float = 1e-6  # PETSc linear solver tolerance
+    method: str = "FV-SIMPLE"
 
 
 @dataclass
@@ -177,7 +153,7 @@ class FVSolverFields:
     mdot_star: np.ndarray
     mdot_prime: np.ndarray
 
-    # PETSc KSP objects for solver reuse (optional, None if using SciPy)
+    # PETSc KSP objects for solver reuse
     ksp_u: object = None
     ksp_v: object = None
     ksp_p: object = None
@@ -213,33 +189,20 @@ class FVSolverFields:
         )
 
 
-#=====================================================
-# Spectral Data Classes
+# =====================================================
+# Spectral Specific
 # =====================================================
 
 
 @dataclass
-class SpectralInfo(MetaConfig):
-    """Spectral-specific metadata with discretization parameters."""
+class SpectralParameters(Parameters):
+    """Spectral solver parameters (nx/ny = polynomial order N, giving N+1 nodes)."""
 
-    Nx: int = 64
-    Ny: int = 64
-    basis_type: str = "legendre"  # 'legendre' or 'chebyshev'
-    differentiation_method: str = "fft"  # 'fft', 'chebyshev', 'matrix'
-    time_scheme: str = "rk4"
-    dt: float = 0.001
-    dealiasing: bool = True
-    multigrid: bool = False
-    mg_levels: int = 3
+    basis_type: str = "legendre"  # "legendre" or "chebyshev"
     CFL: float = 0.1
-    beta_squared: float = 5.0
+    beta_squared: float = 5.0    # artificial compressibility
     corner_smoothing: float = 0.15
-
-
-@dataclass
-class SpectralResultFields(Fields):
-    """Spectral result fields returned to user after solving."""
-    pass
+    method: str = "Spectral-AC"
 
 
 @dataclass

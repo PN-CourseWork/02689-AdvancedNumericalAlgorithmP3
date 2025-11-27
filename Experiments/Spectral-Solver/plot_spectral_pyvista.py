@@ -44,17 +44,19 @@ if not data_file.exists():
 print(f"Loading spectral solution from: {data_file}")
 
 with pd.HDFStore(data_file, 'r') as store:
-    metadata = store['metadata'].iloc[0]
+    params = store['params'].iloc[0]
+    metrics = store['metrics'].iloc[0]
     fields_df = store['fields']
 
 # Infer actual grid size from data
 n_points = len(fields_df)
 grid_size = int(np.sqrt(n_points))
 
-print(f"\nSolution loaded: Re={metadata['Re']:.0f}, Grid={grid_size}x{grid_size}")
-print(f"  Converged: {metadata['converged']}")
-print(f"  Iterations: {int(metadata['iterations'])}")
-print(f"  Final residual: {metadata['final_residual']:.2e}")
+print(f"\nSolution loaded: Re={params['Re']:.0f}, Grid={grid_size}x{grid_size}")
+print(f"  Converged: {metrics['converged']}")
+print(f"  Iterations: {int(metrics['iterations'])}")
+print(f"  Final residual: {metrics['final_residual']:.2e}")
+print(f"  Wall time: {metrics['wall_time_seconds']:.2f} seconds")
 
 # %%
 # Interpolate to Uniform Grid (Barycentric Interpolation)

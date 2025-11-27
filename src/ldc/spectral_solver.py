@@ -10,7 +10,7 @@ This solver implements the PN-PN-2 method with:
 import numpy as np
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import SpectralInfo, SpectralResultFields, SpectralSolverFields
+from .datastructures import SpectralParameters, SpectralSolverFields
 from spectral.spectral import LegendreLobattoBasis, ChebyshevLobattoBasis
 
 
@@ -22,59 +22,50 @@ class SpectralSolver(LidDrivenCavitySolver):
 
     Parameters
     ----------
-    config : SpectralInfo
-        Configuration with physics (Re, lid velocity, domain size) and
-        spectral-specific parameters (Nx, Ny, CFL, beta_squared, etc.).
+    params : SpectralParameters
+        Parameters with physics (Re, lid velocity, domain size) and
+        spectral-specific settings (Nx, Ny, CFL, beta_squared, etc.).
     """
 
-    Config = SpectralInfo
-    ResultFields = SpectralResultFields
+    Parameters = SpectralParameters
 
     def __init__(self, **kwargs):
-        """Initialize spectral solver.
-
-        Parameters
-        ----------
-        **kwargs
-            Configuration parameters passed to SpectralInfo.
-            Supports basis_type='legendre' or basis_type='chebyshev'.
-        """
+        """Initialize spectral solver."""
         super().__init__(**kwargs)
 
-        # Create spectral basis based on config
-        if self.config.basis_type.lower() == "chebyshev":
-            self.basis_x = ChebyshevLobattoBasis(domain=(0.0, self.config.Lx))
-            self.basis_y = ChebyshevLobattoBasis(domain=(0.0, self.config.Ly))
-            print(f"Using Chebyshev-Gauss-Lobatto basis (Zhang et al. 2010)")
-        elif self.config.basis_type.lower() == "legendre":
-            self.basis_x = LegendreLobattoBasis(domain=(0.0, self.config.Lx))
-            self.basis_y = LegendreLobattoBasis(domain=(0.0, self.config.Ly))
-            print(f"Using Legendre-Gauss-Lobatto basis")
+        # Create spectral basis based on params
+        if self.params.basis_type.lower() == "chebyshev":
+            self.basis_x = ChebyshevLobattoBasis(domain=(0.0, self.params.Lx))
+            self.basis_y = ChebyshevLobattoBasis(domain=(0.0, self.params.Ly))
+            print("Using Chebyshev-Gauss-Lobatto basis (Zhang et al. 2010)")
+        elif self.params.basis_type.lower() == "legendre":
+            self.basis_x = LegendreLobattoBasis(domain=(0.0, self.params.Lx))
+            self.basis_y = LegendreLobattoBasis(domain=(0.0, self.params.Ly))
+            print("Using Legendre-Gauss-Lobatto basis")
         else:
-            raise ValueError(f"Unknown basis_type: {self.config.basis_type}. Use 'legendre' or 'chebyshev'")
+            raise ValueError(f"Unknown basis_type: {self.params.basis_type}. Use 'legendre' or 'chebyshev'")
 
-        # Setup grids
+        # Setup grids and differentiation matrices
         self._setup_grids()
-
-        # Build differentiation matrices
         self._build_diff_matrices()
 
         # Cache grid shapes
-        self.shape_full = (self.config.Nx + 1, self.config.Ny + 1)
-        self.shape_inner = (self.config.Nx - 1, self.config.Ny - 1)
+        self.shape_full = (self.params.nx + 1, self.params.ny + 1)
+        self.shape_inner = (self.params.nx - 1, self.params.ny - 1)
 
-        # Allocate solver arrays
+        # Allocate internal solver arrays
         n_nodes_full = self.shape_full[0] * self.shape_full[1]
         n_nodes_inner = self.shape_inner[0] * self.shape_inner[1]
         self.arrays = SpectralSolverFields.allocate(n_nodes_full, n_nodes_inner)
 
-        # Create persistent 2D views (avoid repeated reshaping)
-        # These are VIEWS, not copies - modifications affect the underlying 1D arrays
+        # Initialize output fields (base class handles this)
+        self._init_fields(x=self.x_full.ravel(), y=self.y_full.ravel())
+
+        # Create persistent 2D views (modifications affect underlying 1D arrays)
         self.u_2d = self.arrays.u.reshape(self.shape_full)
         self.v_2d = self.arrays.v.reshape(self.shape_full)
         self.u_stage_2d = self.arrays.u_stage.reshape(self.shape_full)
         self.v_stage_2d = self.arrays.v_stage.reshape(self.shape_full)
-
         self.p_2d = self.arrays.p.reshape(self.shape_inner)
         self.dp_dx_inner_2d = self.arrays.dp_dx_inner.reshape(self.shape_inner)
         self.dp_dy_inner_2d = self.arrays.dp_dy_inner.reshape(self.shape_inner)
@@ -85,8 +76,8 @@ class SpectralSolver(LidDrivenCavitySolver):
     def _setup_grids(self):
         """Setup full and reduced grids using Legendre-Gauss-Lobatto nodes."""
         # Full grid: (Nx+1) × (Ny+1)
-        x_nodes = self.basis_x.nodes(self.config.Nx + 1)
-        y_nodes = self.basis_y.nodes(self.config.Ny + 1)
+        x_nodes = self.basis_x.nodes(self.params.nx + 1)
+        y_nodes = self.basis_y.nodes(self.params.ny + 1)
         self.x_full, self.y_full = np.meshgrid(x_nodes, y_nodes, indexing='ij')
 
         # Reduced grid for pressure: (Nx-1) × (Ny-1) - interior points only
@@ -106,17 +97,17 @@ class SpectralSolver(LidDrivenCavitySolver):
         u_2d : np.ndarray
             2D velocity array on full grid (Nx+1, Ny+1), modified in place
         """
-        if self.config.corner_smoothing > 0:
-            Nx = self.config.Nx
-            smooth_width = int(self.config.corner_smoothing * Nx)
+        if self.params.corner_smoothing > 0:
+            Nx = self.params.nx
+            smooth_width = int(self.params.corner_smoothing * Nx)
             if smooth_width > 0:
                 # Vectorized corner smoothing
                 i_values = np.arange(smooth_width)
                 factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
 
                 # Left and right corners
-                u_2d[i_values, -1] = factors * self.config.lid_velocity
-                u_2d[Nx - i_values, -1] = factors * self.config.lid_velocity
+                u_2d[i_values, -1] = factors * self.params.lid_velocity
+                u_2d[Nx - i_values, -1] = factors * self.params.lid_velocity
 
     def _extrapolate_to_full_grid(self, inner_2d):
         """Extrapolate field from inner grid (Nx-1, Ny-1) to full grid (Nx+1, Ny+1).
@@ -157,7 +148,7 @@ class SpectralSolver(LidDrivenCavitySolver):
 
     def _build_diff_matrices(self):
         """Build spectral differentiation matrices using tensor products."""
-        Nx, Ny = self.config.Nx, self.config.Ny
+        Nx, Ny = self.params.nx, self.params.ny
 
         # 1D differentiation matrices on full grid
         x_nodes_full = self.basis_x.nodes(Nx + 1)
@@ -192,7 +183,7 @@ class SpectralSolver(LidDrivenCavitySolver):
     def _initialize_lid_velocity(self):
         """Initialize lid velocity with corner smoothing to avoid spurious modes."""
         # Set top boundary (y = Ly) to lid velocity
-        self.u_2d[:, -1] = self.config.lid_velocity
+        self.u_2d[:, -1] = self.params.lid_velocity
 
         # Apply corner smoothing using smooth transition
         self._apply_corner_smoothing(self.u_2d)
@@ -254,7 +245,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
         conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
 
-        nu = 1.0 / self.config.Re
+        nu = 1.0 / self.params.Re
 
         self.arrays.R_u[:] = -conv_u - self.arrays.dp_dx + nu * self.arrays.lap_u
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
@@ -266,7 +257,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
 
         # Pressure residual on inner grid
-        self.arrays.R_p[:] = -self.config.beta_squared * divergence_inner
+        self.arrays.R_p[:] = -self.params.beta_squared * divergence_inner
 
     def _enforce_boundary_conditions(self, u, v):
         """Enforce no-slip boundary conditions on all walls.
@@ -290,7 +281,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         v_2d[:, -1] = 0.0  # North
 
         # Moving lid on north boundary
-        u_2d[:, -1] = self.config.lid_velocity
+        u_2d[:, -1] = self.params.lid_velocity
         self._apply_corner_smoothing(u_2d)
 
     def _compute_adaptive_timestep(self):
@@ -302,15 +293,15 @@ class SpectralSolver(LidDrivenCavitySolver):
             Adaptive timestep ∆τ
         """
         # Maximum velocities (avoid division by zero)
-        u_max = max(np.max(np.abs(self.arrays.u)), self.config.lid_velocity)
+        u_max = max(np.max(np.abs(self.arrays.u)), self.params.lid_velocity)
         v_max = max(np.max(np.abs(self.arrays.v)), 1e-10)
 
         # Wave speeds: λ_x and λ_y from equation (9)
-        nu = 1.0 / self.config.Re
-        lambda_x = (u_max + np.sqrt(u_max**2 + self.config.beta_squared)) / self.dx_min + nu / self.dx_min**2
-        lambda_y = (v_max + np.sqrt(v_max**2 + self.config.beta_squared)) / self.dy_min + nu / self.dy_min**2
+        nu = 1.0 / self.params.Re
+        lambda_x = (u_max + np.sqrt(u_max**2 + self.params.beta_squared)) / self.dx_min + nu / self.dx_min**2
+        lambda_y = (v_max + np.sqrt(v_max**2 + self.params.beta_squared)) / self.dy_min + nu / self.dy_min**2
 
-        return self.config.CFL / (lambda_x + lambda_y)
+        return self.params.CFL / (lambda_x + lambda_y)
 
     def step(self):
         """Perform one RK4 pseudo time-step.
@@ -353,63 +344,26 @@ class SpectralSolver(LidDrivenCavitySolver):
 
         return a.u, a.v, a.p
 
-    def _create_result_fields(self):
-        """Create spectral-specific result fields with grid data.
+    def _finalize_fields(self):
+        """Copy final solution to output fields.
 
-        For PN-PN-2: Pressure lives on inner grid, so we interpolate to full grid
-        for output/visualization purposes.
+        Override base class because PN-PN-2 pressure lives on inner grid
+        and needs interpolation to full grid for output.
         """
-        # Interpolate pressure from inner to full grid for output
+        self.fields.u[:] = self.arrays.u
+        self.fields.v[:] = self.arrays.v
+        # Interpolate pressure from inner to full grid
         p_full_2d = self._extrapolate_to_full_grid(self.p_2d)
+        self.fields.p[:] = p_full_2d.ravel()
 
-        return SpectralResultFields(
-            u=self.arrays.u,
-            v=self.arrays.v,
-            p=p_full_2d.ravel(),
-            x=self.x_full.ravel(),
-            y=self.y_full.ravel(),
-            grid_points=np.column_stack([self.x_full.ravel(), self.y_full.ravel()]),
-            u_prev=self.arrays.u_prev,
-            v_prev=self.arrays.v_prev,
-        )
+    def _compute_algebraic_residuals(self):
+        """Return algebraic residuals from pseudo-time stepping.
 
-    def _compute_derivatives(self):
-        """Compute velocity and pressure derivatives using spectral differentiation.
-
-        Returns
-        -------
-        dict
-            Dictionary with velocity/pressure derivatives and Laplacians.
+        For spectral solver, the algebraic residuals are the RHS of the
+        time-stepping equations (R_u, R_v, R_p) computed during step().
         """
-        # Compute velocity derivatives using spectral differentiation matrices
-        du_dx = self.Dx @ self.arrays.u
-        du_dy = self.Dy @ self.arrays.u
-        dv_dx = self.Dx @ self.arrays.v
-        dv_dy = self.Dy @ self.arrays.v
-
-        # Compute velocity Laplacians
-        lap_u = self.Laplacian @ self.arrays.u
-        lap_v = self.Laplacian @ self.arrays.v
-
-        # Compute pressure gradient and interpolate to full grid
-        # Pressure lives on inner grid for PN-PN-2
-        dp_dx_inner = self.Dx_inner @ self.arrays.p
-        dp_dy_inner = self.Dy_inner @ self.arrays.p
-
-        # Interpolate pressure gradient from inner to full grid
-        dp_dx_inner_2d = dp_dx_inner.reshape(self.shape_inner)
-        dp_dy_inner_2d = dp_dy_inner.reshape(self.shape_inner)
-
-        dp_dx_full_2d = self._extrapolate_to_full_grid(dp_dx_inner_2d)
-        dp_dy_full_2d = self._extrapolate_to_full_grid(dp_dy_inner_2d)
-
         return {
-            'du_dx': du_dx,
-            'du_dy': du_dy,
-            'dv_dx': dv_dx,
-            'dv_dy': dv_dy,
-            'dp_dx': dp_dx_full_2d.ravel(),
-            'dp_dy': dp_dy_full_2d.ravel(),
-            'lap_u': lap_u,
-            'lap_v': lap_v
+            'u_residual': np.linalg.norm(self.arrays.R_u),
+            'v_residual': np.linalg.norm(self.arrays.R_v),
+            'continuity_residual': np.linalg.norm(self.arrays.R_p),
         }

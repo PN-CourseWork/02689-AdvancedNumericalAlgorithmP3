@@ -7,7 +7,7 @@ name = "ana_p3"
 version = "0.1.0"
 description = "Package for project 3 in Advanced Numerical Algorithms Course"
 readme = "README.md"
-requires-python = "==3.12.*"
+requires-python = "==3.11.*"
 license = { text = "MIT" }
 authors = [
     { name = "Philip Korsager Nickel", email = "s214960@dtu.dk" }

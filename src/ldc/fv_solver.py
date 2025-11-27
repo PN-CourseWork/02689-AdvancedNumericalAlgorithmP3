@@ -8,12 +8,11 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from .base_solver import LidDrivenCavitySolver
-from .datastructures import FVinfo, FVResultFields, FVSolverFields
+from .datastructures import FVParameters, FVSolverFields
 
 from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convection_matrix
 from fv.discretization.gradient.structured_gradient import compute_cell_gradients_structured
 from fv.linear_solvers.petsc_solver import petsc_solver
-from fv.linear_solvers.scipy_solver import scipy_solver
 from fv.assembly.rhie_chow import mdot_calculation, rhie_chow_velocity
 from fv.assembly.pressure_correction_eq_assembly import assemble_pressure_correction_matrix
 from fv.assembly.divergence import compute_divergence_from_face_fluxes
@@ -29,35 +28,26 @@ class FVSolver(LidDrivenCavitySolver):
 
     Parameters
     ----------
-    config : FVinfo
-        Configuration with physics (Re, lid velocity, domain size) and
-        FV-specific parameters (nx, ny, convection scheme, etc.).
+    params : FVParameters
+        Parameters with physics (Re, lid velocity, domain size) and
+        FV-specific settings (nx, ny, convection scheme, etc.).
     """
 
-    Config = FVinfo
-    ResultFields = FVResultFields
-
-    # Constant fluid density
-    rho = 1.0
+    Parameters = FVParameters
+    rho = 1.0  # Constant fluid density
 
     def __init__(self, **kwargs):
-        """Initialize FV solver.
-
-        Parameters
-        ----------
-        **kwargs
-            Configuration parameters passed to FVinfo.
-        """
+        """Initialize FV solver."""
         super().__init__(**kwargs)
 
         # Create mesh
         from meshing.simple_structured import create_structured_mesh_2d
         self.mesh = create_structured_mesh_2d(
-            nx=self.config.nx,
-            ny=self.config.ny,
-            Lx=self.config.Lx,
-            Ly=self.config.Ly,
-            lid_velocity=self.config.lid_velocity
+            nx=self.params.nx,
+            ny=self.params.ny,
+            Lx=self.params.Lx,
+            Ly=self.params.Ly,
+            lid_velocity=self.params.lid_velocity
         )
 
         # Get dimensions from mesh
@@ -65,17 +55,22 @@ class FVSolver(LidDrivenCavitySolver):
         n_faces = self.mesh.internal_faces.shape[0] + self.mesh.boundary_faces.shape[0]
 
         # Compute fluid properties
-        self.mu = self.rho * self.config.lid_velocity * self.config.Lx / self.config.Re
+        self.mu = self.rho * self.params.lid_velocity * self.params.Lx / self.params.Re
 
-        # Allocate all solver arrays
+        # Allocate internal solver arrays
         self.arrays = FVSolverFields.allocate(n_cells, n_faces)
+
+        # Initialize output fields (base class handles this)
+        self._init_fields(
+            x=self.mesh.cell_centers[:, 0],
+            y=self.mesh.cell_centers[:, 1]
+        )
 
         # Cache commonly used values
         self.n_cells = n_cells
-
-        # Grid spacing for quantity calculations
-        self.dx_min = self.config.Lx / self.config.nx
-        self.dy_min = self.config.Ly / self.config.ny
+        self.shape_full = (self.params.ny, self.params.nx)
+        self.dx_min = self.params.Lx / self.params.nx
+        self.dy_min = self.params.Ly / self.params.ny
 
     def _solve_momentum_equation(self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, ksp):
         """Solve a single momentum equation (u or v).
@@ -108,29 +103,23 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data, b = assemble_diffusion_convection_matrix(
             self.mesh, self.arrays.mdot, grad_phi, self.rho, self.mu,
             component_idx, phi=phi,
-            scheme=self.config.convection_scheme, limiter=self.config.limiter
+            scheme=self.params.convection_scheme, limiter=self.params.limiter
         )
         A = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
         A_diag = A.diagonal()
         rhs = b - grad_p_component * self.mesh.cell_volumes
 
         # Apply under-relaxation
-        relaxed_A_diag, rhs = relax_momentum_equation(rhs, A_diag, phi_prev_iter, self.config.alpha_uv)
+        relaxed_A_diag, rhs = relax_momentum_equation(rhs, A_diag, phi_prev_iter, self.params.alpha_uv)
         A.setdiag(relaxed_A_diag)
 
-        # Solve with selected linear solver
-        if self.config.linear_solver == "petsc":
-            phi_star, ksp = petsc_solver(
-                A, rhs, ksp=ksp,
-                tolerance=1e-6,
-                solver_type="bcgs",
-                preconditioner="gamg"
-            )
-        elif self.config.linear_solver == "scipy":
-            phi_star = scipy_solver(A, rhs)
-            ksp = None  # SciPy doesn't use KSP objects
-        else:
-            raise ValueError(f"Unknown linear_solver: {self.config.linear_solver}. Use 'petsc' or 'scipy'.")
+        # Solve with PETSc
+        phi_star, ksp = petsc_solver(
+            A, rhs, ksp=ksp,
+            tolerance=self.params.linear_solver_tol,
+            solver_type="bcgs",
+            preconditioner="gamg"
+        )
 
         return phi_star, A_diag, ksp
 
@@ -176,27 +165,15 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        # Solve pressure correction
-        if self.config.linear_solver == "petsc":
-            # PETSc handles nullspace internally - no need to manually pin nodes
-            A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
-            p_prime, a.ksp_p = petsc_solver(
-                A_p, rhs_p, ksp=a.ksp_p,
-                tolerance=1e-6,
-                solver_type="bcgs",
-                preconditioner="gamg",
-                remove_nullspace=True
-            )
-        elif self.config.linear_solver == "scipy":
-            # Manually pin node 0 to remove nullspace (efficiently in COO format)
-            mask = row != 0
-            row_pinned = np.append(row[mask], 0)
-            col_pinned = np.append(col[mask], 0)
-            data_pinned = np.append(data[mask], 1.0)
-            A_p = csr_matrix((data_pinned, (row_pinned, col_pinned)), shape=(self.n_cells, self.n_cells))
-            rhs_p[0] = 0.0
-            p_prime = scipy_solver(A_p, rhs_p, use_cg=False)
-            a.ksp_p = None
+        # Solve pressure correction with PETSc (handles nullspace internally)
+        A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
+        p_prime, a.ksp_p = petsc_solver(
+            A_p, rhs_p, ksp=a.ksp_p,
+            tolerance=self.params.linear_solver_tol,
+            solver_type="bcgs",
+            preconditioner="gamg",
+            remove_nullspace=True
+        )
 
         # Velocity and pressure corrections - reuse buffers
         compute_cell_gradients_structured(self.mesh, p_prime, use_limiter=False, out=a.grad_p_prime)
@@ -205,7 +182,7 @@ class FVSolver(LidDrivenCavitySolver):
         # Update velocity and pressure (in-place operations into fresh buffers)
         np.add(u_star, a.u_prime, out=a.u)
         np.add(v_star, a.v_prime, out=a.v)
-        a.p += self.config.alpha_p * p_prime
+        a.p += self.params.alpha_p * p_prime
 
         # Update mass flux - reuse buffers
         interpolate_velocity_to_face(self.mesh, a.u_prime, a.v_prime, out=a.U_prime_face)
@@ -217,106 +194,18 @@ class FVSolver(LidDrivenCavitySolver):
 
         return a.u, a.v, a.p
 
-    def _create_result_fields(self):
-        """Create FV-specific result fields with mesh data and mdot."""
-        return FVResultFields(
-            u=self.arrays.u,
-            v=self.arrays.v,
-            p=self.arrays.p,
-            x=self.mesh.cell_centers[:, 0],
-            y=self.mesh.cell_centers[:, 1],
-            grid_points=self.mesh.cell_centers,
-            u_prev=self.arrays.u_prev,
-            v_prev=self.arrays.v_prev,
-            mdot=self.arrays.mdot,
-        )
+    def _compute_algebraic_residuals(self):
+        """Return algebraic residuals for SIMPLE algorithm.
 
-    def _compute_derivatives(self):
-        """Compute velocity and pressure derivatives for residual computation.
-
-        Returns
-        -------
-        dict
-            Dictionary with velocity/pressure derivatives and Laplacians.
+        For FV-SIMPLE:
+        - Momentum residuals: velocity correction magnitudes ||u'||, ||v'||
+        - Continuity residual: mass imbalance ||div(mdot)||
         """
-        # Compute gradients using FV method
-        grad_u = np.zeros((self.n_cells, 2))
-        grad_v = np.zeros((self.n_cells, 2))
-        grad_p = np.zeros((self.n_cells, 2))
-
-        compute_cell_gradients_structured(self.mesh, self.arrays.u, use_limiter=False, out=grad_u)
-        compute_cell_gradients_structured(self.mesh, self.arrays.v, use_limiter=False, out=grad_v)
-        compute_cell_gradients_structured(self.mesh, self.arrays.p, use_limiter=False, out=grad_p)
-
-        # Compute Laplacians using second-order centered differences on structured grid
-        nx, ny = self.config.nx, self.config.ny
-        dx, dy = self.config.Lx / nx, self.config.Ly / ny
-
-        u_2d = self.arrays.u.reshape(ny, nx)
-        v_2d = self.arrays.v.reshape(ny, nx)
-
-        # Laplacian with zero Neumann BCs at boundaries
-        lap_u_2d = np.zeros((ny, nx))
-        lap_v_2d = np.zeros((ny, nx))
-
-        # Interior points: standard 5-point stencil
-        lap_u_2d[1:-1, 1:-1] = (
-            (u_2d[1:-1, 2:] - 2*u_2d[1:-1, 1:-1] + u_2d[1:-1, :-2]) / dx**2 +
-            (u_2d[2:, 1:-1] - 2*u_2d[1:-1, 1:-1] + u_2d[:-2, 1:-1]) / dy**2
-        )
-        lap_v_2d[1:-1, 1:-1] = (
-            (v_2d[1:-1, 2:] - 2*v_2d[1:-1, 1:-1] + v_2d[1:-1, :-2]) / dx**2 +
-            (v_2d[2:, 1:-1] - 2*v_2d[1:-1, 1:-1] + v_2d[:-2, 1:-1]) / dy**2
-        )
-
-        # Boundary points (one-sided differences)
-        # Left boundary (i=0)
-        lap_u_2d[1:-1, 0] = (
-            (u_2d[1:-1, 1] - u_2d[1:-1, 0]) / dx**2 +
-            (u_2d[2:, 0] - 2*u_2d[1:-1, 0] + u_2d[:-2, 0]) / dy**2
-        )
-        lap_v_2d[1:-1, 0] = (
-            (v_2d[1:-1, 1] - v_2d[1:-1, 0]) / dx**2 +
-            (v_2d[2:, 0] - 2*v_2d[1:-1, 0] + v_2d[:-2, 0]) / dy**2
-        )
-
-        # Right boundary (i=nx-1)
-        lap_u_2d[1:-1, -1] = (
-            (-u_2d[1:-1, -1] + u_2d[1:-1, -2]) / dx**2 +
-            (u_2d[2:, -1] - 2*u_2d[1:-1, -1] + u_2d[:-2, -1]) / dy**2
-        )
-        lap_v_2d[1:-1, -1] = (
-            (-v_2d[1:-1, -1] + v_2d[1:-1, -2]) / dx**2 +
-            (v_2d[2:, -1] - 2*v_2d[1:-1, -1] + v_2d[:-2, -1]) / dy**2
-        )
-
-        # Bottom boundary (j=0)
-        lap_u_2d[0, 1:-1] = (
-            (u_2d[0, 2:] - 2*u_2d[0, 1:-1] + u_2d[0, :-2]) / dx**2 +
-            (u_2d[1, 1:-1] - u_2d[0, 1:-1]) / dy**2
-        )
-        lap_v_2d[0, 1:-1] = (
-            (v_2d[0, 2:] - 2*v_2d[0, 1:-1] + v_2d[0, :-2]) / dx**2 +
-            (v_2d[1, 1:-1] - v_2d[0, 1:-1]) / dy**2
-        )
-
-        # Top boundary (j=ny-1)
-        lap_u_2d[-1, 1:-1] = (
-            (u_2d[-1, 2:] - 2*u_2d[-1, 1:-1] + u_2d[-1, :-2]) / dx**2 +
-            (-u_2d[-1, 1:-1] + u_2d[-2, 1:-1]) / dy**2
-        )
-        lap_v_2d[-1, 1:-1] = (
-            (v_2d[-1, 2:] - 2*v_2d[-1, 1:-1] + v_2d[-1, :-2]) / dx**2 +
-            (-v_2d[-1, 1:-1] + v_2d[-2, 1:-1]) / dy**2
-        )
+        # Mass imbalance (continuity): divergence of corrected mass flux
+        mass_imbalance = compute_divergence_from_face_fluxes(self.mesh, self.arrays.mdot)
 
         return {
-            'du_dx': grad_u[:, 0],
-            'du_dy': grad_u[:, 1],
-            'dv_dx': grad_v[:, 0],
-            'dv_dy': grad_v[:, 1],
-            'dp_dx': grad_p[:, 0],
-            'dp_dy': grad_p[:, 1],
-            'lap_u': lap_u_2d.ravel(),
-            'lap_v': lap_v_2d.ravel()
+            'u_residual': np.linalg.norm(self.arrays.u_prime),
+            'v_residual': np.linalg.norm(self.arrays.v_prime),
+            'continuity_residual': np.linalg.norm(mass_imbalance),
         }
