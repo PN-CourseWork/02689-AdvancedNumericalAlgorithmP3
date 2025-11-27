@@ -16,9 +16,6 @@ bash setup.sh
 Submit parameter sweeps using job packs:
 
 ```bash
-# Preview jobs without submitting
-uv run python main.py --hpc spectral --dry-run
-
 # Submit spectral solver jobs
 uv run python main.py --hpc spectral
 
