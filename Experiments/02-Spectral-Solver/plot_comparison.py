@@ -13,7 +13,7 @@ from pathlib import Path
 
 # Configuration
 Re = 100
-N = 20  # Grid size (number of nodes)
+N = 19  # Grid size (number of nodes)
 Re_str = f"Re{int(Re)}"
 
 project_root = get_project_root()
