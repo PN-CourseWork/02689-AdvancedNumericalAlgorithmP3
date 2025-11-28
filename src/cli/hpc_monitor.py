@@ -73,7 +73,8 @@ def kill_all_jobs() -> tuple[bool, str]:
 class StatusBar(Static):
     """Status bar for messages."""
 
-    def set_message(self, msg: str, style: str = "ansi_yellow") -> None:
+    # Nord Aurora yellow: #ebcb8b
+    def set_message(self, msg: str, style: str = "#ebcb8b") -> None:
         self.update(f"[{style}]{msg}[/{style}]" if msg else "")
 
 
@@ -82,43 +83,66 @@ class HPCMonitorApp(App):
 
     ENABLE_COMMAND_PALETTE = False
 
+    # Nord theme colors
+    # Polar Night: #2e3440, #3b4252, #434c5e, #4c566a
+    # Snow Storm: #d8dee9, #e5e9f0, #eceff4
+    # Frost: #8fbcbb, #88c0d0, #81a1c1, #5e81ac
+    # Aurora: #bf616a (red), #ebcb8b (yellow), #a3be8c (green)
+
     CSS = """
     Screen {
-        background: $surface;
+        background: #2e3440;
     }
 
     Header {
-        background: ansi_blue;
-        color: ansi_white;
+        background: #3b4252;
+        color: #88c0d0;
     }
 
     Footer {
-        background: ansi_default;
+        background: #3b4252;
+        color: #d8dee9;
     }
 
     Footer > .footer--key {
-        background: ansi_blue;
-        color: ansi_white;
+        background: #5e81ac;
+        color: #eceff4;
+    }
+
+    Footer > .footer--description {
+        color: #d8dee9;
     }
 
     #job-table {
         height: 1fr;
-        border: round ansi_cyan;
+        border: round #88c0d0;
+        background: #2e3440;
+    }
+
+    DataTable {
+        background: #2e3440;
     }
 
     DataTable > .datatable--header {
-        background: ansi_default;
-        color: ansi_cyan;
+        background: #3b4252;
+        color: #88c0d0;
         text-style: bold;
     }
 
     DataTable > .datatable--cursor {
-        background: ansi_blue;
+        background: #434c5e;
+        color: #eceff4;
+    }
+
+    DataTable > .datatable--hover {
+        background: #3b4252;
     }
 
     #status {
         height: 1;
         padding: 0 1;
+        background: #2e3440;
+        color: #d8dee9;
     }
     """
 
@@ -166,10 +190,11 @@ class HPCMonitorApp(App):
 
         if self.jobs:
             for i, job in enumerate(self.jobs):
+                # Nord Aurora: green=#a3be8c, yellow=#ebcb8b, dim=#4c566a
                 status_style = (
-                    "ansi_green" if job.status == "RUN"
-                    else "ansi_yellow" if job.status == "PEND"
-                    else "ansi_bright_black"
+                    "#a3be8c" if job.status == "RUN"
+                    else "#ebcb8b" if job.status == "PEND"
+                    else "#4c566a"
                 )
                 table.add_row(
                     str(i + 1),
@@ -191,8 +216,9 @@ class HPCMonitorApp(App):
 
     def action_kill_selected(self) -> None:
         """Kill the selected job."""
+        # Nord Aurora: red=#bf616a, green=#a3be8c
         if not self.jobs:
-            self.query_one(StatusBar).set_message("No jobs to kill", "ansi_red")
+            self.query_one(StatusBar).set_message("No jobs to kill", "#bf616a")
             return
 
         table = self.query_one(DataTable)
@@ -203,19 +229,20 @@ class HPCMonitorApp(App):
             ok, msg = kill_job(job.id)
             status = self.query_one(StatusBar)
             if ok:
-                status.set_message(f"Killed: {job.name}", "ansi_green")
+                status.set_message(f"Killed: {job.name}", "#a3be8c")
             else:
-                status.set_message(f"Failed to kill {job.name}: {msg}", "ansi_red")
+                status.set_message(f"Failed to kill {job.name}: {msg}", "#bf616a")
             self.refresh_jobs()
 
     def action_kill_all(self) -> None:
         """Kill all jobs."""
+        # Nord Aurora: red=#bf616a, green=#a3be8c
         ok, msg = kill_all_jobs()
         status = self.query_one(StatusBar)
         if ok:
-            status.set_message("Killed all jobs", "ansi_green")
+            status.set_message("Killed all jobs", "#a3be8c")
         else:
-            status.set_message(f"Failed: {msg}", "ansi_red")
+            status.set_message(f"Failed: {msg}", "#bf616a")
         self.refresh_jobs()
 
     def action_cursor_up(self) -> None:
