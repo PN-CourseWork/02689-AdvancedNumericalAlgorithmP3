@@ -62,10 +62,10 @@ class GhiaValidator:
         self.fields = self.interpolator.fields  # For compatibility
 
         # Load params (new format uses 'params' instead of 'metadata')
-        params = pd.read_hdf(self.h5_path, 'params')
+        params = pd.read_hdf(self.h5_path, "params")
 
         # Get Reynolds number
-        self.Re = Re if Re is not None else params['Re'].iloc[0]
+        self.Re = Re if Re is not None else params["Re"].iloc[0]
 
         # Require exact match for Reynolds number
         if self.Re not in self.AVAILABLE_RE:
@@ -80,6 +80,7 @@ class GhiaValidator:
         # Set validation data directory
         if validation_data_dir is None:
             from utils import get_project_root
+
             validation_data_dir = get_project_root() / "data" / "validation" / "ghia"
         self.validation_data_dir = Path(validation_data_dir)
 
@@ -120,9 +121,7 @@ class GhiaValidator:
         """
         # Use unified interpolator (handles both FV and Spectral grids consistently)
         position, velocity = self.interpolator.extract_centerline(
-            field=field,
-            axis=centerline_axis,
-            n_points=200
+            field=field, axis=centerline_axis, n_points=200
         )
         return position, velocity
 
@@ -140,33 +139,37 @@ class GhiaValidator:
             - method: method label (for multi-method comparisons)
         """
         # Extract centerline data
-        y_sim, u_sim = self._extract_centerline('u', 'y')
-        x_sim, v_sim = self._extract_centerline('v', 'x')
+        y_sim, u_sim = self._extract_centerline("u", "y")
+        x_sim, v_sim = self._extract_centerline("v", "x")
 
         # Simulation data
-        u_sim_df = pd.DataFrame({'position': y_sim, 'velocity': u_sim}).assign(
-            source='Simulation',
-            component='u (vertical centerline)',
-            method=self.method_label
+        u_sim_df = pd.DataFrame({"position": y_sim, "velocity": u_sim}).assign(
+            source="Simulation",
+            component="u (vertical centerline)",
+            method=self.method_label,
         )
 
-        v_sim_df = pd.DataFrame({'position': x_sim, 'velocity': v_sim}).assign(
-            source='Simulation',
-            component='v (horizontal centerline)',
-            method=self.method_label
+        v_sim_df = pd.DataFrame({"position": x_sim, "velocity": v_sim}).assign(
+            source="Simulation",
+            component="v (horizontal centerline)",
+            method=self.method_label,
         )
 
         # Ghia benchmark data (already DataFrames, just rename and add columns)
-        u_ghia_df = self.ghia_u.rename(columns={'y': 'position', 'u': 'velocity'}).assign(
-            source='Ghia et al. (1982)',
-            component='u (vertical centerline)',
-            method=self.method_label
+        u_ghia_df = self.ghia_u.rename(
+            columns={"y": "position", "u": "velocity"}
+        ).assign(
+            source="Ghia et al. (1982)",
+            component="u (vertical centerline)",
+            method=self.method_label,
         )
 
-        v_ghia_df = self.ghia_v.rename(columns={'x': 'position', 'v': 'velocity'}).assign(
-            source='Ghia et al. (1982)',
-            component='v (horizontal centerline)',
-            method=self.method_label
+        v_ghia_df = self.ghia_v.rename(
+            columns={"x": "position", "v": "velocity"}
+        ).assign(
+            source="Ghia et al. (1982)",
+            component="v (horizontal centerline)",
+            method=self.method_label,
         )
 
         return pd.concat([u_sim_df, v_sim_df, u_ghia_df, v_ghia_df], ignore_index=True)
@@ -189,68 +192,76 @@ class GhiaValidator:
             - 'v_rms': Root mean square error for v
         """
         # Extract centerline data
-        y_sim, u_sim = self._extract_centerline('u', 'y')
-        x_sim, v_sim = self._extract_centerline('v', 'x')
+        y_sim, u_sim = self._extract_centerline("u", "y")
+        x_sim, v_sim = self._extract_centerline("v", "x")
 
         # Filter out boundary points from Ghia data
         # For u-velocity: exclude y=0 and y=1
         eps = 1e-6
-        ghia_u_interior = self.ghia_u[(self.ghia_u['y'] > eps) & (self.ghia_u['y'] < 1.0 - eps)]
+        ghia_u_interior = self.ghia_u[
+            (self.ghia_u["y"] > eps) & (self.ghia_u["y"] < 1.0 - eps)
+        ]
 
         # For v-velocity: exclude x=0 and x=1
-        ghia_v_interior = self.ghia_v[(self.ghia_v['x'] > eps) & (self.ghia_v['x'] < 1.0 - eps)]
+        ghia_v_interior = self.ghia_v[
+            (self.ghia_v["x"] > eps) & (self.ghia_v["x"] < 1.0 - eps)
+        ]
 
         # Interpolate simulation results at interior Ghia benchmark points
-        u_interp_func = interp1d(y_sim, u_sim, kind='cubic', fill_value='extrapolate')
-        u_sim_at_ghia = u_interp_func(ghia_u_interior['y'].values)
-        u_error = u_sim_at_ghia - ghia_u_interior['u'].values
+        u_interp_func = interp1d(y_sim, u_sim, kind="cubic", fill_value="extrapolate")
+        u_sim_at_ghia = u_interp_func(ghia_u_interior["y"].values)
+        u_error = u_sim_at_ghia - ghia_u_interior["u"].values
 
-        v_interp_func = interp1d(x_sim, v_sim, kind='cubic', fill_value='extrapolate')
-        v_sim_at_ghia = v_interp_func(ghia_v_interior['x'].values)
-        v_error = v_sim_at_ghia - ghia_v_interior['v'].values
+        v_interp_func = interp1d(x_sim, v_sim, kind="cubic", fill_value="extrapolate")
+        v_sim_at_ghia = v_interp_func(ghia_v_interior["x"].values)
+        v_error = v_sim_at_ghia - ghia_v_interior["v"].values
 
         # Compute error norms
         return {
-            'u_l2': np.sqrt(np.sum(u_error**2)),
-            'u_linf': np.max(np.abs(u_error)),
-            'u_rms': np.sqrt(np.mean(u_error**2)),
-            'v_l2': np.sqrt(np.sum(v_error**2)),
-            'v_linf': np.max(np.abs(v_error)),
-            'v_rms': np.sqrt(np.mean(v_error**2)),
+            "u_l2": np.sqrt(np.sum(u_error**2)),
+            "u_linf": np.max(np.abs(u_error)),
+            "u_rms": np.sqrt(np.mean(u_error**2)),
+            "v_l2": np.sqrt(np.sum(v_error**2)),
+            "v_linf": np.max(np.abs(v_error)),
+            "v_rms": np.sqrt(np.mean(v_error**2)),
         }
 
     def print_summary(self):
         """Print validation summary with error metrics."""
         errors = self.compute_errors()
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print(f"{'VALIDATION SUMMARY':^70}")
-        print("="*70)
+        print("=" * 70)
         print(f"  Reynolds number: Re = {self.Re:.0f}")
         print(f"  Benchmark: Ghia et al. (1982), Re = {self.Re:.0f}")
         print(f"  Solution file: {self.h5_path.name}")
-        print(f"  Note: Boundary points excluded (interior points only)")
-        print("-"*70)
+        print("  Note: Boundary points excluded (interior points only)")
+        print("-" * 70)
         print(f"{'ERROR METRICS':^70}")
-        print("-"*70)
+        print("-" * 70)
         print(f"  {'Velocity':<12} {'L² Error':<15} {'L∞ Error':<15} {'RMS Error':<15}")
-        print("-"*70)
-        print(f"  {'u (vertical)':<12} {errors['u_l2']:<15.6e} {errors['u_linf']:<15.6e} {errors['u_rms']:<15.6e}")
-        print(f"  {'v (horizontal)':<12} {errors['v_l2']:<15.6e} {errors['v_linf']:<15.6e} {errors['v_rms']:<15.6e}")
-        print("="*70)
+        print("-" * 70)
+        print(
+            f"  {'u (vertical)':<12} {errors['u_l2']:<15.6e} {errors['u_linf']:<15.6e} {errors['u_rms']:<15.6e}"
+        )
+        print(
+            f"  {'v (horizontal)':<12} {errors['v_l2']:<15.6e} {errors['v_linf']:<15.6e} {errors['v_rms']:<15.6e}"
+        )
+        print("=" * 70)
 
         # Provide interpretation
-        if errors['u_rms'] < 1e-3 and errors['v_rms'] < 1e-3:
+        if errors["u_rms"] < 1e-3 and errors["v_rms"] < 1e-3:
             quality = "EXCELLENT"
-        elif errors['u_rms'] < 1e-2 and errors['v_rms'] < 1e-2:
+        elif errors["u_rms"] < 1e-2 and errors["v_rms"] < 1e-2:
             quality = "GOOD"
-        elif errors['u_rms'] < 0.05 and errors['v_rms'] < 0.05:
+        elif errors["u_rms"] < 0.05 and errors["v_rms"] < 0.05:
             quality = "ACCEPTABLE"
         else:
             quality = "NEEDS IMPROVEMENT"
 
         print(f"  Overall validation quality: {quality}")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
 
 def plot_validation(validators, output_path=None):
@@ -282,64 +293,82 @@ def plot_validation(validators, output_path=None):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     # Left panel: U velocity
-    df_u = df[df['component'] == 'u (vertical centerline)']
-    df_u_sim = df_u[df_u['source'] == 'Simulation'].sort_values(['method', 'position'])
-    df_u_ghia = df_u[df_u['source'] == 'Ghia et al. (1982)'].drop_duplicates(subset=['position']).sort_values('position')
+    df_u = df[df["component"] == "u (vertical centerline)"]
+    df_u_sim = df_u[df_u["source"] == "Simulation"].sort_values(["method", "position"])
+    df_u_ghia = (
+        df_u[df_u["source"] == "Ghia et al. (1982)"]
+        .drop_duplicates(subset=["position"])
+        .sort_values("position")
+    )
 
     # Use seaborn with hue='method' for simulation data
     sns.lineplot(
         data=df_u_sim,
-        x='velocity', y='position',
-        hue='method',
+        x="velocity",
+        y="position",
+        hue="method",
         ax=axes[0],
         linewidth=2.5,
         alpha=0.8,
         sort=False,
-        estimator=None
+        estimator=None,
     )
     # Ghia benchmark as scatter
     sns.scatterplot(
         data=df_u_ghia,
-        x='velocity', y='position',
+        x="velocity",
+        y="position",
         ax=axes[0],
-        marker='x', s=50, color='black',
-        label='Ghia et al. (1982)', zorder=10
+        marker="x",
+        s=50,
+        color="black",
+        label="Ghia et al. (1982)",
+        zorder=10,
     )
 
     axes[0].set_xlabel("$u$", fontsize=12)
     axes[0].set_ylabel("$y$", fontsize=12)
-    axes[0].set_title("U velocity (vertical centerline)", fontweight='bold')
+    axes[0].set_title("U velocity (vertical centerline)", fontweight="bold")
     axes[0].legend(frameon=True, loc="best")
     axes[0].grid(True, alpha=0.3)
 
     # Right panel: V velocity
-    df_v = df[df['component'] == 'v (horizontal centerline)']
-    df_v_sim = df_v[df_v['source'] == 'Simulation'].sort_values(['method', 'position'])
-    df_v_ghia = df_v[df_v['source'] == 'Ghia et al. (1982)'].drop_duplicates(subset=['position']).sort_values('position')
+    df_v = df[df["component"] == "v (horizontal centerline)"]
+    df_v_sim = df_v[df_v["source"] == "Simulation"].sort_values(["method", "position"])
+    df_v_ghia = (
+        df_v[df_v["source"] == "Ghia et al. (1982)"]
+        .drop_duplicates(subset=["position"])
+        .sort_values("position")
+    )
 
     # Use seaborn with hue='method' for simulation data
     sns.lineplot(
         data=df_v_sim,
-        x='position', y='velocity',
-        hue='method',
+        x="position",
+        y="velocity",
+        hue="method",
         ax=axes[1],
         linewidth=2.5,
         alpha=0.8,
         sort=False,
-        estimator=None
+        estimator=None,
     )
     # Ghia benchmark as scatter
     sns.scatterplot(
         data=df_v_ghia,
-        x='position', y='velocity',
+        x="position",
+        y="velocity",
         ax=axes[1],
-        marker='x', s=50, color='black',
-        label='Ghia et al. (1982)', zorder=10
+        marker="x",
+        s=50,
+        color="black",
+        label="Ghia et al. (1982)",
+        zorder=10,
     )
 
     axes[1].set_xlabel("$x$", fontsize=12)
     axes[1].set_ylabel("$v$", fontsize=12)
-    axes[1].set_title("V velocity (horizontal centerline)", fontweight='bold')
+    axes[1].set_title("V velocity (horizontal centerline)", fontweight="bold")
     axes[1].legend(frameon=True, loc="best")
     axes[1].grid(True, alpha=0.3)
 

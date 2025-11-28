@@ -13,7 +13,7 @@ def petsc_solver(
     max_iterations=1000,
     solver_type="bcgs",
     preconditioner="gamg",
-    remove_nullspace=False
+    remove_nullspace=False,
 ):
     """Solve A x = b using PETSc with optional KSP reuse.
 
@@ -48,8 +48,7 @@ def petsc_solver(
 
     # Create PETSc matrix from SciPy CSR
     A_petsc = PETSc.Mat().createAIJ(
-        size=A_csr.shape,
-        csr=(A_csr.indptr, A_csr.indices, A_csr.data)
+        size=A_csr.shape, csr=(A_csr.indptr, A_csr.indices, A_csr.data)
     )
     A_petsc.assemble()
 

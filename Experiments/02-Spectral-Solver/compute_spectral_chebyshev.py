@@ -22,11 +22,21 @@ import os
 from ldc import SpectralSolver
 from utils import get_project_root, LDCPlotter, GhiaValidator, plot_validation
 
-parser = argparse.ArgumentParser(description="Spectral solver for lid-driven cavity (Chebyshev basis)")
-parser.add_argument("--N", type=int, default=19, help="Polynomial order, nodes = N+1 (default: 19)")
-parser.add_argument("--Re", type=int, default=100, help="Reynolds number (default: 100)")
-parser.add_argument("--tol", type=float, default=1e-7, help="Convergence tolerance (default: 1e-7)")
-parser.add_argument("--max-iter", type=int, default=200000, help="Max iterations (default: 200000)")
+parser = argparse.ArgumentParser(
+    description="Spectral solver for lid-driven cavity (Chebyshev basis)"
+)
+parser.add_argument(
+    "--N", type=int, default=19, help="Polynomial order, nodes = N+1 (default: 19)"
+)
+parser.add_argument(
+    "--Re", type=int, default=100, help="Reynolds number (default: 100)"
+)
+parser.add_argument(
+    "--tol", type=float, default=1e-7, help="Convergence tolerance (default: 1e-7)"
+)
+parser.add_argument(
+    "--max-iter", type=int, default=200000, help="Max iterations (default: 200000)"
+)
 args = parser.parse_args()
 
 N = args.N  # Polynomial order (nodes = N+1)
@@ -52,10 +62,12 @@ solver = SpectralSolver(
     basis_type="chebyshev",
     CFL=0.70,
     beta_squared=5.0,
-    corner_smoothing=0.15
+    corner_smoothing=0.15,
 )
 
-print(f"Solver configured: Re={solver.params.Re}, Grid={N_nodes}x{N_nodes}, CFL={solver.params.CFL}")
+print(
+    f"Solver configured: Re={solver.params.Re}, Grid={N_nodes}x{N_nodes}, CFL={solver.params.CFL}"
+)
 print(f"Total nodes: {N_nodes * N_nodes}")
 
 # %%
@@ -91,27 +103,27 @@ print(f"\nResults saved to: {output_file}")
 # Generate plots and log to MLflow.
 
 plotter = LDCPlotter(output_file)
-validator = GhiaValidator(output_file, Re=Re_number, method_label='Spectral-Chebyshev')
+validator = GhiaValidator(output_file, Re=Re_number, method_label="Spectral-Chebyshev")
 
 fig_path = fig_dir / f"ghia_validation_N{N_nodes}_{Re_str}.pdf"
 plot_validation(validator, output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Ghia validation saved")
+print("  ✓ Ghia validation saved")
 
 fig_path = fig_dir / f"convergence_N{N_nodes}_{Re_str}.pdf"
 plotter.plot_convergence(output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Convergence saved")
+print("  ✓ Convergence saved")
 
 fig_path = fig_dir / f"fields_N{N_nodes}_{Re_str}.pdf"
 plotter.plot_fields(output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Fields saved")
+print("  ✓ Fields saved")
 
 fig_path = fig_dir / f"streamlines_N{N_nodes}_{Re_str}.pdf"
 plotter.plot_streamlines(output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Streamlines saved")
+print("  ✓ Streamlines saved")
 
 # %%
 # Summary
@@ -120,7 +132,7 @@ print(f"  ✓ Streamlines saved")
 
 solver.mlflow_end()
 
-print(f"\nSolution Status:")
+print("\nSolution Status:")
 print(f"  Converged: {solver.metrics.converged}")
 print(f"  Iterations: {solver.metrics.iterations}")
 print(f"  Final residual: {solver.metrics.final_residual:.6e}")

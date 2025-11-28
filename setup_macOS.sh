@@ -25,15 +25,15 @@ fi
 # 2. Create a fresh uv venv (Python 3.12) with pip seeded
 # ---------------------------------------------------------------
 echo "[2/5] Creating new uv virtual environment (Python 3.12, seeded)..."
-uv venv --python 3.12 --seed .venv
+#uv venv --python 3.12 --seed .venv
 
 
+uv sync
 # ---------------------------------------------------------------
 # 3. Install pyproject dependencies via uv sync
 # ---------------------------------------------------------------
 echo "[3/5] Installing pyproject dependencies via uv sync..."
 source .venv/bin/activate
-uv sync
 
 
 # ---------------------------------------------------------------
@@ -41,8 +41,7 @@ uv sync
 # ---------------------------------------------------------------
 echo "[4/5] Installing PETSc + petsc4py via pip..."
 
-python -m pip install --upgrade pip wheel
-python -m pip install petsc petsc4py
+pip install petsc4py
 
 
 # ---------------------------------------------------------------

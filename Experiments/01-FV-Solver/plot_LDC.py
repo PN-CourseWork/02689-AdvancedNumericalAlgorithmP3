@@ -32,7 +32,7 @@ if not solution_path.exists():
 
 # Load solution
 plotter = LDCPlotter(solution_path)
-validator = GhiaValidator(solution_path, Re=Re, method_label='FV-SIMPLE')
+validator = GhiaValidator(solution_path, Re=Re, method_label="FV-SIMPLE")
 
 print(f"Loaded solution: {solution_path.name}")
 
@@ -41,11 +41,8 @@ print(f"Loaded solution: {solution_path.name}")
 # --------------------------
 # Compare computed velocity profiles with the Ghia et al. (1982) benchmark data.
 
-plot_validation(
-    validator,
-    output_path=fig_dir / f"ghia_validation_{Re_str}.pdf"
-)
-print(f"  ✓ Ghia validation saved")
+plot_validation(validator, output_path=fig_dir / f"ghia_validation_{Re_str}.pdf")
+print("  ✓ Ghia validation saved")
 
 # %%
 # Convergence History
@@ -53,7 +50,7 @@ print(f"  ✓ Ghia validation saved")
 # Visualize how the residual decreased during the SIMPLE iteration process.
 
 plotter.plot_convergence(output_path=fig_dir / f"convergence_{Re_str}.pdf")
-print(f"  ✓ Convergence saved")
+print("  ✓ Convergence saved")
 
 # %%
 # Solution Fields
@@ -61,7 +58,7 @@ print(f"  ✓ Convergence saved")
 # Generate combined plot with pressure, u velocity, and v velocity fields.
 
 plotter.plot_fields(output_path=fig_dir / f"fields_{Re_str}.pdf")
-print(f"  ✓ Fields saved")
+print("  ✓ Fields saved")
 
 # %%
 # Velocity Magnitude with Streamlines
@@ -69,4 +66,4 @@ print(f"  ✓ Fields saved")
 # Velocity magnitude with streamlines overlaid
 
 plotter.plot_streamlines(output_path=fig_dir / f"streamlines_{Re_str}.pdf")
-print(f"  ✓ Streamlines saved")
+print("  ✓ Streamlines saved")

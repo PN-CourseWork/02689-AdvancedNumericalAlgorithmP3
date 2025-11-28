@@ -36,7 +36,8 @@ class Parameters:
     tolerance: float = 1e-4
     method: str = ""
 
-    def to_dataframe(self): return pd.DataFrame([asdict(self)])
+    def to_dataframe(self):
+        return pd.DataFrame([asdict(self)])
 
 
 # ========================================================
@@ -50,7 +51,7 @@ class Metrics:
 
     iterations: int = 0
     converged: bool = False
-    final_residual: float = float('inf')
+    final_residual: float = float("inf")
     wall_time_seconds: float = 0.0
     u_momentum_residual: float = 0.0
     v_momentum_residual: float = 0.0
@@ -59,7 +60,8 @@ class Metrics:
     final_enstrophy: float = 0.0
     final_palinstrophy: float = 0.0
 
-    def to_dataframe(self): return pd.DataFrame([asdict(self)])
+    def to_dataframe(self):
+        return pd.DataFrame([asdict(self)])
 
 
 # ========================================================
@@ -116,7 +118,7 @@ class FVParameters(Parameters):
     convection_scheme: str = "Upwind"
     limiter: str = "MUSCL"
     alpha_uv: float = 0.6  # velocity under-relaxation
-    alpha_p: float = 0.4   # pressure under-relaxation
+    alpha_p: float = 0.4  # pressure under-relaxation
     linear_solver_tol: float = 1e-6  # PETSc linear solver tolerance
     method: str = "FV-SIMPLE"
 
@@ -124,6 +126,7 @@ class FVParameters(Parameters):
 @dataclass
 class FVSolverFields:
     """Internal FV solver arrays - current state, previous iteration, and work buffers."""
+
     # Current solution state
     u: np.ndarray
     v: np.ndarray
@@ -200,7 +203,7 @@ class SpectralParameters(Parameters):
 
     basis_type: str = "legendre"  # "legendre" or "chebyshev"
     CFL: float = 0.1
-    beta_squared: float = 5.0    # artificial compressibility
+    beta_squared: float = 5.0  # artificial compressibility
     corner_smoothing: float = 0.15
     method: str = "Spectral-AC"
 
@@ -213,6 +216,7 @@ class SpectralSolverFields:
     - Velocities (u, v) live on full (Nx+1) × (Ny+1) grid
     - Pressure (p) lives ONLY on inner (Nx-1) × (Ny-1) grid
     """
+
     # Current solution state - velocities on full grid
     u: np.ndarray
     v: np.ndarray
