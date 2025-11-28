@@ -341,6 +341,10 @@ Examples:
     )
     parser.add_argument("--lint", action="store_true", help="Run ruff linter")
     parser.add_argument("--format", action="store_true", help="Run ruff formatter")
+    parser.add_argument(
+    "--hpc",
+    choices=["spectral", "fv", "all"],
+    help="Submit HPC job packs")
 
     # Show help if no arguments provided
     if len(sys.argv) == 1:
