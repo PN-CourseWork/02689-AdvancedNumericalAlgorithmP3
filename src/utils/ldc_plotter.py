@@ -73,15 +73,14 @@ class LDCPlotter:
 
             # Load DataFrames and add run label
             # New format uses 'params' and 'metrics' instead of 'metadata'
-            params_df = pd.read_hdf(h5_path, 'params')
-            metrics_df = pd.read_hdf(h5_path, 'metrics')
+            params_df = pd.read_hdf(h5_path, "params")
+            metrics_df = pd.read_hdf(h5_path, "metrics")
             # Combine params and metrics into single metadata row
             metadata_df = pd.concat([params_df, metrics_df], axis=1).assign(run=label)
 
-            fields_df = pd.read_hdf(h5_path, 'fields').assign(run=label)
-            time_series_df = pd.read_hdf(h5_path, 'time_series').assign(
-                run=label,
-                iteration=lambda df: range(len(df))
+            fields_df = pd.read_hdf(h5_path, "fields").assign(run=label)
+            time_series_df = pd.read_hdf(h5_path, "time_series").assign(
+                run=label, iteration=lambda df: range(len(df))
             )
 
             fields_list.append(fields_df)
@@ -95,7 +94,7 @@ class LDCPlotter:
 
     def _require_single_run(self):
         """Check that only single run is loaded (for field plotting)."""
-        if self.metadata['run'].nunique() > 1:
+        if self.metadata["run"].nunique() > 1:
             raise ValueError("Field plotting only available for single run.")
 
     def plot_convergence(self, output_path=None, normalization_iters=5):
@@ -112,18 +111,19 @@ class LDCPlotter:
             Number of initial iterations to use for computing normalization
             reference (default: 5, following STAR-CCM+ convention).
         """
-        n_runs = self.metadata['run'].nunique()
+        n_runs = self.metadata["run"].nunique()
 
         # Get residual columns (exclude 'iteration' and 'run')
-        residual_cols = [col for col in self.time_series.columns
-                        if col not in ['iteration', 'run']]
+        residual_cols = [
+            col for col in self.time_series.columns if col not in ["iteration", "run"]
+        ]
 
         # Melt to long format
         df_long = self.time_series.melt(
-            id_vars=['iteration', 'run'],
+            id_vars=["iteration", "run"],
             value_vars=residual_cols,
-            var_name='residual_type',
-            value_name='residual_value'
+            var_name="residual_type",
+            value_name="residual_value",
         )
 
         # Normalize each (run, residual_type) group by max of first N iterations
@@ -135,7 +135,9 @@ class LDCPlotter:
                 return group / ref_value
             return group
 
-        df_long['normalized_residual'] = df_long.groupby(['run', 'residual_type'])['residual_value'].transform(normalize_group)
+        df_long["normalized_residual"] = df_long.groupby(["run", "residual_type"])[
+            "residual_value"
+        ].transform(normalize_group)
 
         # Plot with seaborn
         g = sns.relplot(
@@ -157,7 +159,7 @@ class LDCPlotter:
         g.ax.set_ylabel("Normalized Metric")
 
         if n_runs == 1:
-            Re = self.metadata['Re'].iloc[0]
+            Re = self.metadata["Re"].iloc[0]
             g.ax.set_title(f"Convergence History (Re = {Re:.0f})", fontweight="bold")
         else:
             g.ax.set_title("Convergence Comparison", fontweight="bold")
@@ -181,21 +183,21 @@ class LDCPlotter:
         """
         self._require_single_run()
 
-        Re = self.metadata['Re'].iloc[0]
+        Re = self.metadata["Re"].iloc[0]
 
         # Determine grid size and reshape to 2D
-        nx = self.fields['x'].nunique()
-        ny = self.fields['y'].nunique()
+        nx = self.fields["x"].nunique()
+        ny = self.fields["y"].nunique()
 
         # Get unique x and y coordinates (sorted)
-        x_unique = np.sort(self.fields['x'].unique())
-        y_unique = np.sort(self.fields['y'].unique())
+        x_unique = np.sort(self.fields["x"].unique())
+        y_unique = np.sort(self.fields["y"].unique())
 
         # Sort data by (y, x) to ensure consistent ordering for reshape
-        sorted_fields = self.fields.sort_values(['y', 'x'])
-        P_orig = sorted_fields['p'].values.reshape(ny, nx)
-        U_orig = sorted_fields['u'].values.reshape(ny, nx)
-        V_orig = sorted_fields['v'].values.reshape(ny, nx)
+        sorted_fields = self.fields.sort_values(["y", "x"])
+        P_orig = sorted_fields["p"].values.reshape(ny, nx)
+        U_orig = sorted_fields["u"].values.reshape(ny, nx)
+        V_orig = sorted_fields["v"].values.reshape(ny, nx)
 
         # Interpolate to finer grid if requested
         if interp_resolution > max(nx, ny):
@@ -209,11 +211,16 @@ class LDCPlotter:
             # Tensor product barycentric interpolation
             def interp_2d(field_2d):
                 # First interpolate along x for each y
-                temp = np.array([BarycentricInterpolator(x_unique, row)(x_fine)
-                                 for row in field_2d])
+                temp = np.array(
+                    [BarycentricInterpolator(x_unique, row)(x_fine) for row in field_2d]
+                )
                 # Then interpolate along y for each x
-                result = np.array([BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
-                                   for i in range(interp_resolution)]).T
+                result = np.array(
+                    [
+                        BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
+                        for i in range(interp_resolution)
+                    ]
+                ).T
                 return result
 
             P = interp_2d(P_orig)
@@ -270,20 +277,20 @@ class LDCPlotter:
         """
         self._require_single_run()
 
-        Re = self.metadata['Re'].iloc[0]
+        Re = self.metadata["Re"].iloc[0]
 
         # Determine grid size and reshape to 2D
-        nx = self.fields['x'].nunique()
-        ny = self.fields['y'].nunique()
+        nx = self.fields["x"].nunique()
+        ny = self.fields["y"].nunique()
 
         # Get unique x and y coordinates (sorted)
-        x_unique = np.sort(self.fields['x'].unique())
-        y_unique = np.sort(self.fields['y'].unique())
+        x_unique = np.sort(self.fields["x"].unique())
+        y_unique = np.sort(self.fields["y"].unique())
 
         # Sort data by (y, x) to ensure consistent ordering for reshape
-        sorted_fields = self.fields.sort_values(['y', 'x'])
-        U_orig = sorted_fields['u'].values.reshape(ny, nx)
-        V_orig = sorted_fields['v'].values.reshape(ny, nx)
+        sorted_fields = self.fields.sort_values(["y", "x"])
+        U_orig = sorted_fields["u"].values.reshape(ny, nx)
+        V_orig = sorted_fields["v"].values.reshape(ny, nx)
 
         # Interpolate to finer grid if requested
         if interp_resolution > max(nx, ny):
@@ -296,10 +303,15 @@ class LDCPlotter:
 
             # Tensor product barycentric interpolation
             def interp_2d(field_2d):
-                temp = np.array([BarycentricInterpolator(x_unique, row)(x_fine)
-                                 for row in field_2d])
-                result = np.array([BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
-                                   for i in range(interp_resolution)]).T
+                temp = np.array(
+                    [BarycentricInterpolator(x_unique, row)(x_fine) for row in field_2d]
+                )
+                result = np.array(
+                    [
+                        BarycentricInterpolator(y_unique, temp[:, i])(y_fine)
+                        for i in range(interp_resolution)
+                    ]
+                ).T
                 return result
 
             U = interp_2d(U_orig)
@@ -321,15 +333,23 @@ class LDCPlotter:
 
         # Streamlines using the (already interpolated) velocity field
         stream = ax.streamplot(
-            x_stream, y_stream, U, V,
-            color='white', linewidth=1, density=1.5,
-            arrowsize=1.2, arrowstyle='->'
+            x_stream,
+            y_stream,
+            U,
+            V,
+            color="white",
+            linewidth=1,
+            density=1.5,
+            arrowsize=1.2,
+            arrowstyle="->",
         )
         stream.lines.set_alpha(0.6)
 
         ax.set_xlabel("x")
         ax.set_ylabel("y")
-        ax.set_title(f"Velocity Magnitude with Streamlines (Re = {Re:.0f})", fontweight="bold")
+        ax.set_title(
+            f"Velocity Magnitude with Streamlines (Re = {Re:.0f})", fontweight="bold"
+        )
         ax.set_aspect("equal")
         plt.colorbar(cf, ax=ax, label="Velocity magnitude")
         plt.tight_layout()

@@ -57,6 +57,10 @@ jobs:
         with:
           path: docs/build/html
 
+      - name: Cleanup data and figures
+        if: always()
+        run: rm -rf data/ figures/
+
   deploy:
     if: github.ref == 'refs/heads/main'
     environment:

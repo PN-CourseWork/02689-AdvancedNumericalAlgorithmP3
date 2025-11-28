@@ -104,15 +104,23 @@ class LidDrivenCavitySolver(ABC):
         """
         pass
 
-    def _store_results(self, residual_history, final_iter_count, is_converged,
-                       wall_time, energy_history=None, enstrophy_history=None,
-                       palinstrophy_history=None, max_timeseries_points: int = 1000):
+    def _store_results(
+        self,
+        residual_history,
+        final_iter_count,
+        is_converged,
+        wall_time,
+        energy_history=None,
+        enstrophy_history=None,
+        palinstrophy_history=None,
+        max_timeseries_points: int = 1000,
+    ):
         """Store solve results in self.fields, self.time_series, and self.metrics."""
         # Extract residuals
-        rel_iter_residuals = [r['rel_iter'] for r in residual_history]
-        u_residuals = [r['u_eq'] for r in residual_history]
-        v_residuals = [r['v_eq'] for r in residual_history]
-        continuity_residuals = [r.get('continuity', None) for r in residual_history]
+        rel_iter_residuals = [r["rel_iter"] for r in residual_history]
+        u_residuals = [r["u_eq"] for r in residual_history]
+        v_residuals = [r["v_eq"] for r in residual_history]
+        continuity_residuals = [r.get("continuity", None) for r in residual_history]
 
         # Check if all continuity residuals are None
         if all(c is None for c in continuity_residuals):
@@ -143,14 +151,20 @@ class LidDrivenCavitySolver(ABC):
         self.metrics = Metrics(
             iterations=final_iter_count,
             converged=is_converged,
-            final_residual=rel_iter_residuals[-1] if rel_iter_residuals else float('inf'),
+            final_residual=rel_iter_residuals[-1]
+            if rel_iter_residuals
+            else float("inf"),
             wall_time_seconds=wall_time,
             u_momentum_residual=u_residuals[-1] if u_residuals else 0.0,
             v_momentum_residual=v_residuals[-1] if v_residuals else 0.0,
-            continuity_residual=continuity_residuals[-1] if continuity_residuals else 0.0,
+            continuity_residual=continuity_residuals[-1]
+            if continuity_residuals
+            else 0.0,
             final_energy=energy_history[-1] if energy_history else 0.0,
             final_enstrophy=enstrophy_history[-1] if enstrophy_history else 0.0,
-            final_palinstrophy=palinstrophy_history[-1] if palinstrophy_history else 0.0,
+            final_palinstrophy=palinstrophy_history[-1]
+            if palinstrophy_history
+            else 0.0,
         )
 
     def solve(self, tolerance: float = None, max_iter: int = None):
@@ -216,12 +230,14 @@ class LidDrivenCavitySolver(ABC):
 
             # Only store residual history after first 10 iterations
             if i >= 10:
-                residual_history.append({
-                    "rel_iter": rel_iter_residual,
-                    "u_eq": eq_residuals['u_residual'],
-                    "v_eq": eq_residuals['v_residual'],
-                    "continuity": eq_residuals.get('continuity_residual', None)
-                })
+                residual_history.append(
+                    {
+                        "rel_iter": rel_iter_residual,
+                        "u_eq": eq_residuals["u_residual"],
+                        "v_eq": eq_residuals["v_residual"],
+                        "continuity": eq_residuals.get("continuity_residual", None),
+                    }
+                )
                 # Calculate and store conserved quantities
                 energy_history.append(self._compute_energy())
                 enstrophy_history.append(self._compute_enstrophy())
@@ -238,18 +254,22 @@ class LidDrivenCavitySolver(ABC):
                 is_converged = False
 
             if i % 50 == 0 or is_converged:
-                print(f"Iteration {i}: u_res={u_solution_change:.6e}, v_res={v_solution_change:.6e}")
+                print(
+                    f"Iteration {i}: u_res={u_solution_change:.6e}, v_res={v_solution_change:.6e}"
+                )
 
                 # Live MLflow logging every 50 iterations (timed separately)
                 if mlflow.active_run():
                     t_log_start = time.time()
                     live_metrics = {
                         "rel_iter_residual": rel_iter_residual,
-                        "u_residual": eq_residuals['u_residual'],
-                        "v_residual": eq_residuals['v_residual'],
+                        "u_residual": eq_residuals["u_residual"],
+                        "v_residual": eq_residuals["v_residual"],
                     }
-                    if 'continuity_residual' in eq_residuals:
-                        live_metrics["continuity_residual"] = eq_residuals['continuity_residual']
+                    if "continuity_residual" in eq_residuals:
+                        live_metrics["continuity_residual"] = eq_residuals[
+                            "continuity_residual"
+                        ]
                     if i >= 10:  # After warmup, also log conserved quantities
                         live_metrics["energy"] = energy_history[-1]
                         live_metrics["enstrophy"] = enstrophy_history[-1]
@@ -262,12 +282,19 @@ class LidDrivenCavitySolver(ABC):
 
         time_end = time.time()
         wall_time = time_end - time_start - mlflow_time  # Exclude MLflow logging time
-        print(f"Solver finished in {wall_time:.2f} seconds (excl. {mlflow_time:.2f}s logging).")
+        print(
+            f"Solver finished in {wall_time:.2f} seconds (excl. {mlflow_time:.2f}s logging)."
+        )
 
         # Store results
         self._store_results(
-            residual_history, final_iter_count, is_converged, wall_time,
-            energy_history, enstrophy_history, palinstrophy_history
+            residual_history,
+            final_iter_count,
+            is_converged,
+            wall_time,
+            energy_history,
+            enstrophy_history,
+            palinstrophy_history,
         )
 
     def save(self, filepath):
@@ -286,11 +313,12 @@ class LidDrivenCavitySolver(ABC):
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
         import pandas as pd
-        with pd.HDFStore(filepath, mode='w', complevel=5) as store:
-            store['params'] = self.params.to_dataframe()
-            store['metrics'] = self.metrics.to_dataframe()
-            store['time_series'] = self.time_series.to_dataframe()
-            store['fields'] = self.fields.to_dataframe()
+
+        with pd.HDFStore(filepath, mode="w", complevel=5) as store:
+            store["params"] = self.params.to_dataframe()
+            store["metrics"] = self.metrics.to_dataframe()
+            store["time_series"] = self.time_series.to_dataframe()
+            store["fields"] = self.fields.to_dataframe()
 
     # =========================================================================
     # Conserved Quantity Calculations (for comparison with Saad reference data)
@@ -319,8 +347,8 @@ class LidDrivenCavitySolver(ABC):
     def _compute_gradient(self, field: np.ndarray) -> tuple:
         """Compute gradient of scalar field using finite differences."""
         dx, dy = self.dx_min, self.dy_min
-        shape = getattr(self, 'shape_full', (self.params.nx, self.params.ny))
-        field_2d = np.pad(field.reshape(shape), 1, mode='edge')
+        shape = getattr(self, "shape_full", (self.params.nx, self.params.ny))
+        field_2d = np.pad(field.reshape(shape), 1, mode="edge")
         df_dx = (field_2d[1:-1, 2:] - field_2d[1:-1, :-2]) / (2 * dx)
         df_dy = (field_2d[2:, 1:-1] - field_2d[:-2, 1:-1]) / (2 * dy)
         return df_dx.ravel(), df_dy.ravel()
@@ -333,8 +361,8 @@ class LidDrivenCavitySolver(ABC):
 
     def _get_cell_area(self) -> float:
         """Get cell area for integration. Subclasses should override."""
-        dx = getattr(self, 'dx_min', None)
-        dy = getattr(self, 'dy_min', None)
+        dx = getattr(self, "dx_min", None)
+        dy = getattr(self, "dy_min", None)
         if dx is not None and dy is not None:
             return dx * dy
         # Fallback: assume unit domain
@@ -345,7 +373,9 @@ class LidDrivenCavitySolver(ABC):
     # MLflow Integration
     # ========================================================================
 
-    def mlflow_start(self, experiment_name: str, run_name: str, parent_run_name: str = None):
+    def mlflow_start(
+        self, experiment_name: str, run_name: str, parent_run_name: str = None
+    ):
         """Start MLflow run and log parameters.
 
         Parameters
@@ -377,7 +407,7 @@ class LidDrivenCavitySolver(ABC):
             runs = client.search_runs(
                 experiment_ids=[experiment.experiment_id],
                 filter_string=f"tags.mlflow.runName = '{parent_run_name}' AND tags.is_parent = 'true'",
-                max_results=1
+                max_results=1,
             )
 
             if runs:
@@ -388,20 +418,13 @@ class LidDrivenCavitySolver(ABC):
                 parent_run = client.create_run(
                     experiment_id=experiment.experiment_id,
                     run_name=parent_run_name,
-                    tags={"is_parent": "true"}
+                    tags={"is_parent": "true"},
                 )
                 parent_run_id = parent_run.info.run_id
 
             # Start nested child run
-            mlflow.start_run(
-                run_id=parent_run_id,
-                log_system_metrics=False
-            )
-            mlflow.start_run(
-                run_name=run_name,
-                nested=True,
-                log_system_metrics=True
-            )
+            mlflow.start_run(run_id=parent_run_id, log_system_metrics=False)
+            mlflow.start_run(run_name=run_name, nested=True, log_system_metrics=True)
             self._mlflow_nested = True
         else:
             mlflow.start_run(log_system_metrics=True, run_name=run_name)
@@ -431,7 +454,7 @@ class LidDrivenCavitySolver(ABC):
         mlflow.end_run()
 
         # End parent run if nested
-        if getattr(self, '_mlflow_nested', False):
+        if getattr(self, "_mlflow_nested", False):
             mlflow.end_run()
 
     def mlflow_log_artifact(self, filepath: str):
@@ -443,5 +466,3 @@ class LidDrivenCavitySolver(ABC):
             Path to the file to log as artifact.
         """
         mlflow.log_artifact(filepath)
-
-

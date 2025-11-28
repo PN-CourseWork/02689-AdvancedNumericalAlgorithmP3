@@ -112,8 +112,9 @@ def _compute_face_geometry(
 
 
 @njit
-def _compute_geometric_factors(n_faces, owner_cells, neighbor_cells,
-                                 cell_centers, face_centers):
+def _compute_geometric_factors(
+    n_faces, owner_cells, neighbor_cells, cell_centers, face_centers
+):
     """Compute geometric factors for FV discretization on Cartesian grids."""
     vector_d_CE = np.zeros((n_faces, 2), dtype=np.float64)
     face_interp_factors = np.zeros(n_faces, dtype=np.float64)
@@ -144,8 +145,9 @@ def _compute_geometric_factors(n_faces, owner_cells, neighbor_cells,
     return vector_d_CE, face_interp_factors, d_Cb
 
 
-def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0,
-                                lid_velocity: float = 1.0) -> MeshData2D:
+def create_structured_mesh_2d(
+    nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0, lid_velocity: float = 1.0
+) -> MeshData2D:
     """Create structured Cartesian quad mesh using pure numpy.
 
     This implementation:
@@ -172,7 +174,7 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
     # Create (nx+1) x (ny+1) vertices
     x = np.linspace(0, Lx, nx + 1)
     y = np.linspace(0, Ly, ny + 1)
-    X, Y = np.meshgrid(x, y, indexing='ij')
+    X, Y = np.meshgrid(x, y, indexing="ij")
 
     # Flatten to get vertex coordinates
     points = np.column_stack([X.ravel(), Y.ravel()])
@@ -216,9 +218,9 @@ def create_structured_mesh_2d(nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0
     )
 
     # 6. Geometric factors
-    vector_d_CE, face_interp_factors, d_Cb = \
-        _compute_geometric_factors(n_faces, owner_cells, neighbor_cells,
-                                     cell_centers, face_centers)
+    vector_d_CE, face_interp_factors, d_Cb = _compute_geometric_factors(
+        n_faces, owner_cells, neighbor_cells, cell_centers, face_centers
+    )
 
     # 7. Boundary conditions (lid-driven cavity specific)
     # All velocity boundaries use Dirichlet BC
