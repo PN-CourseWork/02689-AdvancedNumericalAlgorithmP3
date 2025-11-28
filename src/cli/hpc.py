@@ -19,6 +19,7 @@ def generate_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
     """Generate job list from config with parameter sweep."""
     script = config["script"]
     lsf = config["lsf"]
+    fixed_params = config.get("parameters", {})
     sweep = config.get("sweep", {})
 
     # Get sweep parameter names and values
@@ -33,10 +34,13 @@ def generate_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     jobs = []
     for combo in combinations:
-        params = dict(zip(param_names, combo))
+        sweep_params = dict(zip(param_names, combo))
 
-        # Build job name from parameters
-        name_parts = [f"{k}{v}" for k, v in params.items()]
+        # Merge fixed params with sweep params (sweep overrides fixed)
+        params = {**fixed_params, **sweep_params}
+
+        # Build job name from sweep parameters only
+        name_parts = [f"{k}{v}" for k, v in sweep_params.items()]
         job_name = "-".join(name_parts) if name_parts else "job"
 
         jobs.append(
