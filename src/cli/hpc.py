@@ -39,12 +39,14 @@ def generate_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
         name_parts = [f"{k}{v}" for k, v in params.items()]
         job_name = "-".join(name_parts) if name_parts else "job"
 
-        jobs.append({
-            "name": job_name,
-            "script": script,
-            "params": params,
-            "lsf": lsf,
-        })
+        jobs.append(
+            {
+                "name": job_name,
+                "script": script,
+                "params": params,
+                "lsf": lsf,
+            }
+        )
 
     return jobs
 
@@ -58,13 +60,13 @@ def job_to_pack_line(job: dict[str, Any]) -> str:
 
     # Build LSF options
     parts = [
-        f'-J {name}',
-        f'-q {lsf["queue"]}',
-        f'-W {lsf["walltime"]}',
-        f'-n {lsf["cores"]}',
+        f"-J {name}",
+        f"-q {lsf['queue']}",
+        f"-W {lsf['walltime']}",
+        f"-n {lsf['cores']}",
         f'-R "rusage[mem={lsf["memory"]}]"',
-        f'-o logs/{name}.out',
-        f'-e logs/{name}.err',
+        f"-o logs/{name}.out",
+        f"-e logs/{name}.err",
     ]
 
     # Build command

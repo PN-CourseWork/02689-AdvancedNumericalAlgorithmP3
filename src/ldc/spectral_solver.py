@@ -43,7 +43,9 @@ class SpectralSolver(LidDrivenCavitySolver):
             self.basis_y = LegendreLobattoBasis(domain=(0.0, self.params.Ly))
             print("Using Legendre-Gauss-Lobatto basis")
         else:
-            raise ValueError(f"Unknown basis_type: {self.params.basis_type}. Use 'legendre' or 'chebyshev'")
+            raise ValueError(
+                f"Unknown basis_type: {self.params.basis_type}. Use 'legendre' or 'chebyshev'"
+            )
 
         # Setup grids and differentiation matrices
         self._setup_grids()
@@ -78,12 +80,14 @@ class SpectralSolver(LidDrivenCavitySolver):
         # Full grid: (Nx+1) × (Ny+1)
         x_nodes = self.basis_x.nodes(self.params.nx + 1)
         y_nodes = self.basis_y.nodes(self.params.ny + 1)
-        self.x_full, self.y_full = np.meshgrid(x_nodes, y_nodes, indexing='ij')
+        self.x_full, self.y_full = np.meshgrid(x_nodes, y_nodes, indexing="ij")
 
         # Reduced grid for pressure: (Nx-1) × (Ny-1) - interior points only
         self.x_inner = x_nodes[1:-1]
         self.y_inner = y_nodes[1:-1]
-        self.x_reduced, self.y_reduced = np.meshgrid(self.x_inner, self.y_inner, indexing='ij')
+        self.x_reduced, self.y_reduced = np.meshgrid(
+            self.x_inner, self.y_inner, indexing="ij"
+        )
 
         # Grid spacing (minimum) for CFL calculation
         self.dx_min = np.min(np.diff(x_nodes))
@@ -272,12 +276,12 @@ class SpectralSolver(LidDrivenCavitySolver):
         v_2d = v.reshape(self.shape_full)
 
         # No-slip on all boundaries
-        u_2d[0, :] = 0.0   # West
+        u_2d[0, :] = 0.0  # West
         u_2d[-1, :] = 0.0  # East
-        u_2d[:, 0] = 0.0   # South
-        v_2d[0, :] = 0.0   # West
+        u_2d[:, 0] = 0.0  # South
+        v_2d[0, :] = 0.0  # West
         v_2d[-1, :] = 0.0  # East
-        v_2d[:, 0] = 0.0   # South
+        v_2d[:, 0] = 0.0  # South
         v_2d[:, -1] = 0.0  # North
 
         # Moving lid on north boundary
@@ -298,8 +302,12 @@ class SpectralSolver(LidDrivenCavitySolver):
 
         # Wave speeds: λ_x and λ_y from equation (9)
         nu = 1.0 / self.params.Re
-        lambda_x = (u_max + np.sqrt(u_max**2 + self.params.beta_squared)) / self.dx_min + nu / self.dx_min**2
-        lambda_y = (v_max + np.sqrt(v_max**2 + self.params.beta_squared)) / self.dy_min + nu / self.dy_min**2
+        lambda_x = (
+            u_max + np.sqrt(u_max**2 + self.params.beta_squared)
+        ) / self.dx_min + nu / self.dx_min**2
+        lambda_y = (
+            v_max + np.sqrt(v_max**2 + self.params.beta_squared)
+        ) / self.dy_min + nu / self.dy_min**2
 
         return self.params.CFL / (lambda_x + lambda_y)
 
@@ -323,7 +331,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         dt = self._compute_adaptive_timestep()
 
         # 4-stage RK4: φ^(i) = φ^n + α_i·∆τ·R(φ^(i-1))
-        rk4_coeffs = [0.25, 1.0/3.0, 0.5, 1.0]
+        rk4_coeffs = [0.25, 1.0 / 3.0, 0.5, 1.0]
         u_in, v_in, p_in = a.u, a.v, a.p
 
         for i, alpha in enumerate(rk4_coeffs):
@@ -363,7 +371,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         time-stepping equations (R_u, R_v, R_p) computed during step().
         """
         return {
-            'u_residual': np.linalg.norm(self.arrays.R_u),
-            'v_residual': np.linalg.norm(self.arrays.R_v),
-            'continuity_residual': np.linalg.norm(self.arrays.R_p),
+            "u_residual": np.linalg.norm(self.arrays.R_u),
+            "v_residual": np.linalg.norm(self.arrays.R_v),
+            "continuity_residual": np.linalg.norm(self.arrays.R_p),
         }

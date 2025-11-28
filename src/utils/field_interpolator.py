@@ -37,8 +37,8 @@ class UnifiedFieldInterpolator:
         self.h5_path = Path(h5_path)
 
         # Load fields and params (new format uses 'params' instead of 'metadata')
-        self.fields = pd.read_hdf(self.h5_path, 'fields')
-        self.params = pd.read_hdf(self.h5_path, 'params')
+        self.fields = pd.read_hdf(self.h5_path, "fields")
+        self.params = pd.read_hdf(self.h5_path, "params")
 
         # Detect grid type and create interpolators
         self._detect_grid_type()
@@ -46,27 +46,31 @@ class UnifiedFieldInterpolator:
 
     def _detect_grid_type(self):
         """Detect whether this is FV collocated or spectral Lobatto grid."""
-        x = self.fields['x'].values
-        y = self.fields['y'].values
+        x = self.fields["x"].values
+        y = self.fields["y"].values
 
         x_unique = np.unique(x)
         y_unique = np.unique(y)
 
         # Check if grid points are at boundaries (0 and 1)
-        has_boundary_x = (np.abs(x_unique.min()) < 1e-10 and np.abs(x_unique.max() - 1.0) < 1e-10)
-        has_boundary_y = (np.abs(y_unique.min()) < 1e-10 and np.abs(y_unique.max() - 1.0) < 1e-10)
+        has_boundary_x = (
+            np.abs(x_unique.min()) < 1e-10 and np.abs(x_unique.max() - 1.0) < 1e-10
+        )
+        has_boundary_y = (
+            np.abs(y_unique.min()) < 1e-10 and np.abs(y_unique.max() - 1.0) < 1e-10
+        )
 
         if has_boundary_x and has_boundary_y:
             # Gauss-Lobatto points include boundaries
-            self.grid_type = 'lobatto_spectral'
+            self.grid_type = "lobatto_spectral"
         else:
             # Collocated FV: cell centers don't touch boundaries
-            self.grid_type = 'collocated_fv'
+            self.grid_type = "collocated_fv"
 
     def _create_interpolators(self):
         """Create bicubic spline interpolators for all fields."""
-        x = self.fields['x'].values
-        y = self.fields['y'].values
+        x = self.fields["x"].values
+        y = self.fields["y"].values
 
         # Get unique sorted coordinates
         x_unique = np.sort(np.unique(x))
@@ -80,7 +84,7 @@ class UnifiedFieldInterpolator:
         sort_indices = np.lexsort((x, y))
 
         self.interpolators = {}
-        for field in ['u', 'v', 'p']:
+        for field in ["u", "v", "p"]:
             if field in self.fields.columns:
                 field_values = self.fields[field].values[sort_indices]
                 field_grid = field_values.reshape((len(y_unique), len(x_unique)))
@@ -90,7 +94,7 @@ class UnifiedFieldInterpolator:
                     y_unique, x_unique, field_grid, kx=3, ky=3
                 )
 
-    def evaluate_at_points(self, x, y, field='u'):
+    def evaluate_at_points(self, x, y, field="u"):
         """Evaluate field at arbitrary points using interpolation.
 
         Parameters
@@ -108,7 +112,9 @@ class UnifiedFieldInterpolator:
             Interpolated field values at (x, y) points
         """
         if field not in self.interpolators:
-            raise ValueError(f"Field '{field}' not available. Available: {list(self.interpolators.keys())}")
+            raise ValueError(
+                f"Field '{field}' not available. Available: {list(self.interpolators.keys())}"
+            )
 
         return self.interpolators[field](y, x, grid=False)
 
@@ -131,7 +137,7 @@ class UnifiedFieldInterpolator:
             - 'y': 2D array of y coordinates
             - 'u', 'v', 'p': 2D arrays of interpolated field values
         """
-        if include_boundaries or self.grid_type == 'lobatto_spectral':
+        if include_boundaries or self.grid_type == "lobatto_spectral":
             # Include full domain boundaries
             x_uniform = np.linspace(0, 1, nx)
             y_uniform = np.linspace(0, 1, ny)
@@ -141,16 +147,16 @@ class UnifiedFieldInterpolator:
             y_uniform = np.linspace(self.y_grid.min(), self.y_grid.max(), ny)
 
         # Create meshgrid
-        X, Y = np.meshgrid(x_uniform, y_uniform, indexing='xy')
+        X, Y = np.meshgrid(x_uniform, y_uniform, indexing="xy")
 
         # Interpolate all fields
-        result = {'x': X, 'y': Y}
+        result = {"x": X, "y": Y}
         for field_name, interp in self.interpolators.items():
             result[field_name] = interp(y_uniform, x_uniform, grid=True)
 
         return result
 
-    def extract_centerline(self, field='u', axis='y', n_points=200):
+    def extract_centerline(self, field="u", axis="y", n_points=200):
         """Extract field values along a centerline.
 
         Parameters
@@ -179,10 +185,10 @@ class UnifiedFieldInterpolator:
         # Always extract from 0 to 1 for centerlines
         position = np.linspace(0, 1, n_points)
 
-        if axis == 'y':
+        if axis == "y":
             # Vertical centerline at x=0.5
             values = interp(position, 0.5, grid=False)
-        elif axis == 'x':
+        elif axis == "x":
             # Horizontal centerline at y=0.5
             values = interp(0.5, position, grid=False)
         else:
@@ -199,21 +205,23 @@ class UnifiedFieldInterpolator:
             Dictionary with grid information
         """
         return {
-            'grid_type': self.grid_type,
-            'nx': len(self.x_grid),
-            'ny': len(self.y_grid),
-            'x_range': (self.x_grid.min(), self.x_grid.max()),
-            'y_range': (self.y_grid.min(), self.y_grid.max()),
-            'available_fields': list(self.interpolators.keys()),
-            'file': self.h5_path.name
+            "grid_type": self.grid_type,
+            "nx": len(self.x_grid),
+            "ny": len(self.y_grid),
+            "x_range": (self.x_grid.min(), self.x_grid.max()),
+            "y_range": (self.y_grid.min(), self.y_grid.max()),
+            "available_fields": list(self.interpolators.keys()),
+            "file": self.h5_path.name,
         }
 
     def __repr__(self):
         """String representation."""
         info = self.get_info()
-        return (f"UnifiedFieldInterpolator(\n"
-                f"  file='{info['file']}',\n"
-                f"  grid_type='{info['grid_type']}',\n"
-                f"  resolution={info['nx']}×{info['ny']},\n"
-                f"  fields={info['available_fields']}\n"
-                f")")
+        return (
+            f"UnifiedFieldInterpolator(\n"
+            f"  file='{info['file']}',\n"
+            f"  grid_type='{info['grid_type']}',\n"
+            f"  resolution={info['nx']}×{info['ny']},\n"
+            f"  fields={info['available_fields']}\n"
+            f")"
+        )

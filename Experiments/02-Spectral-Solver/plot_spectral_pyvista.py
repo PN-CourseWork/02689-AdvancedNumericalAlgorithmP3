@@ -13,7 +13,9 @@ with a ParaView-inspired theme for publication-quality figures.
 import numpy as np
 import pandas as pd
 import pyvista as pv
-from pathlib import Path
+from scipy.interpolate import BarycentricInterpolator
+
+from utils import get_project_root
 
 # Use ParaView theme
 pv.set_plot_theme("paraview")
@@ -21,8 +23,6 @@ pv.set_plot_theme("paraview")
 # %%
 # Load Solution from HDF5
 # -----------------------
-
-from utils import get_project_root
 
 project_root = get_project_root()
 fig_dir = project_root / "figures" / "Spectral-Solver"
@@ -33,7 +33,9 @@ Re = 100
 N = 19  # Polynomial order (N+1 nodes per direction)
 
 # Load from pre-computed HDF5 file
-data_file = project_root / "data" / "Spectral-Solver" / "Chebyshev" / f"LDC_N{N}_Re{Re}.h5"
+data_file = (
+    project_root / "data" / "Spectral-Solver" / "Chebyshev" / f"LDC_N{N}_Re{Re}.h5"
+)
 
 if not data_file.exists():
     raise FileNotFoundError(
@@ -43,10 +45,10 @@ if not data_file.exists():
 
 print(f"Loading spectral solution from: {data_file}")
 
-with pd.HDFStore(data_file, 'r') as store:
-    params = store['params'].iloc[0]
-    metrics = store['metrics'].iloc[0]
-    fields_df = store['fields']
+with pd.HDFStore(data_file, "r") as store:
+    params = store["params"].iloc[0]
+    metrics = store["metrics"].iloc[0]
+    fields_df = store["fields"]
 
 # Infer actual grid size from data
 n_points = len(fields_df)
@@ -64,14 +66,12 @@ print(f"  Wall time: {metrics['wall_time_seconds']:.2f} seconds")
 # Spectral methods use non-uniform LGL nodes clustered near boundaries.
 # For smooth visualization and proper streamlines, interpolate to uniform grid.
 
-from scipy.interpolate import BarycentricInterpolator
-
 # Get original solution data from loaded DataFrame
-x_orig = fields_df['x'].values
-y_orig = fields_df['y'].values
-u_orig = fields_df['u'].values
-v_orig = fields_df['v'].values
-p_orig = fields_df['p'].values
+x_orig = fields_df["x"].values
+y_orig = fields_df["y"].values
+u_orig = fields_df["u"].values
+v_orig = fields_df["v"].values
+p_orig = fields_df["p"].values
 
 # Infer grid dimensions from the data (assume square grid)
 n_points = len(x_orig)
@@ -97,18 +97,23 @@ interp_resolution = 100
 x_fine = np.linspace(0, 1, interp_resolution)
 y_fine = np.linspace(0, 1, interp_resolution)
 
+
 # Tensor product barycentric interpolation
 def interp_2d_barycentric(field_2d, x_nodes, y_nodes, x_new, y_new):
     """Interpolate 2D field using tensor product barycentric interpolation."""
-    ny_new, nx_new = len(y_new), len(x_new)
+    nx_new = len(x_new)
     # First interpolate along x for each y
     temp = np.array([BarycentricInterpolator(x_nodes, row)(x_new) for row in field_2d])
     # Then interpolate along y for each x
-    result = np.array([BarycentricInterpolator(y_nodes, temp[:, i])(y_new)
-                       for i in range(nx_new)]).T
+    result = np.array(
+        [BarycentricInterpolator(y_nodes, temp[:, i])(y_new) for i in range(nx_new)]
+    ).T
     return result
 
-print(f"\nInterpolating from {nx_orig}x{ny_orig} LGL grid to {interp_resolution}x{interp_resolution} uniform grid...")
+
+print(
+    f"\nInterpolating from {nx_orig}x{ny_orig} LGL grid to {interp_resolution}x{interp_resolution} uniform grid..."
+)
 
 U = interp_2d_barycentric(U_orig_2d, x_lgl, y_lgl, x_fine, y_fine)
 V = interp_2d_barycentric(V_orig_2d, x_lgl, y_lgl, x_fine, y_fine)
@@ -151,12 +156,12 @@ grid.point_data["Velocity"] = velocity
 print(f"PyVista grid created: {nx}x{ny} points (interpolated)")
 
 # Verify data is correct
-print(f"\nData verification:")
+print("\nData verification:")
 print(f"  U range: [{U.min():.4f}, {U.max():.4f}]")
 print(f"  V range: [{V.min():.4f}, {V.max():.4f}]")
 print(f"  vel_mag range: [{vel_mag.min():.4f}, {vel_mag.max():.4f}]")
-print(f"  U at lid center (0.5, 1.0): {U[-1, nx//2]:.4f}")
-print(f"  V at lid center (0.5, 1.0): {V[-1, nx//2]:.4f}")
+print(f"  U at lid center (0.5, 1.0): {U[-1, nx // 2]:.4f}")
+print(f"  V at lid center (0.5, 1.0): {V[-1, nx // 2]:.4f}")
 
 # %%
 # Plot 1: Velocity Magnitude with Streamlines
@@ -164,9 +169,9 @@ print(f"  V at lid center (0.5, 1.0): {V[-1, nx//2]:.4f}")
 
 # Verify the data before plotting
 vm_data = grid.point_data["Velocity Magnitude"]
-print(f"\nPlot 1 - Using 'Velocity Magnitude' scalar:")
+print("\nPlot 1 - Using 'Velocity Magnitude' scalar:")
 print(f"  Range: [{vm_data.min():.4f}, {vm_data.max():.4f}]")
-print(f"  Should be sqrt(U^2+V^2), NOT same as U!")
+print("  Should be sqrt(U^2+V^2), NOT same as U!")
 
 plotter = pv.Plotter(off_screen=True, window_size=[1200, 1000])
 
@@ -359,7 +364,7 @@ plotter.close()
 # Get actual data ranges for explicit clim
 U_data = grid.point_data["U Velocity"]
 V_data = grid.point_data["V Velocity"]
-print(f"\nVelocity component data ranges:")
+print("\nVelocity component data ranges:")
 print(f"  U Velocity in grid: [{U_data.min():.4f}, {U_data.max():.4f}]")
 print(f"  V Velocity in grid: [{V_data.min():.4f}, {V_data.max():.4f}]")
 
@@ -385,8 +390,12 @@ plotter.add_mesh(
     },
 )
 plotter.view_xy()
-plotter.add_text(f"U (horizontal)\nrange: [{U_data.min():.2f}, {U_data.max():.2f}]",
-                 position="upper_left", font_size=10, color="black")
+plotter.add_text(
+    f"U (horizontal)\nrange: [{U_data.min():.2f}, {U_data.max():.2f}]",
+    position="upper_left",
+    font_size=10,
+    color="black",
+)
 
 # V velocity - use coolwarm with symmetric limits
 plotter.subplot(0, 1)
@@ -408,8 +417,12 @@ plotter.add_mesh(
     },
 )
 plotter.view_xy()
-plotter.add_text(f"V (vertical)\nrange: [{V_data.min():.2f}, {V_data.max():.2f}]",
-                 position="upper_left", font_size=10, color="black")
+plotter.add_text(
+    f"V (vertical)\nrange: [{V_data.min():.2f}, {V_data.max():.2f}]",
+    position="upper_left",
+    font_size=10,
+    color="black",
+)
 
 output_path = fig_dir / f"velocity_components_Re{Re}.png"
 plotter.screenshot(output_path, transparent_background=False, scale=2)
@@ -420,12 +433,12 @@ plotter.close()
 # Summary
 # -------
 
-print(f"\n{'='*50}")
+print(f"\n{'=' * 50}")
 print("Visualization complete!")
-print(f"{'='*50}")
+print(f"{'=' * 50}")
 print(f"Data loaded from: {data_file}")
 print(f"Output directory: {fig_dir}")
-print(f"\nGenerated figures:")
+print("\nGenerated figures:")
 print(f"  - velocity_streamlines_Re{Re}.png")
 print(f"  - vorticity_Re{Re}.png")
 print(f"  - pressure_Re{Re}.png")

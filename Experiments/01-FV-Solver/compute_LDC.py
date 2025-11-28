@@ -23,10 +23,18 @@ from ldc import FVSolver
 from utils import get_project_root, LDCPlotter, GhiaValidator, plot_validation
 
 parser = argparse.ArgumentParser(description="FV-SIMPLE solver for lid-driven cavity")
-parser.add_argument("--N", type=int, default=32, help="Grid cells in each direction (default: 32)")
-parser.add_argument("--Re", type=int, default=100, help="Reynolds number (default: 100)")
-parser.add_argument("--tol", type=float, default=1e-7, help="Convergence tolerance (default: 1e-7)")
-parser.add_argument("--max-iter", type=int, default=50000, help="Max iterations (default: 50000)")
+parser.add_argument(
+    "--N", type=int, default=32, help="Grid cells in each direction (default: 32)"
+)
+parser.add_argument(
+    "--Re", type=int, default=100, help="Reynolds number (default: 100)"
+)
+parser.add_argument(
+    "--tol", type=float, default=1e-7, help="Convergence tolerance (default: 1e-7)"
+)
+parser.add_argument(
+    "--max-iter", type=int, default=50000, help="Max iterations (default: 50000)"
+)
 args = parser.parse_args()
 
 N = args.N
@@ -54,9 +62,15 @@ solver = FVSolver(
     linear_solver_tol=1e-8,
 )
 
-print(f"Solver configured: Re={solver.params.Re}, Grid={solver.params.nx}x{solver.params.ny}")
-print(f"  Convection scheme: {solver.params.convection_scheme} with {solver.params.limiter} limiter")
-print(f"  Linear solver: PETSc (BiCGSTAB + GAMG), tol={solver.params.linear_solver_tol:.0e}")
+print(
+    f"Solver configured: Re={solver.params.Re}, Grid={solver.params.nx}x{solver.params.ny}"
+)
+print(
+    f"  Convection scheme: {solver.params.convection_scheme} with {solver.params.limiter} limiter"
+)
+print(
+    f"  Linear solver: PETSc (BiCGSTAB + GAMG), tol={solver.params.linear_solver_tol:.0e}"
+)
 
 # %%
 # MLflow Tracking
@@ -91,27 +105,27 @@ print(f"\nResults saved to: {output_file}")
 # Generate plots and log to MLflow.
 
 plotter = LDCPlotter(output_file)
-validator = GhiaValidator(output_file, Re=Re_number, method_label='FV-SIMPLE')
+validator = GhiaValidator(output_file, Re=Re_number, method_label="FV-SIMPLE")
 
 fig_path = fig_dir / f"ghia_validation_N{N}_{Re_str}.pdf"
 plot_validation(validator, output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Ghia validation saved")
+print("  ✓ Ghia validation saved")
 
 fig_path = fig_dir / f"convergence_N{N}_{Re_str}.pdf"
 plotter.plot_convergence(output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Convergence saved")
+print("  ✓ Convergence saved")
 
 fig_path = fig_dir / f"fields_N{N}_{Re_str}.pdf"
 plotter.plot_fields(output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Fields saved")
+print("  ✓ Fields saved")
 
 fig_path = fig_dir / f"streamlines_N{N}_{Re_str}.pdf"
 plotter.plot_streamlines(output_path=fig_path)
 solver.mlflow_log_artifact(str(fig_path))
-print(f"  ✓ Streamlines saved")
+print("  ✓ Streamlines saved")
 
 # %%
 # Summary
@@ -120,7 +134,7 @@ print(f"  ✓ Streamlines saved")
 
 solver.mlflow_end()
 
-print(f"\nSolution Status:")
+print("\nSolution Status:")
 print(f"  Converged: {solver.metrics.converged}")
 print(f"  Iterations: {solver.metrics.iterations}")
 print(f"  Final residual: {solver.metrics.final_residual:.6e}")

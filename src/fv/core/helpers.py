@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit, prange
 
+
 @njit(parallel=False, cache=True)
 def relax_momentum_equation(rhs, A_diag, phi, alpha):
     """

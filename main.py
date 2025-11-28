@@ -42,6 +42,10 @@ if __name__ == "__main__":
 
         if "--hpc" in args:
             idx = args.index("--hpc")
-            experiment = args[idx + 1] if idx + 1 < len(args) and not args[idx + 1].startswith("--") else "all"
+            experiment = (
+                args[idx + 1]
+                if idx + 1 < len(args) and not args[idx + 1].startswith("--")
+                else "all"
+            )
             dry_run = "--dry-run" in args
             hpc_submit(experiment, dry_run)

@@ -8,9 +8,13 @@ from .console import console, ok, fail, dim, header
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def run_cmd(cmd: list[str], timeout: int = 180, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess:
+def run_cmd(
+    cmd: list[str], timeout: int = 180, cwd: Path = REPO_ROOT
+) -> subprocess.CompletedProcess:
     """Run a command and return result."""
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=str(cwd))
+    return subprocess.run(
+        cmd, capture_output=True, text=True, timeout=timeout, cwd=str(cwd)
+    )
 
 
 def fetch_mlflow():
@@ -21,11 +25,14 @@ def fetch_mlflow():
 
         setup_mlflow_auth()
 
-        fv_paths = download_artifacts_with_naming("HPC-FV-Solver", REPO_ROOT / "data" / "FV-Solver")
+        fv_paths = download_artifacts_with_naming(
+            "HPC-FV-Solver", REPO_ROOT / "data" / "FV-Solver"
+        )
         ok(f"Downloaded {len(fv_paths)} FV-Solver files")
 
         spectral_paths = download_artifacts_with_naming(
-            "HPC-Spectral-Chebyshev", REPO_ROOT / "data" / "Spectral-Solver" / "Chebyshev"
+            "HPC-Spectral-Chebyshev",
+            REPO_ROOT / "data" / "Spectral-Solver" / "Chebyshev",
         )
         ok(f"Downloaded {len(spectral_paths)} Spectral files")
     except Exception as e:
@@ -36,13 +43,12 @@ def run_scripts(pattern: str):
     """Run scripts matching pattern (compute/plot)."""
     experiments_dir = REPO_ROOT / "Experiments"
     if not experiments_dir.exists():
-        dim(f"No Experiments directory found")
+        dim("No Experiments directory found")
         return
 
-    scripts = sorted([
-        p for p in experiments_dir.rglob("*.py")
-        if p.is_file() and pattern in p.name
-    ])
+    scripts = sorted(
+        [p for p in experiments_dir.rglob("*.py") if p.is_file() and pattern in p.name]
+    )
 
     if not scripts:
         dim(f"No {pattern} scripts found")
@@ -60,7 +66,9 @@ def run_scripts(pattern: str):
                 cwd=str(REPO_ROOT),
                 timeout=180,
             )
-            ok(f"{name}") if result.returncode == 0 else fail(f"{name} (exit {result.returncode})")
+            ok(f"{name}") if result.returncode == 0 else fail(
+                f"{name} (exit {result.returncode})"
+            )
         except subprocess.TimeoutExpired:
             fail(f"{name} (timeout)")
         except Exception as e:
@@ -71,11 +79,18 @@ def build_docs():
     """Build Sphinx documentation."""
     header("Building documentation...")
     try:
-        result = run_cmd([
-            "uv", "run", "sphinx-build", "-M", "html",
-            str(REPO_ROOT / "docs" / "source"),
-            str(REPO_ROOT / "docs" / "build"),
-        ], timeout=300)
+        result = run_cmd(
+            [
+                "uv",
+                "run",
+                "sphinx-build",
+                "-M",
+                "html",
+                str(REPO_ROOT / "docs" / "source"),
+                str(REPO_ROOT / "docs" / "build"),
+            ],
+            timeout=300,
+        )
 
         if result.returncode == 0:
             ok("Documentation built")
@@ -92,8 +107,14 @@ def clean_all():
 
     header("Cleaning...")
     targets = [
-        "docs/build", "docs/source/example_gallery", "docs/source/generated",
-        "build", "dist", ".pytest_cache", ".ruff_cache", ".mypy_cache",
+        "docs/build",
+        "docs/source/example_gallery",
+        "docs/source/generated",
+        "build",
+        "dist",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
     ]
 
     count = 0
@@ -123,7 +144,9 @@ def ruff_check():
     header("Running ruff check...")
     result = run_cmd(["uv", "run", "ruff", "check", "."], timeout=60)
     print(result.stdout)
-    ok("No issues") if result.returncode == 0 else fail(f"Found issues (exit {result.returncode})")
+    ok("No issues") if result.returncode == 0 else fail(
+        f"Found issues (exit {result.returncode})"
+    )
 
 
 def ruff_format():
@@ -131,12 +154,20 @@ def ruff_format():
     header("Running ruff format...")
     result = run_cmd(["uv", "run", "ruff", "format", "."], timeout=60)
     print(result.stdout)
-    ok("Formatted") if result.returncode == 0 else fail(f"Failed (exit {result.returncode})")
+    ok("Formatted") if result.returncode == 0 else fail(
+        f"Failed (exit {result.returncode})"
+    )
 
 
 def hpc_submit(experiment: str = "all", dry_run: bool = True):
     """Submit HPC jobs from YAML configs."""
-    from .hpc import discover_experiments, generate_pack, get_experiment_name, load_config, generate_jobs
+    from .hpc import (
+        discover_experiments,
+        generate_pack,
+        get_experiment_name,
+        load_config,
+        generate_jobs,
+    )
 
     experiments = discover_experiments()
     if not experiments:
@@ -145,7 +176,9 @@ def hpc_submit(experiment: str = "all", dry_run: bool = True):
 
     # Filter experiments
     if experiment != "all":
-        experiments = [e for e in experiments if experiment.lower() in e.parent.name.lower()]
+        experiments = [
+            e for e in experiments if experiment.lower() in e.parent.name.lower()
+        ]
 
     if not experiments:
         fail(f"No matching experiment: {experiment}")

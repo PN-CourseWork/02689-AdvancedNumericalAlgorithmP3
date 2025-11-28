@@ -40,11 +40,14 @@ def wait():
 def menu_runner():
     """Runner submenu for compute/plot scripts."""
     while True:
-        choice = select("Runner:", [
-            "Compute scripts",
-            "Plot scripts",
-            "← Back",
-        ])
+        choice = select(
+            "Runner:",
+            [
+                "Compute scripts",
+                "Plot scripts",
+                "← Back",
+            ],
+        )
 
         if choice == "Compute scripts":
             run_scripts("compute")
@@ -61,13 +64,16 @@ def menu_clean():
     import shutil
 
     while True:
-        choice = select("Clean:", [
-            "Clean docs",
-            "Clean data",
-            "Clean caches",
-            "Clean all",
-            "← Back",
-        ])
+        choice = select(
+            "Clean:",
+            [
+                "Clean docs",
+                "Clean data",
+                "Clean caches",
+                "Clean all",
+                "← Back",
+            ],
+        )
 
         if choice == "Clean docs":
             build_dir = REPO_ROOT / "docs" / "build"
@@ -86,7 +92,9 @@ def menu_clean():
                     if item.name not in ("README.md", ".gitkeep"):
                         shutil.rmtree(item) if item.is_dir() else item.unlink()
                         count += 1
-            console.print(f"  [green]✓[/green] Cleaned {count} items") if count else console.print("  [dim]Nothing to clean[/dim]")
+            console.print(
+                f"  [green]✓[/green] Cleaned {count} items"
+            ) if count else console.print("  [dim]Nothing to clean[/dim]")
             wait()
 
         elif choice == "Clean caches":
@@ -100,7 +108,9 @@ def menu_clean():
             for pycache in REPO_ROOT.rglob("__pycache__"):
                 shutil.rmtree(pycache)
                 count += 1
-            console.print(f"  [green]✓[/green] Cleaned {count} items") if count else console.print("  [dim]Nothing to clean[/dim]")
+            console.print(
+                f"  [green]✓[/green] Cleaned {count} items"
+            ) if count else console.print("  [dim]Nothing to clean[/dim]")
             wait()
 
         elif choice == "Clean all":
@@ -142,11 +152,14 @@ def menu_hpc():
 
         exp_names = ["all"] + [get_experiment_name(e) for e in experiments]
 
-        choice = select("HPC:", [
-            "Preview jobs (dry run)",
-            "Submit jobs",
-            "← Back",
-        ])
+        choice = select(
+            "HPC:",
+            [
+                "Preview jobs (dry run)",
+                "Submit jobs",
+                "← Back",
+            ],
+        )
 
         if choice in ("Submit jobs", "Preview jobs (dry run)"):
             experiment = select("Experiment:", exp_names + ["← Back"])
@@ -164,11 +177,14 @@ def menu_hpc():
 def menu_code():
     """Code quality submenu."""
     while True:
-        choice = select("Code:", [
-            "Lint (ruff check)",
-            "Format (ruff format)",
-            "← Back",
-        ])
+        choice = select(
+            "Code:",
+            [
+                "Lint (ruff check)",
+                "Format (ruff format)",
+                "← Back",
+            ],
+        )
 
         if choice == "Lint (ruff check)":
             ruff_check()
@@ -189,21 +205,26 @@ def interactive():
     """Run interactive menu."""
     while True:
         console.clear()
-        console.print(Panel.fit(
-            "[bold cyan]ANA-P3[/bold cyan] [dim]Advanced Numerical Algorithms[/dim]",
-            border_style="cyan",
-        ))
+        console.print(
+            Panel.fit(
+                "[bold cyan]ANA-P3[/bold cyan] [dim]Advanced Numerical Algorithms[/dim]",
+                border_style="cyan",
+            )
+        )
         console.print()
 
-        choice = select("Select:", [
-            "Fetch MLflow data",
-            "Runner",
-            "Build docs",
-            "Code",
-            "Clean",
-            "HPC",
-            "Exit",
-        ])
+        choice = select(
+            "Select:",
+            [
+                "Fetch MLflow data",
+                "Runner",
+                "Build docs",
+                "Code",
+                "Clean",
+                "HPC",
+                "Exit",
+            ],
+        )
 
         if choice is None or choice == "Exit":
             console.print("[dim]Goodbye![/dim]\n")
@@ -223,6 +244,7 @@ def interactive():
             index = REPO_ROOT / "docs" / "build" / "html" / "index.html"
             if index.exists():
                 import webbrowser
+
                 webbrowser.open(f"file://{index}")
             wait()
 

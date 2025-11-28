@@ -3,7 +3,6 @@
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import bicgstab
-import pyamg
 
 
 def scipy_solver(A_csr: csr_matrix, b_np: np.ndarray, use_cg: bool = False):

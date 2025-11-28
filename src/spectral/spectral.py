@@ -78,7 +78,7 @@ def chebyshev_diff_matrix(nodes: np.ndarray) -> np.ndarray:
     for i in range(N + 1):
         for j in range(N + 1):
             if i != j:
-                D[i, j] = (c[i] / c[j]) * (-1.0)**(i + j) / (nodes[i] - nodes[j])
+                D[i, j] = (c[i] / c[j]) * (-1.0) ** (i + j) / (nodes[i] - nodes[j])
 
     # Diagonal entries: Use negative row sum to ensure d/dx[constant] = 0
     # This is equivalent to the interior formula -x_i/(2(1-x_i^2)) for interior points
