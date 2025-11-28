@@ -47,6 +47,7 @@ dependencies = [
   "mpi4py>=4.1.1",
   "pip>=25.3",
   "textual>=6.6.0",
+  "blessed>=1.25.0",
 ]
 
 [tool.setuptools]

@@ -1,12 +1,9 @@
-"""Live HPC job monitor TUI using Textual."""
+"""Live HPC job monitor TUI using blessed."""
 
 import subprocess
 from dataclasses import dataclass
 
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import VerticalScroll
-from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
+from blessed import Terminal
 
 
 @dataclass
@@ -14,47 +11,37 @@ class Job:
     """HPC job info."""
     id: str
     name: str
-    user: str
     queue: str
     status: str
-    start_time: str
     exec_host: str
     memory: str
     cpu_time: str
-
-
-def parse_bjobs_output(output: str) -> list[Job]:
-    """Parse bjobs -o output into Job objects."""
-    jobs = []
-    lines = output.strip().split("\n")
-
-    for line in lines[1:]:  # Skip header
-        parts = line.split()
-        if len(parts) >= 9:
-            jobs.append(Job(
-                id=parts[0],
-                user=parts[1],
-                status=parts[2],
-                queue=parts[3],
-                exec_host=parts[4] if parts[4] != "-" else "",
-                name=parts[5],
-                start_time=" ".join(parts[6:8]) if len(parts) > 7 else "",
-                memory=parts[8] if len(parts) > 8 else "-",
-                cpu_time=parts[9] if len(parts) > 9 else "-",
-            ))
-    return jobs
+    start_time: str
 
 
 def get_jobs() -> list[Job]:
-    """Fetch current jobs from bjobs with detailed info."""
+    """Fetch current jobs from bjobs."""
     try:
-        # Get detailed job info with specific columns
         result = subprocess.run(
-            ["bjobs", "-o", "jobid user stat queue exec_host job_name submit_time memlimit cpu_used", "-noheader"],
+            ["bjobs", "-o", "jobid stat queue exec_host job_name submit_time memlimit cpu_used", "-noheader"],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0 and result.stdout.strip():
-            return parse_bjobs_output("HEADER\n" + result.stdout)
+            jobs = []
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split()
+                if len(parts) >= 6:
+                    jobs.append(Job(
+                        id=parts[0],
+                        status=parts[1],
+                        queue=parts[2],
+                        exec_host=parts[3] if parts[3] != "-" else "",
+                        name=parts[4],
+                        start_time=" ".join(parts[5:7]) if len(parts) > 6 else "",
+                        memory=parts[7] if len(parts) > 7 else "-",
+                        cpu_time=parts[8] if len(parts) > 8 else "-",
+                    ))
+            return jobs
     except Exception:
         pass
 
@@ -63,13 +50,11 @@ def get_jobs() -> list[Job]:
         result = subprocess.run(["bstat"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0 and result.stdout.strip():
             jobs = []
-            lines = result.stdout.strip().split("\n")
-            for line in lines[1:]:
+            for line in result.stdout.strip().split("\n")[1:]:
                 parts = line.split()
                 if len(parts) >= 6:
                     jobs.append(Job(
                         id=parts[0],
-                        user=parts[1] if len(parts) > 1 else "",
                         status=parts[5] if len(parts) > 5 else "",
                         queue=parts[2] if len(parts) > 2 else "",
                         exec_host="",
@@ -84,53 +69,32 @@ def get_jobs() -> list[Job]:
     return []
 
 
-def get_queue_info() -> str:
+def get_queue_info() -> list[str]:
     """Get cluster queue information."""
-    output_lines = []
-
-    # Queue summary
+    lines = []
     try:
-        result = subprocess.run(
-            ["bqueues"],
-            capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["bqueues"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            output_lines.append("[#88c0d0 bold]Queue Summary[/]\n")
-            output_lines.append(result.stdout)
+            lines.append("=== Queue Summary ===")
+            lines.extend(result.stdout.strip().split("\n"))
     except Exception:
-        output_lines.append("[#bf616a]Failed to get queue info[/]\n")
+        lines.append("Failed to get queue info")
 
-    # Host info
     try:
-        result = subprocess.run(
-            ["bhosts", "-w"],
-            capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["bhosts", "-w"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            output_lines.append("\n[#88c0d0 bold]Host Status[/]\n")
-            output_lines.append(result.stdout)
+            lines.append("")
+            lines.append("=== Host Status ===")
+            lines.extend(result.stdout.strip().split("\n"))
     except Exception:
         pass
 
-    # Cluster load
+    return lines
+
+
+def get_job_output(job_id: str, num_lines: int = 30) -> list[str]:
+    """Get tail of job output."""
     try:
-        result = subprocess.run(
-            ["lsload", "-w"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            output_lines.append("\n[#88c0d0 bold]Cluster Load[/]\n")
-            output_lines.append(result.stdout)
-    except Exception:
-        pass
-
-    return "".join(output_lines) if output_lines else "No cluster information available"
-
-
-def get_job_output(job_id: str, lines: int = 50) -> str:
-    """Get the tail of a job's output file."""
-    try:
-        # Get output file path
         result = subprocess.run(
             ["bjobs", "-o", "output_file", "-noheader", job_id],
             capture_output=True, text=True, timeout=10
@@ -138,25 +102,23 @@ def get_job_output(job_id: str, lines: int = 50) -> str:
         if result.returncode == 0 and result.stdout.strip():
             output_file = result.stdout.strip()
             if output_file and output_file != "-":
-                # Tail the output file
-                tail_result = subprocess.run(
-                    ["tail", "-n", str(lines), output_file],
+                tail = subprocess.run(
+                    ["tail", "-n", str(num_lines), output_file],
                     capture_output=True, text=True, timeout=10
                 )
-                if tail_result.returncode == 0:
-                    return f"[#88c0d0 bold]{output_file}[/]\n\n{tail_result.stdout}"
-                return f"[#bf616a]Cannot read: {output_file}[/]"
-        return "[#ebcb8b]No output file found[/]"
+                if tail.returncode == 0:
+                    return [f"=== {output_file} ===", ""] + tail.stdout.split("\n")
+                return [f"Cannot read: {output_file}"]
+        return ["No output file found"]
     except Exception as e:
-        return f"[#bf616a]Error: {e}[/]"
+        return [f"Error: {e}"]
 
 
 def kill_job(job_id: str) -> tuple[bool, str]:
-    """Kill a job by ID."""
+    """Kill a job."""
     try:
         result = subprocess.run(["bkill", job_id], capture_output=True, text=True)
-        msg = result.stdout.strip() or result.stderr.strip()
-        return result.returncode == 0, msg
+        return result.returncode == 0, result.stdout.strip() or result.stderr.strip()
     except Exception as e:
         return False, str(e)
 
@@ -165,298 +127,159 @@ def kill_all_jobs() -> tuple[bool, str]:
     """Kill all jobs."""
     try:
         result = subprocess.run(["bkill", "0"], capture_output=True, text=True)
-        msg = result.stdout.strip() or result.stderr.strip()
-        return result.returncode == 0, msg
+        return result.returncode == 0, result.stdout.strip() or result.stderr.strip()
     except Exception as e:
         return False, str(e)
 
 
-class StatusBar(Static):
-    """Status bar for messages."""
-
-    # Nord Aurora yellow: #ebcb8b
-    def set_message(self, msg: str, style: str = "#ebcb8b") -> None:
-        self.update(f"[{style}]{msg}[/{style}]" if msg else "")
-
-
-class OutputView(Static):
-    """View for job output."""
-
-    def set_content(self, content: str) -> None:
-        self.update(content)
-
-
-class ResourceView(Static):
-    """View for cluster resources."""
-
-    def refresh_info(self) -> None:
-        self.update(get_queue_info())
-
-
-class HPCMonitorApp(App):
-    """HPC Job Monitor TUI."""
-
-    ENABLE_COMMAND_PALETTE = False
-
-    # Nord theme colors
-    CSS = """
-    Screen {
-        background: #2e3440;
-    }
-
-    Header {
-        background: #3b4252;
-        color: #88c0d0;
-    }
-
-    Footer {
-        background: #3b4252;
-        color: #d8dee9;
-    }
-
-    Footer > .footer--key {
-        background: #5e81ac;
-        color: #eceff4;
-    }
-
-    Footer > .footer--description {
-        color: #d8dee9;
-    }
-
-    TabbedContent {
-        background: #2e3440;
-    }
-
-    TabPane {
-        background: #2e3440;
-        padding: 0;
-    }
-
-    Tabs {
-        background: #3b4252;
-    }
-
-    Tab {
-        background: #3b4252;
-        color: #d8dee9;
-    }
-
-    Tab.-active {
-        background: #434c5e;
-        color: #88c0d0;
-    }
-
-    Tab:hover {
-        background: #434c5e;
-    }
-
-    #job-table {
-        height: 1fr;
-        border: round #88c0d0;
-        background: #2e3440;
-    }
-
-    DataTable {
-        background: #2e3440;
-    }
-
-    DataTable > .datatable--header {
-        background: #3b4252;
-        color: #88c0d0;
-        text-style: bold;
-    }
-
-    DataTable > .datatable--cursor {
-        background: #434c5e;
-        color: #eceff4;
-    }
-
-    DataTable > .datatable--hover {
-        background: #3b4252;
-    }
-
-    #status {
-        height: 1;
-        padding: 0 1;
-        background: #2e3440;
-        color: #d8dee9;
-    }
-
-    #output-view {
-        height: 1fr;
-        border: round #88c0d0;
-        background: #2e3440;
-        color: #d8dee9;
-        padding: 1;
-    }
-
-    #resource-view {
-        height: 1fr;
-        border: round #88c0d0;
-        background: #2e3440;
-        color: #d8dee9;
-        padding: 1;
-    }
-
-    VerticalScroll {
-        height: 1fr;
-    }
-    """
-
-    BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("d", "kill_selected", "Kill"),
-        Binding("D", "kill_all", "Kill All"),
-        Binding("t", "tail_output", "Tail"),
-        Binding("1", "show_jobs", "Jobs", show=False),
-        Binding("2", "show_output", "Output", show=False),
-        Binding("3", "show_resources", "Resources", show=False),
-        Binding("up,k", "cursor_up", "Up", show=False),
-        Binding("down,j", "cursor_down", "Down", show=False),
-    ]
-
-    TITLE = "HPC Monitor"
-
-    def __init__(self):
-        super().__init__()
-        self.jobs: list[Job] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        with TabbedContent():
-            with TabPane("Jobs", id="jobs-tab"):
-                yield DataTable(id="job-table")
-            with TabPane("Output", id="output-tab"):
-                with VerticalScroll():
-                    yield OutputView(id="output-view")
-            with TabPane("Resources", id="resources-tab"):
-                with VerticalScroll():
-                    yield ResourceView(id="resource-view")
-        yield StatusBar(id="status")
-        yield Footer()
-
-    def on_mount(self) -> None:
-        """Set up the table and start auto-refresh."""
-        table = self.query_one(DataTable)
-        table.cursor_type = "row"
-        table.add_columns("ID", "Name", "Queue", "Status", "Host", "Memory", "CPU", "Started")
-
-        self.refresh_jobs()
-        self.set_interval(5, self.refresh_jobs)
-
-    def refresh_jobs(self) -> None:
-        """Refresh the job list."""
-        self.jobs = get_jobs()
-        table = self.query_one(DataTable)
-
-        cursor_row = table.cursor_row if table.row_count > 0 else 0
-        table.clear()
-
-        if self.jobs:
-            for job in self.jobs:
-                # Nord Aurora colors
-                status_style = (
-                    "#a3be8c" if job.status == "RUN"
-                    else "#ebcb8b" if job.status == "PEND"
-                    else "#4c566a"
-                )
-                # Truncate name if too long
-                name = job.name[:30] + "..." if len(job.name) > 33 else job.name
-                table.add_row(
-                    job.id,
-                    name,
-                    job.queue,
-                    f"[{status_style}]{job.status}[/{status_style}]",
-                    job.exec_host or "-",
-                    job.memory,
-                    job.cpu_time,
-                    job.start_time,
-                )
-            if cursor_row < table.row_count:
-                table.move_cursor(row=cursor_row)
-
-    def action_refresh(self) -> None:
-        """Manual refresh."""
-        self.refresh_jobs()
-        # Also refresh resources if on that tab
-        self.query_one(ResourceView).refresh_info()
-        self.query_one(StatusBar).set_message("Refreshed")
-
-    def action_tail_output(self) -> None:
-        """Show output of selected job."""
-        if not self.jobs:
-            self.query_one(StatusBar).set_message("No jobs", "#bf616a")
-            return
-
-        table = self.query_one(DataTable)
-        row = table.cursor_row
-
-        if 0 <= row < len(self.jobs):
-            job = self.jobs[row]
-            output = get_job_output(job.id)
-            self.query_one(OutputView).set_content(output)
-            # Switch to output tab
-            self.query_one(TabbedContent).active = "output-tab"
-            self.query_one(StatusBar).set_message(f"Output: {job.name}")
-
-    def action_show_jobs(self) -> None:
-        """Switch to jobs tab."""
-        self.query_one(TabbedContent).active = "jobs-tab"
-
-    def action_show_output(self) -> None:
-        """Switch to output tab."""
-        self.query_one(TabbedContent).active = "output-tab"
-
-    def action_show_resources(self) -> None:
-        """Switch to resources tab."""
-        self.query_one(ResourceView).refresh_info()
-        self.query_one(TabbedContent).active = "resources-tab"
-
-    def action_kill_selected(self) -> None:
-        """Kill the selected job."""
-        if not self.jobs:
-            self.query_one(StatusBar).set_message("No jobs to kill", "#bf616a")
-            return
-
-        table = self.query_one(DataTable)
-        row = table.cursor_row
-
-        if 0 <= row < len(self.jobs):
-            job = self.jobs[row]
-            ok, msg = kill_job(job.id)
-            status = self.query_one(StatusBar)
-            if ok:
-                status.set_message(f"Killed: {job.name}", "#a3be8c")
-            else:
-                status.set_message(f"Failed to kill {job.name}: {msg}", "#bf616a")
-            self.refresh_jobs()
-
-    def action_kill_all(self) -> None:
-        """Kill all jobs."""
-        ok, msg = kill_all_jobs()
-        status = self.query_one(StatusBar)
-        if ok:
-            status.set_message("Killed all jobs", "#a3be8c")
-        else:
-            status.set_message(f"Failed: {msg}", "#bf616a")
-        self.refresh_jobs()
-
-    def action_cursor_up(self) -> None:
-        """Move cursor up."""
-        table = self.query_one(DataTable)
-        table.action_cursor_up()
-
-    def action_cursor_down(self) -> None:
-        """Move cursor down."""
-        table = self.query_one(DataTable)
-        table.action_cursor_down()
-
-
 def monitor():
     """Run the HPC monitor."""
-    app = HPCMonitorApp()
-    app.run()
+    term = Terminal()
+    selected = 0
+    message = ""
+    view = "jobs"  # jobs, output, resources
+    output_lines: list[str] = []
+    resource_lines: list[str] = []
+    scroll_offset = 0
+
+    jobs = get_jobs()
+
+    with term.fullscreen(), term.cbreak(), term.hidden_cursor():
+        while True:
+            # Draw screen
+            print(term.home + term.clear)
+
+            # Header
+            header = f" HPC Monitor | View: {view.upper()} | {len(jobs)} jobs "
+            print(term.center(term.bold + term.cyan + header + term.normal))
+            print(term.cyan + "─" * term.width + term.normal)
+
+            if view == "jobs":
+                # Column headers
+                hdr = f"{'ID':<10} {'Name':<35} {'Queue':<8} {'Status':<6} {'Host':<12} {'Mem':<8} {'CPU':<10} {'Started':<16}"
+                print(term.bold + hdr[:term.width] + term.normal)
+                print(term.bright_black + "─" * term.width + term.normal)
+
+                # Job rows
+                max_rows = term.height - 8
+                for i, job in enumerate(jobs[:max_rows]):
+                    name = job.name[:33] + ".." if len(job.name) > 35 else job.name
+                    host = job.exec_host[:10] + ".." if len(job.exec_host) > 12 else job.exec_host
+
+                    if job.status == "RUN":
+                        status = term.green + f"{job.status:<6}" + term.normal
+                    elif job.status == "PEND":
+                        status = term.yellow + f"{job.status:<6}" + term.normal
+                    else:
+                        status = term.bright_black + f"{job.status:<6}" + term.normal
+
+                    row = f"{job.id:<10} {name:<35} {job.queue:<8} {status} {host:<12} {job.memory:<8} {job.cpu_time:<10} {job.start_time:<16}"
+
+                    if i == selected:
+                        print(term.reverse + row[:term.width] + term.normal)
+                    else:
+                        print(row[:term.width])
+
+                if not jobs:
+                    print(term.bright_black + "  No running jobs" + term.normal)
+
+            elif view == "output":
+                max_rows = term.height - 6
+                visible = output_lines[scroll_offset:scroll_offset + max_rows]
+                for line in visible:
+                    print(line[:term.width])
+
+            elif view == "resources":
+                max_rows = term.height - 6
+                visible = resource_lines[scroll_offset:scroll_offset + max_rows]
+                for line in visible:
+                    print(line[:term.width])
+
+            # Footer
+            print(term.move_y(term.height - 3) + term.cyan + "─" * term.width + term.normal)
+
+            if message:
+                print(term.yellow + f" {message}" + term.normal)
+            else:
+                print()
+
+            help_text = " [j/k] Navigate  [d] Kill  [D] Kill All  [t] Tail  [o] Output  [R] Resources  [r] Refresh  [q] Quit"
+            print(term.bright_black + help_text[:term.width] + term.normal)
+
+            # Input with timeout for auto-refresh
+            key = term.inkey(timeout=5)
+
+            if key:
+                message = ""
+
+                if key.lower() == 'q':
+                    break
+
+                elif key.lower() == 'r':
+                    jobs = get_jobs()
+                    selected = min(selected, max(0, len(jobs) - 1))
+                    if view == "resources":
+                        resource_lines = get_queue_info()
+                    message = "Refreshed"
+
+                elif key == 'j' or key.name == 'KEY_DOWN':
+                    if view == "jobs":
+                        selected = min(selected + 1, len(jobs) - 1) if jobs else 0
+                    else:
+                        scroll_offset += 1
+
+                elif key == 'k' or key.name == 'KEY_UP':
+                    if view == "jobs":
+                        selected = max(selected - 1, 0)
+                    else:
+                        scroll_offset = max(0, scroll_offset - 1)
+
+                elif key == 'd' and jobs and view == "jobs":
+                    job = jobs[selected]
+                    ok, msg = kill_job(job.id)
+                    message = f"Killed: {job.name}" if ok else f"Failed: {msg}"
+                    jobs = get_jobs()
+                    selected = min(selected, max(0, len(jobs) - 1))
+
+                elif key == 'D':
+                    ok, msg = kill_all_jobs()
+                    message = "Killed all jobs" if ok else f"Failed: {msg}"
+                    jobs = get_jobs()
+                    selected = 0
+
+                elif key == 't' and jobs:
+                    job = jobs[selected]
+                    output_lines = get_job_output(job.id)
+                    scroll_offset = 0
+                    view = "output"
+                    message = f"Output: {job.name}"
+
+                elif key == 'o':
+                    view = "output"
+                    scroll_offset = 0
+
+                elif key == 'R':
+                    resource_lines = get_queue_info()
+                    scroll_offset = 0
+                    view = "resources"
+
+                elif key == '1':
+                    view = "jobs"
+                    scroll_offset = 0
+
+                elif key == '2':
+                    view = "output"
+                    scroll_offset = 0
+
+                elif key == '3':
+                    resource_lines = get_queue_info()
+                    view = "resources"
+                    scroll_offset = 0
+
+            else:
+                # Auto-refresh on timeout
+                jobs = get_jobs()
+                selected = min(selected, max(0, len(jobs) - 1))
 
 
 if __name__ == "__main__":
