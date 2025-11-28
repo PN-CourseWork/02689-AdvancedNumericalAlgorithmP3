@@ -41,20 +41,15 @@ def menu_runner():
     """Runner submenu for compute/plot scripts."""
     while True:
         choice = select("Runner:", [
-            "Run compute scripts",
-            "Run plot scripts",
-            "Run both",
+            "Compute scripts",
+            "Plot scripts",
             "← Back",
         ])
 
-        if choice == "Run compute scripts":
+        if choice == "Compute scripts":
             run_scripts("compute")
             wait()
-        elif choice == "Run plot scripts":
-            run_scripts("plot")
-            wait()
-        elif choice == "Run both":
-            run_scripts("compute")
+        elif choice == "Plot scripts":
             run_scripts("plot")
             wait()
         else:
@@ -161,7 +156,6 @@ def menu_code():
         choice = select("Code:", [
             "Lint (ruff check)",
             "Format (ruff format)",
-            "Lint + Format",
             "← Back",
         ])
 
@@ -169,10 +163,6 @@ def menu_code():
             ruff_check()
             wait()
         elif choice == "Format (ruff format)":
-            ruff_format()
-            wait()
-        elif choice == "Lint + Format":
-            ruff_check()
             ruff_format()
             wait()
         else:
