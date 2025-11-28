@@ -11,9 +11,7 @@ from .actions import (
     ruff_check,
     ruff_format,
     hpc_submit,
-    hpc_status,
     hpc_monitor,
-    hpc_kill,
     REPO_ROOT,
 )
 
@@ -150,11 +148,7 @@ def menu_hpc():
             "HPC:",
             [
                 "Live monitor",
-                "Job status",
-                "Preview jobs (dry run)",
                 "Submit jobs",
-                "Kill job",
-                "Kill all jobs",
                 "← Back",
             ],
         )
@@ -162,11 +156,7 @@ def menu_hpc():
         if choice == "Live monitor":
             hpc_monitor()
 
-        elif choice == "Job status":
-            hpc_status()
-            wait()
-
-        elif choice in ("Submit jobs", "Preview jobs (dry run)"):
+        elif choice == "Submit jobs":
             experiments = discover_experiments()
             if not experiments:
                 console.print("  [dim]No experiments with jobs.yaml found[/dim]")
@@ -177,26 +167,9 @@ def menu_hpc():
             experiment = select("Experiment:", exp_names + ["← Back"])
 
             if experiment and experiment != "← Back":
-                dry_run = choice == "Preview jobs (dry run)"
-                if not dry_run:
-                    if not confirm("Submit to HPC?", default=False):
-                        continue
-                hpc_submit(experiment, dry_run)
-                wait()
-
-        elif choice == "Kill job":
-            target = questionary.text(
-                "Job name or ID:",
-                style=STYLE,
-            ).ask()
-            if target:
-                if confirm(f"Kill job '{target}'?", default=False):
-                    hpc_kill(target)
-                    wait()
-
-        elif choice == "Kill all jobs":
-            if confirm("Kill ALL your jobs?", default=False):
-                hpc_kill("all")
+                if not confirm("Submit to HPC?", default=False):
+                    continue
+                hpc_submit(experiment, dry_run=False)
                 wait()
 
         else:
