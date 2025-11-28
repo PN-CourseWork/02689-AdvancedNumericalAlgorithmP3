@@ -46,6 +46,7 @@ dependencies = [
   "questionary>=2.0.0",
   "mpi4py>=4.1.1",
   "pip>=25.3",
+  "textual>=6.6.0",
 ]
 
 [tool.setuptools]
