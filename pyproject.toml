@@ -45,7 +45,6 @@ dependencies = [
   "rich>=13.0.0",
   "questionary>=2.0.0",
   "mpi4py>=4.1.1",
-  "petsc>=3.24.1",
   "pip>=25.3",
 ]
 
