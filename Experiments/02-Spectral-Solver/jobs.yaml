@@ -3,14 +3,14 @@ script: Experiments/02-Spectral-Solver/compute_spectral_chebyshev.py
 
 lsf:
   queue: hpc
-  walltime: "1:00"
+  walltime: "2:00"
   cores: 4
   memory: 8GB
 
 parameters:
-  tol: 1e-6
-  max-iter: 200000
+  tol: 1e-7
+  max-iter: 500000
 
 sweep:
-  N: [11, 15, 19, 23]
+  N: [15, 25, 35, 45, 55, 65]
   Re: [100, 400, 1000]
