@@ -8,10 +8,10 @@ from .actions import (
     fetch_mlflow,
     run_scripts,
     build_docs,
-    clean_all,
     ruff_check,
     ruff_format,
     hpc_submit,
+    REPO_ROOT,
 )
 
 STYLE = questionary.Style([("highlighted", "bold cyan"), ("pointer", "cyan")])
@@ -37,25 +37,120 @@ def wait():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def menu_data():
-    """Data submenu."""
+def menu_runner():
+    """Runner submenu for compute/plot scripts."""
     while True:
-        choice = select("Data:", [
-            "Fetch MLflow artifacts",
+        choice = select("Runner:", [
             "Run compute scripts",
             "Run plot scripts",
+            "Run both",
             "← Back",
         ])
 
-        if choice == "Fetch MLflow artifacts":
-            fetch_mlflow()
-            wait()
-        elif choice == "Run compute scripts":
+        if choice == "Run compute scripts":
             run_scripts("compute")
             wait()
         elif choice == "Run plot scripts":
             run_scripts("plot")
             wait()
+        elif choice == "Run both":
+            run_scripts("compute")
+            run_scripts("plot")
+            wait()
+        else:
+            break
+
+
+def menu_clean():
+    """Clean submenu."""
+    import shutil
+
+    while True:
+        choice = select("Clean:", [
+            "Clean docs",
+            "Clean data",
+            "Clean caches",
+            "Clean all",
+            "← Back",
+        ])
+
+        if choice == "Clean docs":
+            build_dir = REPO_ROOT / "docs" / "build"
+            if build_dir.exists():
+                shutil.rmtree(build_dir)
+                console.print("  [green]✓[/green] Cleaned docs/build")
+            else:
+                console.print("  [dim]Nothing to clean[/dim]")
+            wait()
+
+        elif choice == "Clean data":
+            data_dir = REPO_ROOT / "data"
+            count = 0
+            if data_dir.exists():
+                for item in data_dir.iterdir():
+                    if item.name not in ("README.md", ".gitkeep"):
+                        shutil.rmtree(item) if item.is_dir() else item.unlink()
+                        count += 1
+            console.print(f"  [green]✓[/green] Cleaned {count} items") if count else console.print("  [dim]Nothing to clean[/dim]")
+            wait()
+
+        elif choice == "Clean caches":
+            targets = [".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist"]
+            count = 0
+            for t in targets:
+                path = REPO_ROOT / t
+                if path.exists():
+                    shutil.rmtree(path)
+                    count += 1
+            for pycache in REPO_ROOT.rglob("__pycache__"):
+                shutil.rmtree(pycache)
+                count += 1
+            console.print(f"  [green]✓[/green] Cleaned {count} items") if count else console.print("  [dim]Nothing to clean[/dim]")
+            wait()
+
+        elif choice == "Clean all":
+            # Docs
+            build_dir = REPO_ROOT / "docs" / "build"
+            if build_dir.exists():
+                shutil.rmtree(build_dir)
+            # Data
+            data_dir = REPO_ROOT / "data"
+            if data_dir.exists():
+                for item in data_dir.iterdir():
+                    if item.name not in ("README.md", ".gitkeep"):
+                        shutil.rmtree(item) if item.is_dir() else item.unlink()
+            # Caches
+            for t in [".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist"]:
+                path = REPO_ROOT / t
+                if path.exists():
+                    shutil.rmtree(path)
+            for pycache in REPO_ROOT.rglob("__pycache__"):
+                shutil.rmtree(pycache)
+            console.print("  [green]✓[/green] Cleaned all")
+            wait()
+
+        else:
+            break
+
+
+def menu_hpc():
+    """HPC submenu."""
+    while True:
+        choice = select("HPC:", [
+            "Preview jobs (dry run)",
+            "Submit jobs",
+            "← Back",
+        ])
+
+        if choice in ("Submit jobs", "Preview jobs (dry run)"):
+            solver = select("Solver:", ["all", "spectral", "fv", "← Back"])
+            if solver and solver != "← Back":
+                dry_run = choice == "Preview jobs (dry run)"
+                if not dry_run:
+                    if not confirm("Submit to HPC?", default=False):
+                        continue
+                hpc_submit(solver, dry_run)
+                wait()
         else:
             break
 
@@ -84,111 +179,13 @@ def menu_code():
             break
 
 
-def menu_docs():
-    """Documentation submenu."""
-    while True:
-        choice = select("Docs:", [
-            "Build documentation",
-            "Clean documentation",
-            "← Back",
-        ])
-
-        if choice == "Build documentation":
-            build_docs()
-            wait()
-        elif choice == "Clean documentation":
-            import shutil
-            from .actions import REPO_ROOT
-            build_dir = REPO_ROOT / "docs" / "build"
-            if build_dir.exists():
-                shutil.rmtree(build_dir)
-                console.print("  [green]✓[/green] Cleaned docs/build")
-            else:
-                console.print("  [dim]Nothing to clean[/dim]")
-            wait()
-        else:
-            break
-
-
-def menu_hpc():
-    """HPC submenu."""
-    while True:
-        choice = select("HPC:", [
-            "Submit jobs",
-            "Preview jobs (dry run)",
-            "← Back",
-        ])
-
-        if choice in ("Submit jobs", "Preview jobs (dry run)"):
-            solver = select("Solver:", ["all", "spectral", "fv", "← Back"])
-            if solver and solver != "← Back":
-                dry_run = choice == "Preview jobs (dry run)"
-                if not dry_run:
-                    if not confirm("Submit to HPC?", default=False):
-                        continue
-                hpc_submit(solver, dry_run)
-                wait()
-        else:
-            break
-
-
-def menu_clean():
-    """Clean submenu."""
-    while True:
-        choice = select("Clean:", [
-            "Clean all caches",
-            "Clean documentation only",
-            "Clean data only",
-            "← Back",
-        ])
-
-        if choice == "Clean all caches":
-            clean_all()
-            wait()
-        elif choice == "Clean documentation only":
-            import shutil
-            from .actions import REPO_ROOT
-            build_dir = REPO_ROOT / "docs" / "build"
-            if build_dir.exists():
-                shutil.rmtree(build_dir)
-                console.print("  [green]✓[/green] Cleaned docs/build")
-            else:
-                console.print("  [dim]Nothing to clean[/dim]")
-            wait()
-        elif choice == "Clean data only":
-            import shutil
-            from .actions import REPO_ROOT
-            data_dir = REPO_ROOT / "data"
-            count = 0
-            if data_dir.exists():
-                for item in data_dir.iterdir():
-                    if item.name not in ("README.md", ".gitkeep"):
-                        shutil.rmtree(item) if item.is_dir() else item.unlink()
-                        count += 1
-            if count:
-                console.print(f"  [green]✓[/green] Cleaned {count} items from data/")
-            else:
-                console.print("  [dim]Nothing to clean[/dim]")
-            wait()
-        else:
-            break
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Main menu
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 def interactive():
-    """Run interactive menu with categories."""
-    menus = {
-        "Data": menu_data,
-        "Code": menu_code,
-        "Docs": menu_docs,
-        "HPC": menu_hpc,
-        "Clean": menu_clean,
-    }
-
+    """Run interactive menu."""
     while True:
         console.clear()
         console.print(Panel.fit(
@@ -197,12 +194,45 @@ def interactive():
         ))
         console.print()
 
-        choice = select("Select category:", list(menus.keys()) + ["Exit"])
+        choice = select("Select:", [
+            "Fetch MLflow data",
+            "Runner",
+            "Build docs",
+            "Code",
+            "Clean",
+            "HPC",
+            "Exit",
+        ])
 
         if choice is None or choice == "Exit":
             console.print("[dim]Goodbye![/dim]\n")
             break
 
-        if choice in menus:
+        elif choice == "Fetch MLflow data":
+            fetch_mlflow()
+            wait()
+
+        elif choice == "Runner":
             console.print()
-            menus[choice]()
+            menu_runner()
+
+        elif choice == "Build docs":
+            build_docs()
+            # Try to open in browser
+            index = REPO_ROOT / "docs" / "build" / "html" / "index.html"
+            if index.exists():
+                import webbrowser
+                webbrowser.open(f"file://{index}")
+            wait()
+
+        elif choice == "Code":
+            console.print()
+            menu_code()
+
+        elif choice == "Clean":
+            console.print()
+            menu_clean()
+
+        elif choice == "HPC":
+            console.print()
+            menu_hpc()
