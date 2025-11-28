@@ -8,9 +8,9 @@ lsf:
   memory: 8GB
 
 parameters:
-  tol: 1e-7
-  max-iter: 500000
+  tol: 1e-10
+  max-iter: 2000000
 
 sweep:
-  N: [19,39,99]
+  N: [59,89,120]
   Re: [100,400,1000]
