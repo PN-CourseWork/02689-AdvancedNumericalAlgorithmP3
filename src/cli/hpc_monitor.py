@@ -73,16 +73,47 @@ def kill_all_jobs() -> tuple[bool, str]:
 class StatusBar(Static):
     """Status bar for messages."""
 
-    def set_message(self, msg: str, style: str = "yellow") -> None:
+    def set_message(self, msg: str, style: str = "ansi_yellow") -> None:
         self.update(f"[{style}]{msg}[/{style}]" if msg else "")
 
 
 class HPCMonitorApp(App):
     """HPC Job Monitor TUI."""
 
+    ENABLE_COMMAND_PALETTE = False
+
     CSS = """
+    Screen {
+        background: $surface;
+    }
+
+    Header {
+        background: ansi_blue;
+        color: ansi_white;
+    }
+
+    Footer {
+        background: ansi_default;
+    }
+
+    Footer > .footer--key {
+        background: ansi_blue;
+        color: ansi_white;
+    }
+
     #job-table {
         height: 1fr;
+        border: round ansi_cyan;
+    }
+
+    DataTable > .datatable--header {
+        background: ansi_default;
+        color: ansi_cyan;
+        text-style: bold;
+    }
+
+    DataTable > .datatable--cursor {
+        background: ansi_blue;
     }
 
     #status {
@@ -136,9 +167,9 @@ class HPCMonitorApp(App):
         if self.jobs:
             for i, job in enumerate(self.jobs):
                 status_style = (
-                    "green" if job.status == "RUN"
-                    else "yellow" if job.status == "PEND"
-                    else "dim"
+                    "ansi_green" if job.status == "RUN"
+                    else "ansi_yellow" if job.status == "PEND"
+                    else "ansi_bright_black"
                 )
                 table.add_row(
                     str(i + 1),
@@ -161,7 +192,7 @@ class HPCMonitorApp(App):
     def action_kill_selected(self) -> None:
         """Kill the selected job."""
         if not self.jobs:
-            self.query_one(StatusBar).set_message("No jobs to kill", "red")
+            self.query_one(StatusBar).set_message("No jobs to kill", "ansi_red")
             return
 
         table = self.query_one(DataTable)
@@ -172,9 +203,9 @@ class HPCMonitorApp(App):
             ok, msg = kill_job(job.id)
             status = self.query_one(StatusBar)
             if ok:
-                status.set_message(f"Killed: {job.name}", "green")
+                status.set_message(f"Killed: {job.name}", "ansi_green")
             else:
-                status.set_message(f"Failed to kill {job.name}: {msg}", "red")
+                status.set_message(f"Failed to kill {job.name}: {msg}", "ansi_red")
             self.refresh_jobs()
 
     def action_kill_all(self) -> None:
@@ -182,9 +213,9 @@ class HPCMonitorApp(App):
         ok, msg = kill_all_jobs()
         status = self.query_one(StatusBar)
         if ok:
-            status.set_message("Killed all jobs", "green")
+            status.set_message("Killed all jobs", "ansi_green")
         else:
-            status.set_message(f"Failed: {msg}", "red")
+            status.set_message(f"Failed: {msg}", "ansi_red")
         self.refresh_jobs()
 
     def action_cursor_up(self) -> None:
