@@ -1,4 +1,4 @@
-kj#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Main script to run all examples."""
 
 import argparse
