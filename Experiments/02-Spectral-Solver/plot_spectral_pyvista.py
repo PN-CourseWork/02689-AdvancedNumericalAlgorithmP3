@@ -30,7 +30,7 @@ fig_dir.mkdir(parents=True, exist_ok=True)
 
 # Configuration
 Re = 100
-N = 19  # Polynomial order (N+1 nodes per direction)
+N = 25  # Polynomial order (N+1 nodes per direction)
 
 # Load from pre-computed HDF5 file
 data_file = (

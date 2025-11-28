@@ -12,7 +12,7 @@ from utils import get_project_root, LDCPlotter, GhiaValidator, plot_validation
 
 # Configuration
 Re = 100
-N = 19  # Grid size (number of nodes)
+N = 25  # Grid size (number of nodes)
 Re_str = f"Re{int(Re)}"
 
 project_root = get_project_root()
