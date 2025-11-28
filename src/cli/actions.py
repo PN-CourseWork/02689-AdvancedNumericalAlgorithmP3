@@ -172,6 +172,12 @@ def hpc_status():
         fail(f"bstat failed: {result.stderr}")
 
 
+def hpc_monitor():
+    """Launch live HPC job monitor."""
+    from .hpc_monitor import monitor
+    monitor()
+
+
 def hpc_kill(target: str = "all"):
     """Kill HPC jobs.
 

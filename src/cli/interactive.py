@@ -12,6 +12,7 @@ from .actions import (
     ruff_format,
     hpc_submit,
     hpc_status,
+    hpc_monitor,
     hpc_kill,
     REPO_ROOT,
 )
@@ -148,6 +149,7 @@ def menu_hpc():
         choice = select(
             "HPC:",
             [
+                "Live monitor",
                 "Job status",
                 "Preview jobs (dry run)",
                 "Submit jobs",
@@ -157,7 +159,10 @@ def menu_hpc():
             ],
         )
 
-        if choice == "Job status":
+        if choice == "Live monitor":
+            hpc_monitor()
+
+        elif choice == "Job status":
             hpc_status()
             wait()
 
