@@ -12,5 +12,5 @@ parameters:
   max-iter: 50000
 
 sweep:
-  N: [128, 256]
-  Re: [100, 400, 1000]
+  N: [64]
+  Re: [400]
