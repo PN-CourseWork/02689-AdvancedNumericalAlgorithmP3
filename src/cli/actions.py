@@ -52,9 +52,15 @@ def run_scripts(pattern: str):
 
     for script in scripts:
         name = script.relative_to(REPO_ROOT)
+        console.print(f"\n[bold cyan]▶ {name}[/bold cyan]")
         try:
-            result = run_cmd(["uv", "run", "python", str(script)])
-            ok(name) if result.returncode == 0 else fail(f"{name} (exit {result.returncode})")
+            # Stream output directly to terminal
+            result = subprocess.run(
+                ["uv", "run", "python", str(script)],
+                cwd=str(REPO_ROOT),
+                timeout=180,
+            )
+            ok(f"{name}") if result.returncode == 0 else fail(f"{name} (exit {result.returncode})")
         except subprocess.TimeoutExpired:
             fail(f"{name} (timeout)")
         except Exception as e:
