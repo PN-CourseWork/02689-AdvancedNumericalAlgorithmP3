@@ -14,48 +14,74 @@ class Job:
     queue: str
     status: str
     exec_host: str
+    elapsed: str
+    requested: str
 
 
 def get_jobs() -> list[Job]:
-    """Fetch current jobs from bjobs."""
+    """Fetch current jobs from bstat (preferred) or bjobs."""
+    # Try bstat first - it has elapsed/requested time
     try:
-        # Simple bjobs call - most compatible
+        result = subprocess.run(["bstat"], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            jobs = []
+            lines = result.stdout.strip().split("\n")
+            # bstat format varies, but typically:
+            # JOBID  USER  QUEUE  JOB_NAME  HOSTS  STATUS  START_TIME  ELAPSED  REQUESTED
+            for line in lines[1:]:  # Skip header
+                parts = line.split()
+                if len(parts) >= 6:
+                    # Parse based on typical bstat output
+                    job_id = parts[0]
+                    queue = parts[2]
+                    name = parts[3]
+                    status = parts[5]
+
+                    # Try to get elapsed and requested from the end
+                    elapsed = "-"
+                    requested = "-"
+
+                    # Usually last two columns are elapsed and requested time
+                    if len(parts) >= 8:
+                        # Check if last parts look like times (contain : or are numeric)
+                        if ":" in parts[-1] or parts[-1].replace(".", "").isdigit():
+                            requested = parts[-1]
+                        if len(parts) >= 9 and (":" in parts[-2] or parts[-2].replace(".", "").isdigit()):
+                            elapsed = parts[-2]
+
+                    jobs.append(Job(
+                        id=job_id,
+                        status=status,
+                        queue=queue,
+                        exec_host="",
+                        name=name,
+                        elapsed=elapsed,
+                        requested=requested,
+                    ))
+            return jobs
+    except Exception:
+        pass
+
+    # Fallback to bjobs
+    try:
         result = subprocess.run(
-            ["bjobs", "-w"],  # Wide format
+            ["bjobs", "-w"],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0 and result.stdout.strip():
             jobs = []
             lines = result.stdout.strip().split("\n")
-            for line in lines[1:]:  # Skip header
+            for line in lines[1:]:
                 parts = line.split()
                 if len(parts) >= 7:
-                    # Format: JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME ...
                     jobs.append(Job(
                         id=parts[0],
                         status=parts[2],
                         queue=parts[3],
                         exec_host=parts[5] if parts[5] != "-" else "",
                         name=parts[6],
-                    ))
-            return jobs
-    except Exception:
-        pass
-
-    # Fallback to bstat
-    try:
-        result = subprocess.run(["bstat"], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0 and result.stdout.strip():
-            jobs = []
-            for line in result.stdout.strip().split("\n")[1:]:
-                parts = line.split()
-                if len(parts) >= 6:
-                    jobs.append(Job(
-                        id=parts[0],
-                        status=parts[5] if len(parts) > 5 else "",
-                        queue=parts[2] if len(parts) > 2 else "",
-                        exec_host="",
-                        name=parts[3] if len(parts) > 3 else "",
+                        elapsed="-",
+                        requested="-",
                     ))
             return jobs
     except Exception:
@@ -240,14 +266,13 @@ def monitor():
 
             if view in ("all", "running", "pending"):
                 # Full width job view
-                hdr = f"{'ID':<12} {'Name':<50} {'Queue':<10} {'Status':<8} {'Host':<20}"
+                hdr = f"{'ID':<10} {'Name':<40} {'Queue':<8} {'Status':<8} {'Elapsed':<12} {'Requested':<12}"
                 print(term.bold + hdr[:term.width] + term.normal)
                 print(term.bright_black + "─" * term.width + term.normal)
 
                 max_rows = term.height - 8
                 for i, job in enumerate(jobs[:max_rows]):
-                    name = job.name[:48] + ".." if len(job.name) > 50 else job.name
-                    host = job.exec_host[:18] + ".." if len(job.exec_host) > 20 else (job.exec_host or "-")
+                    name = job.name[:38] + ".." if len(job.name) > 40 else job.name
 
                     if job.status == "RUN":
                         status = term.green + f"{job.status:<8}" + term.normal
@@ -256,7 +281,7 @@ def monitor():
                     else:
                         status = term.bright_black + f"{job.status:<8}" + term.normal
 
-                    row = f"{job.id:<12} {name:<50} {job.queue:<10} {status} {host:<20}"
+                    row = f"{job.id:<10} {name:<40} {job.queue:<8} {status} {job.elapsed:<12} {job.requested:<12}"
 
                     if i == selected:
                         print(term.reverse + row[:term.width] + term.normal)
