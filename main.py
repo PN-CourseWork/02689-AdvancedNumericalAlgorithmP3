@@ -602,26 +602,25 @@ def ruff_format(console=None):
 
 
 def interactive_menu():
-    """Run interactive CLI menu."""
+    """Run interactive CLI menu with arrow-key navigation."""
+    import questionary
     from rich.console import Console
     from rich.panel import Panel
-    from rich.prompt import Prompt
-    from rich.table import Table
 
     console = Console()
 
-    # Menu options
+    # Menu options: (display_name, action_function or None for special handling)
     menu_items = [
-        ("1", "fetch", "Fetch MLflow artifacts", lambda: fetch_mlflow(console)),
-        ("2", "compute", "Run compute scripts", lambda: run_scripts(discover_scripts()[0], console)),
-        ("3", "plot", "Run plot scripts", lambda: run_scripts(discover_scripts()[1], console)),
-        ("4", "docs", "Build documentation", lambda: build_docs(console)),
-        ("5", "lint", "Run ruff linter", lambda: ruff_check(console)),
-        ("6", "format", "Format code with ruff", lambda: ruff_format(console)),
-        ("7", "clean", "Clean all caches", lambda: clean_all(console)),
-        ("8", "clean-docs", "Clean documentation", lambda: clean_docs(console)),
-        ("9", "hpc", "Submit HPC jobs", None),  # Special handling
-        ("q", "quit", "Exit", None),
+        ("Fetch MLflow artifacts", lambda: fetch_mlflow(console)),
+        ("Run compute scripts", lambda: run_scripts(discover_scripts()[0], console)),
+        ("Run plot scripts", lambda: run_scripts(discover_scripts()[1], console)),
+        ("Build documentation", lambda: build_docs(console)),
+        ("Run ruff linter", lambda: ruff_check(console)),
+        ("Format code with ruff", lambda: ruff_format(console)),
+        ("Clean all caches", lambda: clean_all(console)),
+        ("Clean documentation", lambda: clean_docs(console)),
+        ("Submit HPC jobs", "hpc"),  # Special handling
+        ("Exit", None),
     ]
 
     while True:
@@ -637,53 +636,45 @@ def interactive_menu():
         )
         console.print()
 
-        # Build menu table
-        table = Table(show_header=False, box=None, padding=(0, 2))
-        table.add_column("Key", style="bold cyan", width=4)
-        table.add_column("Command", style="bold", width=12)
-        table.add_column("Description", style="dim")
-
-        for key, cmd, desc, _ in menu_items:
-            table.add_row(f"[{key}]", cmd, desc)
-
-        console.print(table)
-        console.print()
-
-        # Get user choice
-        choice = Prompt.ask(
-            "[bold]Select an option[/bold]",
+        # Arrow-key menu
+        choice = questionary.select(
+            "Select an action:",
             choices=[item[0] for item in menu_items],
-            show_choices=False,
-        )
+            style=questionary.Style([
+                ("selected", "bold cyan"),
+                ("pointer", "bold cyan"),
+                ("highlighted", "bold"),
+                ("question", "bold"),
+            ]),
+        ).ask()
 
-        if choice == "q":
+        if choice is None or choice == "Exit":
             console.print("\n[dim]Goodbye![/dim]\n")
             break
 
-        if choice == "9":
-            # HPC submenu
-            console.print()
-            hpc_choice = Prompt.ask(
-                "  [bold]Which solver?[/bold]",
-                choices=["spectral", "fv", "all", "cancel"],
-                default="all",
-            )
-            if hpc_choice != "cancel":
-                dry_run = Prompt.ask(
-                    "  [bold]Dry run?[/bold]",
-                    choices=["yes", "no"],
-                    default="yes",
-                ) == "yes"
-                hpc_submit(hpc_choice, dry_run=dry_run, console=console)
-                Prompt.ask("\n[dim]Press Enter to continue...[/dim]")
-            continue
+        # Find the action for this choice
+        for name, action in menu_items:
+            if name == choice:
+                if action == "hpc":
+                    # HPC submenu with arrow navigation
+                    console.print()
+                    solver = questionary.select(
+                        "Which solver?",
+                        choices=["all", "spectral", "fv", "← Cancel"],
+                    ).ask()
 
-        # Find and execute the action
-        for key, _, _, action in menu_items:
-            if key == choice and action:
-                console.print()
-                action()
-                Prompt.ask("\n[dim]Press Enter to continue...[/dim]")
+                    if solver and solver != "← Cancel":
+                        dry_run = questionary.confirm(
+                            "Dry run (preview only)?",
+                            default=True,
+                        ).ask()
+                        if dry_run is not None:
+                            hpc_submit(solver, dry_run=dry_run, console=console)
+                            input("\nPress Enter to continue...")
+                elif action:
+                    console.print()
+                    action()
+                    input("\nPress Enter to continue...")
                 break
 
 
