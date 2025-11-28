@@ -13,50 +13,32 @@ class Job:
     name: str
     queue: str
     status: str
-    exec_host: str
+    cores: str
+    start_time: str
     elapsed: str
-    requested: str
 
 
 def get_jobs() -> list[Job]:
     """Fetch current jobs from bstat (preferred) or bjobs."""
-    # Try bstat first - it has elapsed/requested time
+    # Try bstat first - it shows elapsed time nicely
+    # Format: JOBID USER QUEUE JOB_NAME NALLOC STAT START_TIME ELAPSED
     try:
         result = subprocess.run(["bstat"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0 and result.stdout.strip():
             jobs = []
             lines = result.stdout.strip().split("\n")
-            # bstat format varies, but typically:
-            # JOBID  USER  QUEUE  JOB_NAME  HOSTS  STATUS  START_TIME  ELAPSED  REQUESTED
             for line in lines[1:]:  # Skip header
                 parts = line.split()
-                if len(parts) >= 6:
-                    # Parse based on typical bstat output
-                    job_id = parts[0]
-                    queue = parts[2]
-                    name = parts[3]
-                    status = parts[5]
-
-                    # Try to get elapsed and requested from the end
-                    elapsed = "-"
-                    requested = "-"
-
-                    # Usually last two columns are elapsed and requested time
-                    if len(parts) >= 8:
-                        # Check if last parts look like times (contain : or are numeric)
-                        if ":" in parts[-1] or parts[-1].replace(".", "").isdigit():
-                            requested = parts[-1]
-                        if len(parts) >= 9 and (":" in parts[-2] or parts[-2].replace(".", "").isdigit()):
-                            elapsed = parts[-2]
-
+                if len(parts) >= 9:
+                    # parts: [JOBID, USER, QUEUE, JOB_NAME, NALLOC, STAT, Mon, DD, HH:MM, ELAPSED]
                     jobs.append(Job(
-                        id=job_id,
-                        status=status,
-                        queue=queue,
-                        exec_host="",
-                        name=name,
-                        elapsed=elapsed,
-                        requested=requested,
+                        id=parts[0],
+                        queue=parts[2],
+                        name=parts[3],
+                        cores=parts[4],
+                        status=parts[5],
+                        start_time=f"{parts[6]} {parts[7]} {parts[8]}",  # Nov 28 19:57
+                        elapsed=parts[-1],  # Last column is elapsed
                     ))
             return jobs
     except Exception:
@@ -78,10 +60,10 @@ def get_jobs() -> list[Job]:
                         id=parts[0],
                         status=parts[2],
                         queue=parts[3],
-                        exec_host=parts[5] if parts[5] != "-" else "",
                         name=parts[6],
+                        cores="-",
+                        start_time="-",
                         elapsed="-",
-                        requested="-",
                     ))
             return jobs
     except Exception:
@@ -266,22 +248,22 @@ def monitor():
 
             if view in ("all", "running", "pending"):
                 # Full width job view
-                hdr = f"{'ID':<10} {'Name':<40} {'Queue':<8} {'Status':<8} {'Elapsed':<12} {'Requested':<12}"
+                hdr = f"{'ID':<10} {'Name':<30} {'Queue':<6} {'#':<4} {'Status':<6} {'Started':<14} {'Elapsed':<10}"
                 print(term.bold + hdr[:term.width] + term.normal)
                 print(term.bright_black + "─" * term.width + term.normal)
 
                 max_rows = term.height - 8
                 for i, job in enumerate(jobs[:max_rows]):
-                    name = job.name[:38] + ".." if len(job.name) > 40 else job.name
+                    name = job.name[:28] + ".." if len(job.name) > 30 else job.name
 
                     if job.status == "RUN":
-                        status = term.green + f"{job.status:<8}" + term.normal
+                        status = term.green + f"{job.status:<6}" + term.normal
                     elif job.status == "PEND":
-                        status = term.yellow + f"{job.status:<8}" + term.normal
+                        status = term.yellow + f"{job.status:<6}" + term.normal
                     else:
-                        status = term.bright_black + f"{job.status:<8}" + term.normal
+                        status = term.bright_black + f"{job.status:<6}" + term.normal
 
-                    row = f"{job.id:<10} {name:<40} {job.queue:<8} {status} {job.elapsed:<12} {job.requested:<12}"
+                    row = f"{job.id:<10} {name:<30} {job.queue:<6} {job.cores:<4} {status} {job.start_time:<14} {job.elapsed:<10}"
 
                     if i == selected:
                         print(term.reverse + row[:term.width] + term.normal)
