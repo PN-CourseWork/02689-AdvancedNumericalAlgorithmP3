@@ -14,33 +14,29 @@ class Job:
     queue: str
     status: str
     exec_host: str
-    memory: str
-    run_time: str
-    time_limit: str
 
 
 def get_jobs() -> list[Job]:
     """Fetch current jobs from bjobs."""
     try:
-        # bjobs fields: jobid stat queue exec_host job_name memlimit run_time time_left
+        # Simple bjobs call - most compatible
         result = subprocess.run(
-            ["bjobs", "-o", "jobid stat queue exec_host job_name memlimit run_time time_left", "-noheader"],
+            ["bjobs", "-w"],  # Wide format
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0 and result.stdout.strip():
             jobs = []
-            for line in result.stdout.strip().split("\n"):
+            lines = result.stdout.strip().split("\n")
+            for line in lines[1:]:  # Skip header
                 parts = line.split()
-                if len(parts) >= 5:
+                if len(parts) >= 7:
+                    # Format: JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME ...
                     jobs.append(Job(
                         id=parts[0],
-                        status=parts[1],
-                        queue=parts[2],
-                        exec_host=parts[3] if parts[3] != "-" else "",
-                        name=parts[4],
-                        memory=parts[5] if len(parts) > 5 and parts[5] != "-" else "-",
-                        run_time=parts[6] if len(parts) > 6 and parts[6] != "-" else "-",
-                        time_limit=parts[7] if len(parts) > 7 and parts[7] != "-" else "-",
+                        status=parts[2],
+                        queue=parts[3],
+                        exec_host=parts[5] if parts[5] != "-" else "",
+                        name=parts[6],
                     ))
             return jobs
     except Exception:
@@ -60,9 +56,6 @@ def get_jobs() -> list[Job]:
                         queue=parts[2] if len(parts) > 2 else "",
                         exec_host="",
                         name=parts[3] if len(parts) > 3 else "",
-                        memory="-",
-                        run_time="-",
-                        time_limit="-",
                     ))
             return jobs
     except Exception:
@@ -93,26 +86,54 @@ def get_queue_info() -> list[str]:
     return lines
 
 
-def get_job_output(job_id: str, num_lines: int = 30) -> list[str]:
-    """Get tail of job output."""
+def get_job_details(job_id: str) -> list[str]:
+    """Get detailed job information using bjobs -l."""
+    lines = []
     try:
+        # Get full job details
         result = subprocess.run(
-            ["bjobs", "-o", "output_file", "-noheader", job_id],
+            ["bjobs", "-l", job_id],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode == 0 and result.stdout.strip():
-            output_file = result.stdout.strip()
-            if output_file and output_file != "-":
+            lines.append("=== Job Details ===")
+            lines.append("")
+            # bjobs -l output has weird formatting, clean it up
+            for line in result.stdout.split("\n"):
+                # Remove excessive whitespace but keep structure
+                cleaned = " ".join(line.split())
+                if cleaned:
+                    lines.append(cleaned)
+            lines.append("")
+    except Exception as e:
+        lines.append(f"Error getting job details: {e}")
+
+    # Try to get output file content
+    try:
+        # First find the output file
+        peek = subprocess.run(
+            ["bjobs", "-o", "output_file", "-noheader", job_id],
+            capture_output=True, text=True, timeout=10
+        )
+        if peek.returncode == 0:
+            output_file = peek.stdout.strip()
+            if output_file and output_file not in ("-", ""):
+                lines.append("=== Output File ===")
+                lines.append(f"File: {output_file}")
+                lines.append("")
+                # Try to tail the file
                 tail = subprocess.run(
-                    ["tail", "-n", str(num_lines), output_file],
+                    ["tail", "-n", "50", output_file],
                     capture_output=True, text=True, timeout=10
                 )
                 if tail.returncode == 0:
-                    return [f"=== {output_file} ===", ""] + tail.stdout.split("\n")
-                return [f"Cannot read: {output_file}"]
-        return ["No output file found"]
-    except Exception as e:
-        return [f"Error: {e}"]
+                    lines.extend(tail.stdout.split("\n"))
+                else:
+                    lines.append("(file not yet available or not readable)")
+    except Exception:
+        pass
+
+    return lines if lines else ["No information available"]
 
 
 def kill_job(job_id: str) -> tuple[bool, str]:
@@ -219,23 +240,23 @@ def monitor():
 
             if view in ("all", "running", "pending"):
                 # Full width job view
-                hdr = f"{'ID':<10} {'Name':<35} {'Queue':<8} {'Status':<6} {'Host':<12} {'Mem':<8} {'Elapsed':<12} {'Limit':<10}"
+                hdr = f"{'ID':<12} {'Name':<50} {'Queue':<10} {'Status':<8} {'Host':<20}"
                 print(term.bold + hdr[:term.width] + term.normal)
                 print(term.bright_black + "─" * term.width + term.normal)
 
                 max_rows = term.height - 8
                 for i, job in enumerate(jobs[:max_rows]):
-                    name = job.name[:33] + ".." if len(job.name) > 35 else job.name
-                    host = job.exec_host[:10] + ".." if len(job.exec_host) > 12 else job.exec_host
+                    name = job.name[:48] + ".." if len(job.name) > 50 else job.name
+                    host = job.exec_host[:18] + ".." if len(job.exec_host) > 20 else (job.exec_host or "-")
 
                     if job.status == "RUN":
-                        status = term.green + f"{job.status:<6}" + term.normal
+                        status = term.green + f"{job.status:<8}" + term.normal
                     elif job.status == "PEND":
-                        status = term.yellow + f"{job.status:<6}" + term.normal
+                        status = term.yellow + f"{job.status:<8}" + term.normal
                     else:
-                        status = term.bright_black + f"{job.status:<6}" + term.normal
+                        status = term.bright_black + f"{job.status:<8}" + term.normal
 
-                    row = f"{job.id:<10} {name:<35} {job.queue:<8} {status} {host:<12} {job.memory:<8} {job.run_time:<12} {job.time_limit:<10}"
+                    row = f"{job.id:<12} {name:<50} {job.queue:<10} {status} {host:<20}"
 
                     if i == selected:
                         print(term.reverse + row[:term.width] + term.normal)
@@ -259,7 +280,7 @@ def monitor():
             else:
                 print()
 
-            help_text = " [h/l] Tabs  [j/k] Navigate  [t] View output  [d] Kill  [D] Kill All  [r] Refresh  [q] Quit"
+            help_text = " [h/l] Tabs  [j/k] Navigate  [t] Job details  [d] Kill  [D] Kill All  [r] Refresh  [q] Quit"
             print(term.bright_black + help_text[:term.width] + term.normal)
 
             # Draw floating modal if open
@@ -287,8 +308,8 @@ def monitor():
                         modal_scroll = 0
                     elif key.lower() == 'r':  # Refresh output
                         if jobs and 0 <= selected < len(jobs):
-                            output_lines = get_job_output(jobs[selected].id, num_lines=200)
-                            message = "Output refreshed"
+                            output_lines = get_job_details(jobs[selected].id)
+                            message = "Refreshed"
                     continue
 
                 if key.lower() == 'q':
@@ -342,9 +363,9 @@ def monitor():
                     all_jobs = get_jobs()
                     selected = 0
 
-                # Open output modal
+                # Open job details modal
                 elif key == 't' and jobs and view in ("all", "running", "pending"):
-                    output_lines = get_job_output(jobs[selected].id, num_lines=200)
+                    output_lines = get_job_details(jobs[selected].id)
                     modal_scroll = 0
                     modal_open = True
 
