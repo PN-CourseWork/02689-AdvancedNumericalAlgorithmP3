@@ -137,61 +137,125 @@ def monitor():
     term = Terminal()
     selected = 0
     message = ""
-    view = "jobs"  # jobs, output, resources
+    views = ["all", "running", "pending", "resources"]
+    view_idx = 0
     output_lines: list[str] = []
     resource_lines: list[str] = []
-    scroll_offset = 0
+    output_scroll = 0
+    show_output = False  # Toggle for split view
 
-    jobs = get_jobs()
+    all_jobs = get_jobs()
 
     with term.fullscreen(), term.cbreak(), term.hidden_cursor():
         while True:
+            view = views[view_idx]
+
+            # Filter jobs based on view
+            if view == "running":
+                jobs = [j for j in all_jobs if j.status == "RUN"]
+            elif view == "pending":
+                jobs = [j for j in all_jobs if j.status == "PEND"]
+            else:
+                jobs = all_jobs
+
             # Draw screen
             print(term.home + term.clear)
 
-            # Header
-            header = f" HPC Monitor | View: {view.upper()} | {len(jobs)} jobs "
-            print(term.center(term.bold + term.cyan + header + term.normal))
+            # Header with tabs
+            tabs = []
+            for i, v in enumerate(views):
+                label = v.upper()
+                if v == "all":
+                    label = f"ALL ({len(all_jobs)})"
+                elif v == "running":
+                    label = f"RUN ({len([j for j in all_jobs if j.status == 'RUN'])})"
+                elif v == "pending":
+                    label = f"PEND ({len([j for j in all_jobs if j.status == 'PEND'])})"
+
+                if i == view_idx:
+                    tabs.append(term.reverse + f" {label} " + term.normal)
+                else:
+                    tabs.append(f" {label} ")
+
+            tab_line = " │ ".join(tabs)
+            output_indicator = "  " + term.green + "[OUTPUT]" + term.normal if show_output else ""
+            print(term.bold + term.cyan + " HPC Monitor " + term.normal + "  " + tab_line + output_indicator)
             print(term.cyan + "─" * term.width + term.normal)
 
-            if view == "jobs":
-                # Column headers
-                hdr = f"{'ID':<10} {'Name':<35} {'Queue':<8} {'Status':<6} {'Host':<12} {'Mem':<8} {'CPU':<10} {'Started':<16}"
-                print(term.bold + hdr[:term.width] + term.normal)
-                print(term.bright_black + "─" * term.width + term.normal)
-
-                # Job rows
+            if view in ("all", "running", "pending"):
                 max_rows = term.height - 8
-                for i, job in enumerate(jobs[:max_rows]):
-                    name = job.name[:33] + ".." if len(job.name) > 35 else job.name
-                    host = job.exec_host[:10] + ".." if len(job.exec_host) > 12 else job.exec_host
 
-                    if job.status == "RUN":
-                        status = term.green + f"{job.status:<6}" + term.normal
-                    elif job.status == "PEND":
-                        status = term.yellow + f"{job.status:<6}" + term.normal
-                    else:
-                        status = term.bright_black + f"{job.status:<6}" + term.normal
+                if show_output:
+                    # Split view: jobs on left, output on right
+                    left_width = term.width // 2 - 1
+                    right_width = term.width - left_width - 3
 
-                    row = f"{job.id:<10} {name:<35} {job.queue:<8} {status} {host:<12} {job.memory:<8} {job.cpu_time:<10} {job.start_time:<16}"
+                    # Column headers (compact for split view)
+                    hdr = f"{'ID':<8} {'Name':<20} {'St':<4}"
+                    out_hdr = " Output"
+                    print(term.bold + hdr[:left_width] + term.normal + " │ " + term.bold + out_hdr + term.normal)
+                    print(term.bright_black + "─" * left_width + "─┼─" + "─" * right_width + term.normal)
 
-                    if i == selected:
-                        print(term.reverse + row[:term.width] + term.normal)
-                    else:
-                        print(row[:term.width])
+                    # Prepare output lines for right pane
+                    visible_output = output_lines[output_scroll:output_scroll + max_rows] if output_lines else ["(press 't' on a job)"]
 
-                if not jobs:
-                    print(term.bright_black + "  No running jobs" + term.normal)
+                    for i in range(max_rows):
+                        # Left side: job row
+                        if i < len(jobs):
+                            job = jobs[i]
+                            name = job.name[:18] + ".." if len(job.name) > 20 else job.name
 
-            elif view == "output":
-                max_rows = term.height - 6
-                visible = output_lines[scroll_offset:scroll_offset + max_rows]
-                for line in visible:
-                    print(line[:term.width])
+                            if job.status == "RUN":
+                                status = term.green + f"{job.status:<4}" + term.normal
+                            elif job.status == "PEND":
+                                status = term.yellow + f"{job.status:<4}" + term.normal
+                            else:
+                                status = term.bright_black + f"{job.status:<4}" + term.normal
+
+                            left = f"{job.id:<8} {name:<20} {status}"
+                            if i == selected:
+                                left = term.reverse + f"{job.id:<8} {name:<20} " + term.normal + status
+                        else:
+                            left = " " * left_width
+
+                        # Right side: output line
+                        if i < len(visible_output):
+                            right = visible_output[i][:right_width]
+                        else:
+                            right = ""
+
+                        print(f"{left:<{left_width}} │ {right}")
+
+                else:
+                    # Full width job view
+                    hdr = f"{'ID':<10} {'Name':<35} {'Queue':<8} {'Status':<6} {'Host':<12} {'Mem':<8} {'CPU':<10} {'Started':<16}"
+                    print(term.bold + hdr[:term.width] + term.normal)
+                    print(term.bright_black + "─" * term.width + term.normal)
+
+                    for i, job in enumerate(jobs[:max_rows]):
+                        name = job.name[:33] + ".." if len(job.name) > 35 else job.name
+                        host = job.exec_host[:10] + ".." if len(job.exec_host) > 12 else job.exec_host
+
+                        if job.status == "RUN":
+                            status = term.green + f"{job.status:<6}" + term.normal
+                        elif job.status == "PEND":
+                            status = term.yellow + f"{job.status:<6}" + term.normal
+                        else:
+                            status = term.bright_black + f"{job.status:<6}" + term.normal
+
+                        row = f"{job.id:<10} {name:<35} {job.queue:<8} {status} {host:<12} {job.memory:<8} {job.cpu_time:<10} {job.start_time:<16}"
+
+                        if i == selected:
+                            print(term.reverse + row[:term.width] + term.normal)
+                        else:
+                            print(row[:term.width])
+
+                    if not jobs:
+                        print(term.bright_black + "  No jobs" + term.normal)
 
             elif view == "resources":
                 max_rows = term.height - 6
-                visible = resource_lines[scroll_offset:scroll_offset + max_rows]
+                visible = resource_lines[output_scroll:output_scroll + max_rows]
                 for line in visible:
                     print(line[:term.width])
 
@@ -203,7 +267,10 @@ def monitor():
             else:
                 print()
 
-            help_text = " [j/k] Navigate  [d] Kill  [D] Kill All  [t] Tail  [o] Output  [R] Resources  [r] Refresh  [q] Quit"
+            if show_output:
+                help_text = " [h/l] Tabs  [j/k] Jobs  [J/K] Scroll output  [t] Close  [d] Kill  [r] Refresh  [q] Quit"
+            else:
+                help_text = " [h/l] Tabs  [j/k] Navigate  [t] Show output  [d] Kill  [D] Kill All  [r] Refresh  [q] Quit"
             print(term.bright_black + help_text[:term.width] + term.normal)
 
             # Input with timeout for auto-refresh
@@ -216,69 +283,91 @@ def monitor():
                     break
 
                 elif key.lower() == 'r':
-                    jobs = get_jobs()
+                    all_jobs = get_jobs()
                     selected = min(selected, max(0, len(jobs) - 1))
                     if view == "resources":
                         resource_lines = get_queue_info()
+                    # Refresh output if showing
+                    if show_output and jobs and 0 <= selected < len(jobs):
+                        output_lines = get_job_output(jobs[selected].id, num_lines=100)
                     message = "Refreshed"
 
+                # Tab navigation with h/l or left/right arrows
+                elif key == 'h' or key.name == 'KEY_LEFT':
+                    view_idx = (view_idx - 1) % len(views)
+                    selected = 0
+                    output_scroll = 0
+                    if views[view_idx] == "resources":
+                        resource_lines = get_queue_info()
+
+                elif key == 'l' or key.name == 'KEY_RIGHT':
+                    view_idx = (view_idx + 1) % len(views)
+                    selected = 0
+                    output_scroll = 0
+                    if views[view_idx] == "resources":
+                        resource_lines = get_queue_info()
+
+                # Scroll output pane with J/K (uppercase) or Shift+arrows
+                elif key == 'J' or key.name == 'KEY_SDOWN':
+                    if show_output:
+                        output_scroll = min(output_scroll + 1, max(0, len(output_lines) - 5))
+                    elif view == "resources":
+                        output_scroll += 1
+
+                elif key == 'K' or key.name == 'KEY_SUP':
+                    if show_output or view == "resources":
+                        output_scroll = max(0, output_scroll - 1)
+
+                # Vertical navigation with j/k or up/down arrows
                 elif key == 'j' or key.name == 'KEY_DOWN':
-                    if view == "jobs":
+                    if view in ("all", "running", "pending"):
+                        old_selected = selected
                         selected = min(selected + 1, len(jobs) - 1) if jobs else 0
-                    else:
-                        scroll_offset += 1
+                        # Auto-update output when selection changes
+                        if show_output and selected != old_selected and jobs:
+                            output_lines = get_job_output(jobs[selected].id, num_lines=100)
+                            output_scroll = 0
+                    elif view == "resources":
+                        output_scroll += 1
 
                 elif key == 'k' or key.name == 'KEY_UP':
-                    if view == "jobs":
+                    if view in ("all", "running", "pending"):
+                        old_selected = selected
                         selected = max(selected - 1, 0)
-                    else:
-                        scroll_offset = max(0, scroll_offset - 1)
+                        # Auto-update output when selection changes
+                        if show_output and selected != old_selected and jobs:
+                            output_lines = get_job_output(jobs[selected].id, num_lines=100)
+                            output_scroll = 0
+                    elif view == "resources":
+                        output_scroll = max(0, output_scroll - 1)
 
-                elif key == 'd' and jobs and view == "jobs":
+                elif key == 'd' and jobs and view in ("all", "running", "pending"):
                     job = jobs[selected]
                     ok, msg = kill_job(job.id)
                     message = f"Killed: {job.name}" if ok else f"Failed: {msg}"
-                    jobs = get_jobs()
+                    all_jobs = get_jobs()
                     selected = min(selected, max(0, len(jobs) - 1))
 
                 elif key == 'D':
                     ok, msg = kill_all_jobs()
                     message = "Killed all jobs" if ok else f"Failed: {msg}"
-                    jobs = get_jobs()
+                    all_jobs = get_jobs()
                     selected = 0
 
-                elif key == 't' and jobs:
-                    job = jobs[selected]
-                    output_lines = get_job_output(job.id)
-                    scroll_offset = 0
-                    view = "output"
-                    message = f"Output: {job.name}"
-
-                elif key == 'o':
-                    view = "output"
-                    scroll_offset = 0
-
-                elif key == 'R':
-                    resource_lines = get_queue_info()
-                    scroll_offset = 0
-                    view = "resources"
-
-                elif key == '1':
-                    view = "jobs"
-                    scroll_offset = 0
-
-                elif key == '2':
-                    view = "output"
-                    scroll_offset = 0
-
-                elif key == '3':
-                    resource_lines = get_queue_info()
-                    view = "resources"
-                    scroll_offset = 0
+                # Toggle output pane
+                elif key == 't' and view in ("all", "running", "pending"):
+                    if show_output:
+                        show_output = False
+                        message = ""
+                    elif jobs:
+                        show_output = True
+                        output_lines = get_job_output(jobs[selected].id, num_lines=100)
+                        output_scroll = 0
+                        message = f"Output: {jobs[selected].name}"
 
             else:
                 # Auto-refresh on timeout
-                jobs = get_jobs()
+                all_jobs = get_jobs()
                 selected = min(selected, max(0, len(jobs) - 1))
 
 
