@@ -12,26 +12,16 @@ def get_repo_root() -> Path:
 
     Returns the repository root by detecting the presence of pyproject.toml.
     Works from any subdirectory of the repository.
-
-    Returns
-    -------
-    Path
-        Absolute path to the repository root
-
     """
-    # Start from this script's location
     current = Path(__file__).resolve().parent
 
-    # Walk up until we find pyproject.toml (marks repo root)
     for parent in [current] + list(current.parents):
         if (parent / "pyproject.toml").exists():
             return parent
 
-    # Fallback: assume script is in repo root
     return current
 
 
-# Get repo root once at module level
 REPO_ROOT = get_repo_root()
 
 
@@ -66,7 +56,6 @@ def run_scripts(scripts):
     fail_count = 0
 
     for script in scripts:
-        # Display path relative to repo root
         display_path = script.relative_to(REPO_ROOT)
 
         try:
@@ -75,7 +64,7 @@ def run_scripts(scripts):
                 capture_output=True,
                 text=True,
                 timeout=180,
-                cwd=str(REPO_ROOT),  # Run from repo root
+                cwd=str(REPO_ROOT),
             )
 
             if result.returncode == 0:
@@ -90,6 +79,7 @@ def run_scripts(scripts):
         except subprocess.TimeoutExpired:
             print(f"  ✗ {display_path} (timeout)")
             fail_count += 1
+
         except Exception as e:
             print(f"  ✗ {display_path} ({e})")
             fail_count += 1
@@ -175,7 +165,6 @@ def clean_all():
     cleaned = []
     failed = []
 
-    # List of paths to clean (relative to repo root)
     clean_targets = [
         REPO_ROOT / "docs" / "build",
         REPO_ROOT / "docs" / "source" / "example_gallery",
@@ -187,7 +176,6 @@ def clean_all():
         REPO_ROOT / ".mypy_cache",
     ]
 
-    # Clean directories
     for target_path in clean_targets:
         if target_path.exists():
             try:
@@ -196,7 +184,6 @@ def clean_all():
             except Exception as e:
                 failed.append(f"{target_path.relative_to(REPO_ROOT)}: {e}")
 
-    # Clean __pycache__ directories
     for pycache in REPO_ROOT.rglob("__pycache__"):
         try:
             shutil.rmtree(pycache)
@@ -204,7 +191,6 @@ def clean_all():
         except Exception as e:
             failed.append(f"{pycache.relative_to(REPO_ROOT)}: {e}")
 
-    # Clean .pyc files
     for pyc in REPO_ROOT.rglob("*.pyc"):
         try:
             pyc.unlink()
@@ -212,11 +198,10 @@ def clean_all():
         except Exception as e:
             failed.append(f"{pyc.relative_to(REPO_ROOT)}: {e}")
 
-    # Clean data directory (but keep README.md)
     data_dir = REPO_ROOT / "data"
     if data_dir.exists():
         for item in data_dir.iterdir():
-            if item.name != "README.md" and item.name != ".gitkeep":
+            if item.name not in ("README.md", ".gitkeep"):
                 try:
                     if item.is_dir():
                         shutil.rmtree(item)
@@ -226,12 +211,11 @@ def clean_all():
                 except Exception as e:
                     failed.append(f"{item.relative_to(REPO_ROOT)}: {e}")
 
-    # Print results
     if cleaned:
         print(f"  ✓ Cleaned {len(cleaned)} items")
     if failed:
         print(f"  ✗ Failed to clean {len(failed)} items:")
-        for fail in failed[:5]:  # Show first 5 failures
+        for fail in failed[:5]:
             print(f"    - {fail}")
     if not cleaned and not failed:
         print("  Nothing to clean")
@@ -239,7 +223,6 @@ def clean_all():
 
 
 def ruff_check():
-    """Run ruff linter."""
     print("\nRunning ruff check...")
 
     try:
@@ -262,19 +245,12 @@ def ruff_check():
             print(f"  ✗ Found issues (exit code {result.returncode})\n")
             return False
 
-    except FileNotFoundError:
-        print("  ✗ ruff not found. Install with: uv sync\n")
-        return False
-    except subprocess.TimeoutExpired:
-        print("  ✗ ruff check timed out\n")
-        return False
     except Exception as e:
         print(f"  ✗ ruff check failed: {e}\n")
         return False
 
 
 def ruff_format():
-    """Run ruff formatter."""
     print("\nRunning ruff format...")
 
     try:
@@ -297,88 +273,86 @@ def ruff_format():
             print(f"  ✗ Formatting failed (exit code {result.returncode})\n")
             return False
 
-    except FileNotFoundError:
-        print("  ✗ ruff not found. Install with: uv sync\n")
-        return False
-    except subprocess.TimeoutExpired:
-        print("  ✗ ruff format timed out\n")
-        return False
     except Exception as e:
         print(f"  ✗ ruff format failed: {e}\n")
         return False
 
 
+# ---------------------------------------------------------
+# 🚀 **NEW: HPC Submission Handler**
+# ---------------------------------------------------------
+def submit_hpc_jobs(mode: str):
+    """Submit HPC job packs."""
+    pack_dir = REPO_ROOT / "Experiments"
+
+    mapping = {
+        "spectral": pack_dir / "Spectral-Solver" / "generate_pack.sh",
+        "fv":        pack_dir / "FV_Solver" / "generate_pack.sh",
+        "all":       None,
+    }
+
+    if mode == "all":
+        submit_hpc_jobs("spectral")
+        submit_hpc_jobs("fv")
+        return
+
+    script = mapping[mode]
+
+    if not script.exists():
+        print(f"  ✗ {mode}: generate_pack.sh not found at {script}")
+        return
+
+    print(f"  → Submitting HPC job pack for: {mode}")
+
+    subprocess.run(["bash", str(script)], cwd=str(REPO_ROOT))
+    print(f"  ✓ HPC jobs submitted for {mode}\n")
+
+
+# ---------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------
 def main():
-    """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Run example scripts and manage documentation",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python main.py --compute                     Run data generation scripts
-  python main.py --plot                        Run plotting scripts
-  python main.py --build-docs                  Build Sphinx HTML documentation
-  python main.py --clean-docs                  Clean built documentation
-  python main.py --clean-all                   Clean all generated files and caches
-  python main.py --lint                        Check code with ruff
-  python main.py --format                      Format code with ruff
-  python main.py --compute --plot              Run all example scripts
-        """,
+        description="Run scripts, docs, cleaning, and HPC job submission"
     )
 
-    parser.add_argument(
-        "--compute", action="store_true", help="Run data generation (compute) scripts"
-    )
-    parser.add_argument("--plot", action="store_true", help="Run plotting scripts")
-    parser.add_argument(
-        "--build-docs", action="store_true", help="Build Sphinx HTML documentation"
-    )
-    parser.add_argument(
-        "--clean-docs", action="store_true", help="Clean built Sphinx documentation"
-    )
-    parser.add_argument(
-        "--clean-all", action="store_true", help="Clean all generated files and caches"
-    )
-    parser.add_argument("--lint", action="store_true", help="Run ruff linter")
-    parser.add_argument("--format", action="store_true", help="Run ruff formatter")
-    parser.add_argument(
-    "--hpc",
-    choices=["spectral", "fv", "all"],
-    help="Submit HPC job packs")
+    parser.add_argument("--compute", action="store_true")
+    parser.add_argument("--plot", action="store_true")
+    parser.add_argument("--build-docs", action="store_true")
+    parser.add_argument("--clean-docs", action="store_true")
+    parser.add_argument("--clean-all", action="store_true")
+    parser.add_argument("--lint", action="store_true")
+    parser.add_argument("--format", action="store_true")
 
-    # Show help if no arguments provided
+    parser.add_argument(
+        "--hpc",
+        choices=["spectral", "fv", "all"],
+        help="Submit HPC job packs"
+    )
+
     if len(sys.argv) == 1:
         parser.print_help()
-        print("\n Error: No arguments provided. Please specify at least one option.\n")
         sys.exit(1)
 
     args = parser.parse_args()
 
-    # Handle cleaning commands
+    if args.hpc:
+        submit_hpc_jobs(args.hpc)
+        return
+
     if args.clean_all:
         clean_all()
-
     if args.clean_docs:
         clean_docs()
-
-    # Handle code quality commands
     if args.lint:
         ruff_check()
-
     if args.format:
         ruff_format()
-
-    # Handle documentation commands
     if args.build_docs:
         build_docs()
 
-    # Handle example scripts
     if args.compute or args.plot:
         compute_scripts, plot_scripts = discover_scripts()
-        print(
-            f"\nFound {len(compute_scripts)} compute scripts and {len(plot_scripts)} plot scripts"
-        )
-
         if args.compute:
             run_scripts(compute_scripts)
         if args.plot:
