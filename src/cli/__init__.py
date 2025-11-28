@@ -8,6 +8,8 @@ from .actions import (
     ruff_check,
     ruff_format,
     hpc_submit,
+    hpc_status,
+    hpc_kill,
 )
 from .interactive import interactive
 
@@ -19,5 +21,7 @@ __all__ = [
     "ruff_check",
     "ruff_format",
     "hpc_submit",
+    "hpc_status",
+    "hpc_kill",
     "interactive",
 ]

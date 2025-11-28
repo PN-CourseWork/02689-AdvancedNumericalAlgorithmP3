@@ -159,6 +159,40 @@ def ruff_format():
     )
 
 
+def hpc_status():
+    """Check status of running HPC jobs."""
+    header("HPC Job Status")
+    result = subprocess.run(["bstat"], capture_output=True, text=True)
+    if result.returncode == 0:
+        if result.stdout.strip():
+            print(result.stdout)
+        else:
+            dim("No running jobs")
+    else:
+        fail(f"bstat failed: {result.stderr}")
+
+
+def hpc_kill(target: str = "all"):
+    """Kill HPC jobs.
+
+    Args:
+        target: Job name, job ID, or "all" to kill all jobs
+    """
+    header(f"Killing jobs: {target}")
+
+    if target == "all":
+        result = subprocess.run(["bkill", "0"], capture_output=True, text=True)
+    elif target.isdigit():
+        result = subprocess.run(["bkill", target], capture_output=True, text=True)
+    else:
+        result = subprocess.run(["bkill", "-J", target], capture_output=True, text=True)
+
+    if result.returncode == 0:
+        ok(result.stdout.strip() if result.stdout.strip() else "Done")
+    else:
+        fail(result.stderr.strip() if result.stderr.strip() else "Failed")
+
+
 def hpc_submit(experiment: str = "all", dry_run: bool = True):
     """Submit HPC jobs from YAML configs."""
     from .hpc import (

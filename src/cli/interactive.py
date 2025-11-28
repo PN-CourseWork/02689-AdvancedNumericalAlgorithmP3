@@ -11,6 +11,8 @@ from .actions import (
     ruff_check,
     ruff_format,
     hpc_submit,
+    hpc_status,
+    hpc_kill,
     REPO_ROOT,
 )
 
@@ -143,26 +145,32 @@ def menu_hpc():
     from .hpc import discover_experiments, get_experiment_name
 
     while True:
-        # Discover available experiments
-        experiments = discover_experiments()
-        if not experiments:
-            console.print("  [dim]No experiments with jobs.yaml found[/dim]")
-            wait()
-            break
-
-        exp_names = ["all"] + [get_experiment_name(e) for e in experiments]
-
         choice = select(
             "HPC:",
             [
+                "Job status",
                 "Preview jobs (dry run)",
                 "Submit jobs",
+                "Kill job",
+                "Kill all jobs",
                 "← Back",
             ],
         )
 
-        if choice in ("Submit jobs", "Preview jobs (dry run)"):
+        if choice == "Job status":
+            hpc_status()
+            wait()
+
+        elif choice in ("Submit jobs", "Preview jobs (dry run)"):
+            experiments = discover_experiments()
+            if not experiments:
+                console.print("  [dim]No experiments with jobs.yaml found[/dim]")
+                wait()
+                continue
+
+            exp_names = ["all"] + [get_experiment_name(e) for e in experiments]
             experiment = select("Experiment:", exp_names + ["← Back"])
+
             if experiment and experiment != "← Back":
                 dry_run = choice == "Preview jobs (dry run)"
                 if not dry_run:
@@ -170,6 +178,22 @@ def menu_hpc():
                         continue
                 hpc_submit(experiment, dry_run)
                 wait()
+
+        elif choice == "Kill job":
+            target = questionary.text(
+                "Job name or ID:",
+                style=STYLE,
+            ).ask()
+            if target:
+                if confirm(f"Kill job '{target}'?", default=False):
+                    hpc_kill(target)
+                    wait()
+
+        elif choice == "Kill all jobs":
+            if confirm("Kill ALL your jobs?", default=False):
+                hpc_kill("all")
+                wait()
+
         else:
             break
 
