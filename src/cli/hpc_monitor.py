@@ -80,12 +80,9 @@ class StatusBar(Static):
 class HPCMonitorApp(App):
     """HPC Job Monitor TUI."""
 
-    DARK = True
-
     CSS = """
     #job-table {
         height: 1fr;
-        border: solid $primary;
     }
 
     #status {
