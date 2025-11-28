@@ -43,6 +43,7 @@ dependencies = [
   # petsc4py is installed separately via pip (see setup.sh)
   "mlflow>=3.6.0",
   "psutil>=7.1.3",
+  "rich>=13.0.0",
 ]
 
 [tool.setuptools]

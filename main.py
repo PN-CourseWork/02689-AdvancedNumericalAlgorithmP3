@@ -54,13 +54,20 @@ def discover_scripts():
     return compute_scripts, plot_scripts
 
 
-def run_scripts(scripts):
+def run_scripts(scripts, console=None):
     """Run scripts sequentially and report results."""
     if not scripts:
-        print("  No scripts to run")
+        if console:
+            console.print("  No scripts to run", style="dim")
+        else:
+            print("  No scripts to run")
         return
 
-    print(f"\nRunning {len(scripts)} scripts...\n")
+    msg = f"\nRunning {len(scripts)} scripts...\n"
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     success_count = 0
     fail_count = 0
@@ -79,34 +86,62 @@ def run_scripts(scripts):
             )
 
             if result.returncode == 0:
-                print(f"  ✓ {display_path}")
+                if console:
+                    console.print(f"  [green]✓[/green] {display_path}")
+                else:
+                    print(f"  ✓ {display_path}")
                 success_count += 1
             else:
-                print(f"  ✗ {display_path} (exit {result.returncode})")
-                if result.stderr:
-                    print(f"    Error: {result.stderr[:200]}")
+                if console:
+                    console.print(
+                        f"  [red]✗[/red] {display_path} (exit {result.returncode})"
+                    )
+                    if result.stderr:
+                        console.print(f"    [dim]{result.stderr[:200]}[/dim]")
+                else:
+                    print(f"  ✗ {display_path} (exit {result.returncode})")
+                    if result.stderr:
+                        print(f"    Error: {result.stderr[:200]}")
                 fail_count += 1
 
         except subprocess.TimeoutExpired:
-            print(f"  ✗ {display_path} (timeout)")
+            if console:
+                console.print(f"  [red]✗[/red] {display_path} (timeout)")
+            else:
+                print(f"  ✗ {display_path} (timeout)")
             fail_count += 1
         except Exception as e:
-            print(f"  ✗ {display_path} ({e})")
+            if console:
+                console.print(f"  [red]✗[/red] {display_path} ({e})")
+            else:
+                print(f"  ✗ {display_path} ({e})")
             fail_count += 1
 
-    print(f"\n  Summary: {success_count} succeeded, {fail_count} failed\n")
+    summary = f"\n  Summary: {success_count} succeeded, {fail_count} failed\n"
+    if console:
+        console.print(summary)
+    else:
+        print(summary)
 
 
-def build_docs():
+def build_docs(console=None):
     """Build Sphinx documentation."""
     docs_dir = REPO_ROOT / "docs"
     source_dir = docs_dir / "source"
     build_dir = docs_dir / "build"
 
-    print("\nBuilding Sphinx documentation...")
+    msg = "\nBuilding Sphinx documentation..."
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     if not source_dir.exists():
-        print(f"  Error: Documentation source directory not found: {source_dir}")
+        err = f"  Error: Documentation source directory not found: {source_dir}"
+        if console:
+            console.print(f"  [red]{err}[/red]")
+        else:
+            print(err)
         return False
 
     try:
@@ -127,50 +162,91 @@ def build_docs():
         )
 
         if result.returncode == 0:
-            print("  ✓ Documentation built successfully")
-            print(f"  → Open: {build_dir / 'html' / 'index.html'}\n")
+            if console:
+                console.print("  [green]✓[/green] Documentation built successfully")
+                console.print(f"  → Open: {build_dir / 'html' / 'index.html'}\n")
+            else:
+                print("  ✓ Documentation built successfully")
+                print(f"  → Open: {build_dir / 'html' / 'index.html'}\n")
             return True
         else:
-            print(f"  ✗ Documentation build failed (exit {result.returncode})")
-            if result.stderr:
-                print(f"    Error: {result.stderr[:500]}")
+            if console:
+                console.print(
+                    f"  [red]✗[/red] Documentation build failed (exit {result.returncode})"
+                )
+                if result.stderr:
+                    console.print(f"    [dim]{result.stderr[:500]}[/dim]")
+            else:
+                print(f"  ✗ Documentation build failed (exit {result.returncode})")
+                if result.stderr:
+                    print(f"    Error: {result.stderr[:500]}")
             return False
 
     except subprocess.TimeoutExpired:
-        print("  ✗ Documentation build timed out")
+        if console:
+            console.print("  [red]✗[/red] Documentation build timed out")
+        else:
+            print("  ✗ Documentation build timed out")
         return False
     except FileNotFoundError:
-        print("  ✗ sphinx-build not found. Install with: uv sync")
+        if console:
+            console.print(
+                "  [red]✗[/red] sphinx-build not found. Install with: uv sync"
+            )
+        else:
+            print("  ✗ sphinx-build not found. Install with: uv sync")
         return False
     except Exception as e:
-        print(f"  ✗ Documentation build failed: {e}")
+        if console:
+            console.print(f"  [red]✗[/red] Documentation build failed: {e}")
+        else:
+            print(f"  ✗ Documentation build failed: {e}")
         return False
 
 
-def clean_docs():
+def clean_docs(console=None):
     """Clean built Sphinx documentation."""
     import shutil
 
     build_dir = REPO_ROOT / "docs" / "build"
 
-    print("\nCleaning Sphinx documentation...")
+    msg = "\nCleaning Sphinx documentation..."
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     if not build_dir.exists():
-        print(f"  No build directory found at {build_dir}")
+        if console:
+            console.print(f"  [dim]No build directory found at {build_dir}[/dim]")
+        else:
+            print(f"  No build directory found at {build_dir}")
         return
 
     try:
         shutil.rmtree(build_dir)
-        print(f"  ✓ Cleaned {build_dir.relative_to(REPO_ROOT)}\n")
+        if console:
+            console.print(
+                f"  [green]✓[/green] Cleaned {build_dir.relative_to(REPO_ROOT)}\n"
+            )
+        else:
+            print(f"  ✓ Cleaned {build_dir.relative_to(REPO_ROOT)}\n")
     except Exception as e:
-        print(f"  ✗ Failed to clean documentation: {e}\n")
+        if console:
+            console.print(f"  [red]✗[/red] Failed to clean documentation: {e}\n")
+        else:
+            print(f"  ✗ Failed to clean documentation: {e}\n")
 
 
-def clean_all():
+def clean_all(console=None):
     """Clean all generated files and caches."""
     import shutil
 
-    print("\nCleaning all generated files and caches...")
+    msg = "\nCleaning all generated files and caches..."
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     cleaned = []
     failed = []
@@ -228,17 +304,28 @@ def clean_all():
 
     # Print results
     if cleaned:
-        print(f"  ✓ Cleaned {len(cleaned)} items")
+        if console:
+            console.print(f"  [green]✓[/green] Cleaned {len(cleaned)} items")
+        else:
+            print(f"  ✓ Cleaned {len(cleaned)} items")
     if failed:
-        print(f"  ✗ Failed to clean {len(failed)} items:")
-        for fail in failed[:5]:  # Show first 5 failures
-            print(f"    - {fail}")
+        if console:
+            console.print(f"  [red]✗[/red] Failed to clean {len(failed)} items:")
+            for fail in failed[:5]:
+                console.print(f"    [dim]- {fail}[/dim]")
+        else:
+            print(f"  ✗ Failed to clean {len(failed)} items:")
+            for fail in failed[:5]:
+                print(f"    - {fail}")
     if not cleaned and not failed:
-        print("  Nothing to clean")
+        if console:
+            console.print("  [dim]Nothing to clean[/dim]")
+        else:
+            print("  Nothing to clean")
     print()
 
 
-def hpc_submit(solver: str, dry_run: bool = False):
+def hpc_submit(solver: str, dry_run: bool = False, console=None):
     """Generate and submit HPC job pack.
 
     Parameters
@@ -259,10 +346,16 @@ def hpc_submit(solver: str, dry_run: bool = False):
         pack_file = solver_dir / "jobs.pack"
 
         if not generator.exists():
-            print(f"  ✗ {name}: generate_pack.sh not found")
+            if console:
+                console.print(f"  [red]✗[/red] {name}: generate_pack.sh not found")
+            else:
+                print(f"  ✗ {name}: generate_pack.sh not found")
             continue
 
-        print(f"\n{name}:")
+        if console:
+            console.print(f"\n[bold]{name}:[/bold]")
+        else:
+            print(f"\n{name}:")
 
         # Generate pack file
         try:
@@ -275,19 +368,31 @@ def hpc_submit(solver: str, dry_run: bool = False):
             jobs = result.stdout.strip()
 
             if not jobs:
-                print("  ✗ No jobs generated")
+                if console:
+                    console.print("  [red]✗[/red] No jobs generated")
+                else:
+                    print("  ✗ No jobs generated")
                 continue
 
-            job_count = len(jobs.split('\n'))
-            print(f"  Generated {job_count} jobs")
+            job_count = len(jobs.split("\n"))
+            if console:
+                console.print(f"  Generated {job_count} jobs")
+            else:
+                print(f"  Generated {job_count} jobs")
 
             if dry_run:
-                print("\n  Jobs to submit:")
-                for line in jobs.split('\n'):
+                if console:
+                    console.print("\n  [dim]Jobs to submit:[/dim]")
+                else:
+                    print("\n  Jobs to submit:")
+                for line in jobs.split("\n"):
                     # Extract job name from -J flag
                     parts = line.split()
                     job_name = parts[1] if len(parts) > 1 else "unknown"
-                    print(f"    - {job_name}")
+                    if console:
+                        console.print(f"    [cyan]- {job_name}[/cyan]")
+                    else:
+                        print(f"    - {job_name}")
             else:
                 # Write pack file
                 pack_file.write_text(jobs)
@@ -301,20 +406,39 @@ def hpc_submit(solver: str, dry_run: bool = False):
                 )
 
                 if result.returncode == 0:
-                    print(f"  ✓ Submitted {job_count} jobs")
-                    print(f"  {result.stdout.strip()}")
+                    if console:
+                        console.print(f"  [green]✓[/green] Submitted {job_count} jobs")
+                        console.print(f"  {result.stdout.strip()}")
+                    else:
+                        print(f"  ✓ Submitted {job_count} jobs")
+                        print(f"  {result.stdout.strip()}")
                 else:
-                    print(f"  ✗ Submission failed: {result.stderr}")
+                    if console:
+                        console.print(
+                            f"  [red]✗[/red] Submission failed: {result.stderr}"
+                        )
+                    else:
+                        print(f"  ✗ Submission failed: {result.stderr}")
 
         except FileNotFoundError:
-            print("  ✗ bsub not found (are you on HPC?)")
+            if console:
+                console.print("  [red]✗[/red] bsub not found (are you on HPC?)")
+            else:
+                print("  ✗ bsub not found (are you on HPC?)")
         except Exception as e:
-            print(f"  ✗ Error: {e}")
+            if console:
+                console.print(f"  [red]✗[/red] Error: {e}")
+            else:
+                print(f"  ✗ Error: {e}")
 
 
-def fetch_mlflow():
+def fetch_mlflow(console=None):
     """Fetch artifacts from MLflow for all converged runs."""
-    print("\nFetching MLflow artifacts...")
+    msg = "\nFetching MLflow artifacts..."
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     try:
         from utils import download_artifacts_with_naming, setup_mlflow_auth
@@ -322,27 +446,56 @@ def fetch_mlflow():
         setup_mlflow_auth()
 
         fv_dir = REPO_ROOT / "data" / "FV-Solver"
-        print("\nFinite Volume:")
+        if console:
+            console.print("\n[bold]Finite Volume:[/bold]")
+        else:
+            print("\nFinite Volume:")
         fv_paths = download_artifacts_with_naming("HPC-FV-Solver", fv_dir)
-        print(f"  ✓ Downloaded {len(fv_paths)} files to data/FV-Solver/")
+        if console:
+            console.print(
+                f"  [green]✓[/green] Downloaded {len(fv_paths)} files to data/FV-Solver/"
+            )
+        else:
+            print(f"  ✓ Downloaded {len(fv_paths)} files to data/FV-Solver/")
 
         spectral_dir = REPO_ROOT / "data" / "Spectral-Solver" / "Chebyshev"
-        print("\nSpectral:")
-        spectral_paths = download_artifacts_with_naming("HPC-Spectral-Chebyshev", spectral_dir)
-        print(f"  ✓ Downloaded {len(spectral_paths)} files to data/Spectral-Solver/")
+        if console:
+            console.print("\n[bold]Spectral:[/bold]")
+        else:
+            print("\nSpectral:")
+        spectral_paths = download_artifacts_with_naming(
+            "HPC-Spectral-Chebyshev", spectral_dir
+        )
+        if console:
+            console.print(
+                f"  [green]✓[/green] Downloaded {len(spectral_paths)} files to data/Spectral-Solver/"
+            )
+        else:
+            print(f"  ✓ Downloaded {len(spectral_paths)} files to data/Spectral-Solver/")
 
         print()
 
     except ImportError as e:
-        print(f"  ✗ Missing dependency: {e}")
-        print("    Install with: uv sync")
+        if console:
+            console.print(f"  [red]✗[/red] Missing dependency: {e}")
+            console.print("    [dim]Install with: uv sync[/dim]")
+        else:
+            print(f"  ✗ Missing dependency: {e}")
+            print("    Install with: uv sync")
     except Exception as e:
-        print(f"  ✗ Failed to fetch: {e}\n")
+        if console:
+            console.print(f"  [red]✗[/red] Failed to fetch: {e}\n")
+        else:
+            print(f"  ✗ Failed to fetch: {e}\n")
 
 
-def ruff_check():
+def ruff_check(console=None):
     """Run ruff linter."""
-    print("\nRunning ruff check...")
+    msg = "\nRunning ruff check..."
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     try:
         result = subprocess.run(
@@ -358,26 +511,47 @@ def ruff_check():
             print(result.stderr)
 
         if result.returncode == 0:
-            print("  ✓ No issues found\n")
+            if console:
+                console.print("  [green]✓[/green] No issues found\n")
+            else:
+                print("  ✓ No issues found\n")
             return True
         else:
-            print(f"  ✗ Found issues (exit code {result.returncode})\n")
+            if console:
+                console.print(
+                    f"  [red]✗[/red] Found issues (exit code {result.returncode})\n"
+                )
+            else:
+                print(f"  ✗ Found issues (exit code {result.returncode})\n")
             return False
 
     except FileNotFoundError:
-        print("  ✗ ruff not found. Install with: uv sync\n")
+        if console:
+            console.print("  [red]✗[/red] ruff not found. Install with: uv sync\n")
+        else:
+            print("  ✗ ruff not found. Install with: uv sync\n")
         return False
     except subprocess.TimeoutExpired:
-        print("  ✗ ruff check timed out\n")
+        if console:
+            console.print("  [red]✗[/red] ruff check timed out\n")
+        else:
+            print("  ✗ ruff check timed out\n")
         return False
     except Exception as e:
-        print(f"  ✗ ruff check failed: {e}\n")
+        if console:
+            console.print(f"  [red]✗[/red] ruff check failed: {e}\n")
+        else:
+            print(f"  ✗ ruff check failed: {e}\n")
         return False
 
 
-def ruff_format():
+def ruff_format(console=None):
     """Run ruff formatter."""
-    print("\nRunning ruff format...")
+    msg = "\nRunning ruff format..."
+    if console:
+        console.print(msg)
+    else:
+        print(msg)
 
     try:
         result = subprocess.run(
@@ -393,21 +567,124 @@ def ruff_format():
             print(result.stderr)
 
         if result.returncode == 0:
-            print("  ✓ Code formatted successfully\n")
+            if console:
+                console.print("  [green]✓[/green] Code formatted successfully\n")
+            else:
+                print("  ✓ Code formatted successfully\n")
             return True
         else:
-            print(f"  ✗ Formatting failed (exit code {result.returncode})\n")
+            if console:
+                console.print(
+                    f"  [red]✗[/red] Formatting failed (exit code {result.returncode})\n"
+                )
+            else:
+                print(f"  ✗ Formatting failed (exit code {result.returncode})\n")
             return False
 
     except FileNotFoundError:
-        print("  ✗ ruff not found. Install with: uv sync\n")
+        if console:
+            console.print("  [red]✗[/red] ruff not found. Install with: uv sync\n")
+        else:
+            print("  ✗ ruff not found. Install with: uv sync\n")
         return False
     except subprocess.TimeoutExpired:
-        print("  ✗ ruff format timed out\n")
+        if console:
+            console.print("  [red]✗[/red] ruff format timed out\n")
+        else:
+            print("  ✗ ruff format timed out\n")
         return False
     except Exception as e:
-        print(f"  ✗ ruff format failed: {e}\n")
+        if console:
+            console.print(f"  [red]✗[/red] ruff format failed: {e}\n")
+        else:
+            print(f"  ✗ ruff format failed: {e}\n")
         return False
+
+
+def interactive_menu():
+    """Run interactive CLI menu."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+    from rich.table import Table
+
+    console = Console()
+
+    # Menu options
+    menu_items = [
+        ("1", "fetch", "Fetch MLflow artifacts", lambda: fetch_mlflow(console)),
+        ("2", "compute", "Run compute scripts", lambda: run_scripts(discover_scripts()[0], console)),
+        ("3", "plot", "Run plot scripts", lambda: run_scripts(discover_scripts()[1], console)),
+        ("4", "docs", "Build documentation", lambda: build_docs(console)),
+        ("5", "lint", "Run ruff linter", lambda: ruff_check(console)),
+        ("6", "format", "Format code with ruff", lambda: ruff_format(console)),
+        ("7", "clean", "Clean all caches", lambda: clean_all(console)),
+        ("8", "clean-docs", "Clean documentation", lambda: clean_docs(console)),
+        ("9", "hpc", "Submit HPC jobs", None),  # Special handling
+        ("q", "quit", "Exit", None),
+    ]
+
+    while True:
+        console.clear()
+
+        # Header
+        console.print(
+            Panel.fit(
+                "[bold cyan]ANA-P3 Project Manager[/bold cyan]\n"
+                "[dim]Advanced Numerical Algorithms - Project 3[/dim]",
+                border_style="cyan",
+            )
+        )
+        console.print()
+
+        # Build menu table
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Key", style="bold cyan", width=4)
+        table.add_column("Command", style="bold", width=12)
+        table.add_column("Description", style="dim")
+
+        for key, cmd, desc, _ in menu_items:
+            table.add_row(f"[{key}]", cmd, desc)
+
+        console.print(table)
+        console.print()
+
+        # Get user choice
+        choice = Prompt.ask(
+            "[bold]Select an option[/bold]",
+            choices=[item[0] for item in menu_items],
+            show_choices=False,
+        )
+
+        if choice == "q":
+            console.print("\n[dim]Goodbye![/dim]\n")
+            break
+
+        if choice == "9":
+            # HPC submenu
+            console.print()
+            hpc_choice = Prompt.ask(
+                "  [bold]Which solver?[/bold]",
+                choices=["spectral", "fv", "all", "cancel"],
+                default="all",
+            )
+            if hpc_choice != "cancel":
+                dry_run = Prompt.ask(
+                    "  [bold]Dry run?[/bold]",
+                    choices=["yes", "no"],
+                    default="yes",
+                ) == "yes"
+                hpc_submit(hpc_choice, dry_run=dry_run, console=console)
+                Prompt.ask("\n[dim]Press Enter to continue...[/dim]")
+            continue
+
+        # Find and execute the action
+        for key, _, _, action in menu_items:
+            if key == choice and action:
+                console.print()
+                action()
+                Prompt.ask("\n[dim]Press Enter to continue...[/dim]")
+                break
 
 
 def main():
@@ -417,17 +694,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py --compute                     Run data generation scripts
-  python main.py --plot                        Run plotting scripts
-  python main.py --fetch                       Fetch artifacts from MLflow
-  python main.py --build-docs                  Build Sphinx HTML documentation
-  python main.py --clean-docs                  Clean built documentation
-  python main.py --clean-all                   Clean all generated files and caches
-  python main.py --lint                        Check code with ruff
-  python main.py --format                      Format code with ruff
-  python main.py --compute --plot              Run all example scripts
-  python main.py --hpc spectral                Submit spectral solver jobs to HPC
-  python main.py --hpc all --dry-run           Preview all HPC jobs without submitting
+  python main.py                              Interactive mode
+  python main.py --compute                    Run data generation scripts
+  python main.py --plot                       Run plotting scripts
+  python main.py --fetch                      Fetch artifacts from MLflow
+  python main.py --build-docs                 Build Sphinx HTML documentation
+  python main.py --clean-docs                 Clean built documentation
+  python main.py --clean-all                  Clean all generated files and caches
+  python main.py --lint                       Check code with ruff
+  python main.py --format                     Format code with ruff
+  python main.py --compute --plot             Run all example scripts
+  python main.py --hpc spectral               Submit spectral solver jobs to HPC
+  python main.py --hpc all --dry-run          Preview all HPC jobs without submitting
         """,
     )
 
@@ -462,13 +740,28 @@ Examples:
         help="Fetch artifacts from MLflow for all converged runs",
     )
 
-    # Show help if no arguments provided
-    if len(sys.argv) == 1:
-        parser.print_help()
-        print("\n Error: No arguments provided. Please specify at least one option.\n")
-        sys.exit(1)
-
     args = parser.parse_args()
+
+    # Check if any arguments were provided
+    has_args = any([
+        args.compute,
+        args.plot,
+        args.build_docs,
+        args.clean_docs,
+        args.clean_all,
+        args.lint,
+        args.format,
+        args.hpc,
+        args.fetch,
+    ])
+
+    # If no arguments, run interactive mode
+    if not has_args:
+        try:
+            interactive_menu()
+        except KeyboardInterrupt:
+            print("\n\nInterrupted. Goodbye!\n")
+        return
 
     # Handle cleaning commands
     if args.clean_all:
