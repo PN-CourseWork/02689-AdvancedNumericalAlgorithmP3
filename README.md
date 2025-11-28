@@ -16,9 +16,6 @@ bash setup.sh
 Submit parameter sweeps using job packs:
 
 ```bash
-# Preview jobs without submitting
-uv run python main.py --hpc spectral --dry-run
-
 # Submit spectral solver jobs
 uv run python main.py --hpc spectral
 
@@ -48,6 +45,7 @@ bkill 0
 ```
 
 ## References
+
 
 ### SIMPLE for Spectral
 [A spectral pressure correction method for unsteady incompressible flows](https://www.sciencedirect.com/science/article/pii/S0021999112007334)

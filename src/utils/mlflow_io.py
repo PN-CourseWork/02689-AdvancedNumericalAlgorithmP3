@@ -19,10 +19,10 @@ def setup_mlflow_auth():
     """
     token = os.environ.get("DATABRICKS_TOKEN")
     if token:
-        # CI environment - use token-based auth
-        host = os.environ.get("DATABRICKS_HOST", "https://dbc-6756e917-e5fc.cloud.databricks.com")
-        mlflow.set_tracking_uri(host)
-        os.environ["MLFLOW_TRACKING_TOKEN"] = token
+        # CI environment - set both host and token for Databricks auth
+        host = "https://dbc-6756e917-e5fc.cloud.databricks.com"
+        os.environ["DATABRICKS_HOST"] = host
+        mlflow.set_tracking_uri("databricks")
     else:
         # Local environment - interactive login
         mlflow.login()
