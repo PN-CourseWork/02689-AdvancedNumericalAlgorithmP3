@@ -178,12 +178,15 @@ def menu_hpc():
 
 def menu_code():
     """Code quality submenu."""
+    from .actions import copy_plots
+
     while True:
         choice = select(
             "Code:",
             [
                 "Lint (ruff check)",
                 "Format (ruff format)",
+                "Copy plots",
                 "← Back",
             ],
         )
@@ -193,6 +196,9 @@ def menu_code():
             wait()
         elif choice == "Format (ruff format)":
             ruff_format()
+            wait()
+        elif choice == "Copy plots":
+            copy_plots()
             wait()
         else:
             break

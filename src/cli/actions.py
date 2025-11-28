@@ -159,6 +159,34 @@ def ruff_format():
     )
 
 
+def copy_plots():
+    """Copy plot files from Experiments to figures directory."""
+    import shutil
+
+    header("Copying plots...")
+
+    src_dir = REPO_ROOT / "Experiments"
+    dst_dir = REPO_ROOT / "figures"
+
+    if not src_dir.exists():
+        dim("No Experiments directory found")
+        return
+
+    dst_dir.mkdir(exist_ok=True)
+
+    extensions = {".pdf", ".png", ".svg"}
+    count = 0
+
+    for ext in extensions:
+        for plot_file in src_dir.rglob(f"*{ext}"):
+            dst_file = dst_dir / plot_file.name
+            shutil.copy2(plot_file, dst_file)
+            console.print(f"  [dim]{plot_file.name}[/dim]")
+            count += 1
+
+    ok(f"Copied {count} plots to figures/") if count else dim("No plots found")
+
+
 def hpc_status():
     """Check status of running HPC jobs."""
     header("HPC Job Status")
