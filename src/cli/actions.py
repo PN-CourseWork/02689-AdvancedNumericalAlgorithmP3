@@ -134,37 +134,58 @@ def ruff_format():
     ok("Formatted") if result.returncode == 0 else fail(f"Failed (exit {result.returncode})")
 
 
-def hpc_submit(solver: str = "all", dry_run: bool = True):
-    """Submit HPC jobs."""
-    solvers = []
-    if solver in ("spectral", "all"):
-        solvers.append(("Spectral", REPO_ROOT / "Experiments" / "Spectral-Solver"))
-    if solver in ("fv", "all"):
-        solvers.append(("FV", REPO_ROOT / "Experiments" / "FV-Solver"))
+def hpc_submit(experiment: str = "all", dry_run: bool = True):
+    """Submit HPC jobs from YAML configs."""
+    from .hpc import discover_experiments, generate_pack, get_experiment_name, load_config, generate_jobs
 
-    for name, path in solvers:
-        gen = path / "generate_pack.sh"
-        if not gen.exists():
-            fail(f"{name}: generate_pack.sh not found")
-            continue
+    experiments = discover_experiments()
+    if not experiments:
+        fail("No experiments with jobs.yaml found")
+        return
 
+    # Filter experiments
+    if experiment != "all":
+        experiments = [e for e in experiments if experiment.lower() in e.parent.name.lower()]
+
+    if not experiments:
+        fail(f"No matching experiment: {experiment}")
+        return
+
+    for yaml_path in experiments:
+        name = get_experiment_name(yaml_path)
         console.print(f"\n[bold]{name}:[/bold]")
-        result = subprocess.run(["bash", str(gen)], capture_output=True, text=True, cwd=str(path))
-        jobs = result.stdout.strip()
 
-        if not jobs:
-            fail("No jobs generated")
-            continue
+        try:
+            config = load_config(yaml_path)
+            jobs = generate_jobs(config)
+            pack_content = generate_pack(yaml_path)
 
-        job_count = len(jobs.split("\n"))
-        dim(f"Generated {job_count} jobs")
+            dim(f"Generated {len(jobs)} jobs from {yaml_path.name}")
 
-        if dry_run:
-            for line in jobs.split("\n"):
-                parts = line.split()
-                console.print(f"    [cyan]{parts[1] if len(parts) > 1 else 'unknown'}[/cyan]")
-        else:
-            pack_file = path / "jobs.pack"
-            pack_file.write_text(jobs)
-            result = subprocess.run(["bsub", "-pack", str(pack_file)], capture_output=True, text=True)
-            ok(f"Submitted {job_count} jobs") if result.returncode == 0 else fail(result.stderr)
+            if dry_run:
+                for job in jobs:
+                    console.print(f"    [cyan]{job['name']}[/cyan]")
+            else:
+                # Ensure logs directory exists
+                logs_dir = REPO_ROOT / "logs"
+                logs_dir.mkdir(exist_ok=True)
+
+                # Write and submit pack file
+                pack_file = yaml_path.parent / "jobs.pack"
+                pack_file.write_text(pack_content)
+
+                result = subprocess.run(
+                    ["bsub", "-pack", str(pack_file)],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(REPO_ROOT),
+                )
+                if result.returncode == 0:
+                    ok(f"Submitted {len(jobs)} jobs")
+                    if result.stdout.strip():
+                        dim(result.stdout.strip())
+                else:
+                    fail(f"Submission failed: {result.stderr}")
+
+        except Exception as e:
+            fail(f"Error: {e}")

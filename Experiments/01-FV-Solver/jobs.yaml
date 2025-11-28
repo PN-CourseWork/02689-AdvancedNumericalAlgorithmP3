@@ -1,0 +1,12 @@
+# HPC job configuration for FV Solver
+script: Experiments/01-FV-Solver/compute_LDC.py
+
+lsf:
+  queue: hpc
+  walltime: "2:00"
+  cores: 4
+  memory: 8GB
+
+sweep:
+  N: [32, 64, 128, 256]
+  Re: [100, 400, 1000]

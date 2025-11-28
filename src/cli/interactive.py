@@ -130,7 +130,18 @@ def menu_clean():
 
 def menu_hpc():
     """HPC submenu."""
+    from .hpc import discover_experiments, get_experiment_name
+
     while True:
+        # Discover available experiments
+        experiments = discover_experiments()
+        if not experiments:
+            console.print("  [dim]No experiments with jobs.yaml found[/dim]")
+            wait()
+            break
+
+        exp_names = ["all"] + [get_experiment_name(e) for e in experiments]
+
         choice = select("HPC:", [
             "Preview jobs (dry run)",
             "Submit jobs",
@@ -138,13 +149,13 @@ def menu_hpc():
         ])
 
         if choice in ("Submit jobs", "Preview jobs (dry run)"):
-            solver = select("Solver:", ["all", "spectral", "fv", "← Back"])
-            if solver and solver != "← Back":
+            experiment = select("Experiment:", exp_names + ["← Back"])
+            if experiment and experiment != "← Back":
                 dry_run = choice == "Preview jobs (dry run)"
                 if not dry_run:
                     if not confirm("Submit to HPC?", default=False):
                         continue
-                hpc_submit(solver, dry_run)
+                hpc_submit(experiment, dry_run)
                 wait()
         else:
             break

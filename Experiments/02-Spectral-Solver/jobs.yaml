@@ -1,0 +1,12 @@
+# HPC job configuration for Spectral Solver
+script: Experiments/02-Spectral-Solver/compute_spectral_chebyshev.py
+
+lsf:
+  queue: hpc
+  walltime: "1:00"
+  cores: 4
+  memory: 8GB
+
+sweep:
+  N: [11, 15, 19, 23]
+  Re: [100, 400, 1000]
