@@ -12,5 +12,5 @@ parameters:
   max-iter: 2000000
 
 sweep:
-  N: [119]
+  N: [19,29,49]
   Re: [100,400,1000]
