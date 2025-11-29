@@ -3,14 +3,14 @@ script: Experiments/01-FV-Solver/compute_LDC.py
 
 lsf:
   queue: hpc
-  walltime: "2:00"
+  walltime: "6:00"
   cores: 4
   memory: 8GB
 
 parameters:
-  tol: 1e-7
-  max-iter: 50000
+  tol: 1e-8
+  max-iter: 1000000
 
 sweep:
-  N: [64]
-  Re: [400]
+  N: [64,128,256]
+  Re: [100,400,100]
