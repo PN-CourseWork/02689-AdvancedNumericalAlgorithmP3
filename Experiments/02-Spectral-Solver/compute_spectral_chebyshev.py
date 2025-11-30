@@ -60,9 +60,9 @@ solver = SpectralSolver(
     nx=N,
     ny=N,
     basis_type="chebyshev",
-    CFL=0.70,
+    CFL=0.65,
     beta_squared=5.0,
-    corner_smoothing=0.15,
+    corner_smoothing=0.20,
 )
 
 print(
