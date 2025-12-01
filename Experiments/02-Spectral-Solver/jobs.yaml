@@ -9,7 +9,7 @@ lsf:
 
 parameters:
   tol: 1e-7
-  max-iter: 5000000
+  max-iter: 500000
 
 sweep:
   N: [19,29,39]
