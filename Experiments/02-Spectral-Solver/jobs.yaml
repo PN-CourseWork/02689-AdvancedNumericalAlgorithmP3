@@ -3,10 +3,10 @@ script: Experiments/02-Spectral-Solver/compute_spectral_chebyshev.py
 
 lsf:
   queue: hpc
-  walltime: "8:00"
+  walltime: "7:00"
   cores: 4
   memory: 8GB
-
+s
 parameters:
   tol: 1e-7
   max-iter: 1000000
