@@ -6,7 +6,7 @@ lsf:
   walltime: "7:00"
   cores: 4
   memory: 8GB
-s
+
 parameters:
   tol: 1e-6
   max-iter: 250000
