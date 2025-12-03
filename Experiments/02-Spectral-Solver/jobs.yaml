@@ -9,8 +9,8 @@ lsf:
 s
 parameters:
   tol: 1e-6
-  max-iter: 500000
+  max-iter: 250000
 
 sweep:
-  N: [19]
-  Re: [100]
+  N: [59,89,119]
+  Re: [400,1000]
