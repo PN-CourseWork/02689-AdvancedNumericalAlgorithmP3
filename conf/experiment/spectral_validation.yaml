@@ -1,0 +1,21 @@
+# @package _global_
+# Spectral Solver validation against Ghia benchmark
+# Usage: uv run python run_solver.py +experiment=spectral_validation
+#        uv run python run_solver.py -m +experiment=spectral_validation  (sweep all)
+
+defaults:
+  - override /solver: spectral
+
+experiment_name: Spectral-Validation
+
+# Validation polynomial orders (N+1 nodes) and Reynolds numbers
+N: 31
+Re: 100
+tolerance: 1.0e-7
+max_iterations: 100000
+
+hydra:
+  sweeper:
+    params:
+      N: 15,23,31,47
+      Re: 100,400,1000

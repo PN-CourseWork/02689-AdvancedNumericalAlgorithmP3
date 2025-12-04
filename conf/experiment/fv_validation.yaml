@@ -1,0 +1,21 @@
+# @package _global_
+# FV Solver validation against Ghia benchmark
+# Usage: uv run python run_solver.py +experiment=fv_validation
+#        uv run python run_solver.py -m +experiment=fv_validation  (sweep all)
+
+defaults:
+  - override /solver: fv
+
+experiment_name: FV-Validation
+
+# Validation grid sizes and Reynolds numbers
+N: 64
+Re: 100
+tolerance: 1.0e-7
+max_iterations: 50000
+
+hydra:
+  sweeper:
+    params:
+      N: 32,64,128
+      Re: 100,400,1000

@@ -25,17 +25,7 @@ from .datastructures import (
     SpectralSolverFields,
 )
 from .spectral_solver import SpectralSolver
-
-# FVSolver requires petsc4py - make import optional
-try:
-    from .fv_solver import FVSolver
-except ImportError as e:
-    _fv_import_error = e
-
-    def FVSolver(*args, **kwargs):
-        raise ImportError(
-            f"FVSolver requires petsc4py which is not installed: {_fv_import_error}"
-        )
+from .fv_solver import FVSolver
 
 
 __all__ = [

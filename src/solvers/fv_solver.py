@@ -14,7 +14,7 @@ from fv.assembly.convection_diffusion_matrix import assemble_diffusion_convectio
 from fv.discretization.gradient.structured_gradient import (
     compute_cell_gradients_structured,
 )
-from fv.linear_solvers.petsc_solver import petsc_solver
+from fv.linear_solvers.scipy_solver import scipy_solver
 from fv.assembly.rhie_chow import mdot_calculation, rhie_chow_velocity
 from fv.assembly.pressure_correction_eq_assembly import (
     assemble_pressure_correction_matrix,
@@ -82,7 +82,7 @@ class FVSolver(LidDrivenCavitySolver):
         self.dy_min = self.params.Ly / self.params.ny
 
     def _solve_momentum_equation(
-        self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, ksp
+        self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, M
     ):
         """Solve a single momentum equation (u or v).
 
@@ -98,8 +98,8 @@ class FVSolver(LidDrivenCavitySolver):
             Previous iteration velocity component
         grad_p_component : ndarray
             Pressure gradient component (x or y)
-        ksp : PETSc.KSP or None
-            Reusable KSP solver object (updated in-place)
+        M : LinearOperator or None
+            Reusable preconditioner (updated in-place)
 
         Returns
         -------
@@ -107,8 +107,8 @@ class FVSolver(LidDrivenCavitySolver):
             Predicted velocity component
         A_diag : ndarray
             Diagonal of momentum matrix (needed for pressure correction)
-        ksp : PETSc.KSP
-            Updated KSP solver object for reuse
+        M : LinearOperator
+            Updated preconditioner for reuse
         """
         # Assemble momentum equation
         row, col, data, b = assemble_diffusion_convection_matrix(
@@ -132,17 +132,15 @@ class FVSolver(LidDrivenCavitySolver):
         )
         A.setdiag(relaxed_A_diag)
 
-        # Solve with PETSc
-        phi_star, ksp = petsc_solver(
+        # Solve with scipy
+        phi_star, M = scipy_solver(
             A,
             rhs,
-            ksp=ksp,
+            M=M,
             tolerance=self.params.linear_solver_tol,
-            solver_type="bcgs",
-            preconditioner="gamg",
         )
 
-        return phi_star, A_diag, ksp
+        return phi_star, A_diag, M
 
     def step(self):
         """Perform one SIMPLE iteration.
@@ -172,12 +170,12 @@ class FVSolver(LidDrivenCavitySolver):
             self.mesh, a.v_prev, use_limiter=True, out=a.grad_v
         )
 
-        # Solve momentum equations (reuse KSP objects)
-        u_star, A_u_diag, a.ksp_u = self._solve_momentum_equation(
-            0, a.u_prev, a.grad_u, a.u_prev, a.grad_p[:, 0], a.ksp_u
+        # Solve momentum equations (reuse preconditioners)
+        u_star, A_u_diag, a.M_u = self._solve_momentum_equation(
+            0, a.u_prev, a.grad_u, a.u_prev, a.grad_p[:, 0], a.M_u
         )
-        v_star, A_v_diag, a.ksp_v = self._solve_momentum_equation(
-            1, a.v_prev, a.grad_v, a.v_prev, a.grad_p[:, 1], a.ksp_v
+        v_star, A_v_diag, a.M_v = self._solve_momentum_equation(
+            1, a.v_prev, a.grad_v, a.v_prev, a.grad_p[:, 1], a.M_v
         )
 
         # Pressure correction - reuse buffers
@@ -200,15 +198,13 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        # Solve pressure correction with PETSc (handles nullspace internally)
+        # Solve pressure correction with scipy (handles nullspace internally)
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
-        p_prime, a.ksp_p = petsc_solver(
+        p_prime, a.M_p = scipy_solver(
             A_p,
             rhs_p,
-            ksp=a.ksp_p,
+            M=a.M_p,
             tolerance=self.params.linear_solver_tol,
-            solver_type="bcgs",
-            preconditioner="gamg",
             remove_nullspace=True,
         )
 

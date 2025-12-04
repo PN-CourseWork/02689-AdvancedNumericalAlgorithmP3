@@ -1,6 +1,7 @@
 """Abstract base solver for lid-driven cavity problem."""
 
 from abc import ABC, abstractmethod
+import logging
 import os
 import time
 
@@ -9,6 +10,8 @@ import mlflow
 
 from dataclasses import asdict
 from .datastructures import TimeSeries, Metrics, Fields
+
+log = logging.getLogger(__name__)
 
 
 class LidDrivenCavitySolver(ABC):
@@ -254,7 +257,7 @@ class LidDrivenCavitySolver(ABC):
                 is_converged = False
 
             if i % 50 == 0 or is_converged:
-                print(
+                log.info(
                     f"Iteration {i}: u_res={u_solution_change:.6e}, v_res={v_solution_change:.6e}"
                 )
 
@@ -277,12 +280,12 @@ class LidDrivenCavitySolver(ABC):
                     mlflow_time += time.time() - t_log_start
 
             if is_converged:
-                print(f"Converged at iteration {i}")
+                log.info(f"Converged at iteration {i}")
                 break
 
         time_end = time.time()
         wall_time = time_end - time_start - mlflow_time  # Exclude MLflow logging time
-        print(
+        log.info(
             f"Solver finished in {wall_time:.2f} seconds (excl. {mlflow_time:.2f}s logging)."
         )
 

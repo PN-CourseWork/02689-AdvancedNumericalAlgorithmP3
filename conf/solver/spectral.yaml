@@ -1,0 +1,8 @@
+# Spectral solver configuration
+name: spectral
+
+# Spectral-specific parameters
+basis_type: chebyshev    # "chebyshev" or "legendre"
+CFL: 0.5
+beta_squared: 5.0        # artificial compressibility parameter
+corner_smoothing: 0.15   # fraction of grid points to smooth at corners

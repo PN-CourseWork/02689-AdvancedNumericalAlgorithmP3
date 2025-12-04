@@ -8,6 +8,9 @@ data/*
 !data/README.md
 !data/.gitkeep
 !data/validation/
+outputs/
+TEMPLATE/
+mlruns/
 
 # Uv stuff 
 uv.lock

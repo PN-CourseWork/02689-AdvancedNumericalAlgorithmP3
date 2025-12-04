@@ -1,43 +1,40 @@
+# Main Hydra configuration for LDC solvers
+# Usage: uv run python run_solver.py solver=fv Re=100 N=32
+#        uv run python run_solver.py solver=spectral Re=100 N=15
+
 defaults:
-  - machine: local
+  - solver: fv
   - mlflow: local
   - _self_
 
-# ============================================================
-# GlobalParams - flat config matching dataclass
-# ============================================================
+# =============================================================================
+# Common Parameters (shared by all solvers)
+# =============================================================================
 
-# Required
-N: 65
+# Grid size (meaning depends on solver):
+#   FV: N = number of cells in each direction
+#   Spectral: N = polynomial order (gives N+1 nodes)
+N: 32
 
-# Solver selection and params
-solver: jacobi  # "jacobi" | "fmg"
-omega: 0.8
+# Physics
+Re: 100
+lid_velocity: 1.0
+Lx: 1.0
+Ly: 1.0
+
+# Solver control
 tolerance: 1.0e-6
-max_iter: 1000
-
-# FMG-specific (ignored by Jacobi)
-n_smooth: 3
-fmg_post_vcycles: 1
-
-# Parallelization
-n_ranks: 1
-strategy: sliced  # "sliced" | "cubic"
-communicator: custom  # "numpy" | "custom"
-
-# Numba
-use_numba: false
-specified_numba_threads: 1
+max_iterations: 500
 
 # Experiment tracking
-experiment_name: default
+experiment_name: LDC-Solver
 
-# ============================================================
+# =============================================================================
 # Hydra output paths
-# ============================================================
+# =============================================================================
 hydra:
   run:
-    dir: outputs/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: outputs/${experiment_name}/Re${Re}/${solver.name}/${now:%d-%m-%y}/${now:%H:%M:%S}
   sweep:
-    dir: multirun/${experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
-    subdir: ${hydra.job.num}
+    dir: multirun/${experiment_name}/Re${Re}/${solver.name}/${now:%d-%m-%y}/${now:%H:%M:%S}
+    subdir: N${N}

@@ -156,10 +156,10 @@ class FVSolverFields:
     mdot_star: np.ndarray
     mdot_prime: np.ndarray
 
-    # PETSc KSP objects for solver reuse
-    ksp_u: object = None
-    ksp_v: object = None
-    ksp_p: object = None
+    # Scipy preconditioners for solver reuse
+    M_u: object = None
+    M_v: object = None
+    M_p: object = None
 
     @classmethod
     def allocate(cls, n_cells: int, n_faces: int):

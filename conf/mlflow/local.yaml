@@ -1,3 +1,4 @@
+# Local MLflow configuration (file-based tracking)
 mode: local
 tracking_uri: ./mlruns
 project_prefix: ""

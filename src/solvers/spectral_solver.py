@@ -7,11 +7,15 @@ This solver implements the PN-PN-2 method with:
 - 4-stage RK4 explicit time stepping with adaptive CFL
 """
 
+import logging
+
 import numpy as np
 
 from .base_solver import LidDrivenCavitySolver
 from .datastructures import SpectralParameters, SpectralSolverFields
 from spectral.spectral import LegendreLobattoBasis, ChebyshevLobattoBasis
+
+log = logging.getLogger(__name__)
 
 
 class SpectralSolver(LidDrivenCavitySolver):
@@ -37,11 +41,11 @@ class SpectralSolver(LidDrivenCavitySolver):
         if self.params.basis_type.lower() == "chebyshev":
             self.basis_x = ChebyshevLobattoBasis(domain=(0.0, self.params.Lx))
             self.basis_y = ChebyshevLobattoBasis(domain=(0.0, self.params.Ly))
-            print("Using Chebyshev-Gauss-Lobatto basis (Zhang et al. 2010)")
+            log.info("Using Chebyshev-Gauss-Lobatto basis")
         elif self.params.basis_type.lower() == "legendre":
             self.basis_x = LegendreLobattoBasis(domain=(0.0, self.params.Lx))
             self.basis_y = LegendreLobattoBasis(domain=(0.0, self.params.Ly))
-            print("Using Legendre-Gauss-Lobatto basis")
+            log.info("Using Legendre-Gauss-Lobatto basis")
         else:
             raise ValueError(
                 f"Unknown basis_type: {self.params.basis_type}. Use 'legendre' or 'chebyshev'"

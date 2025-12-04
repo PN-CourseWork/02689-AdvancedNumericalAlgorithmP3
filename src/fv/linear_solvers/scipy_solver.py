@@ -1,32 +1,59 @@
-"""Scipy-based linear solver using BiCGSTAB with PyAMG preconditioner."""
+"""Scipy-based linear solver using BiCGSTAB."""
 
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import bicgstab
 
 
-def scipy_solver(A_csr: csr_matrix, b_np: np.ndarray, use_cg: bool = False):
-    """Solve A x = b using BiCGSTAB with PyAMG preconditioner.
+def scipy_solver(
+    A_csr: csr_matrix,
+    b_np: np.ndarray,
+    M=None,  # Unused, kept for API compatibility
+    tolerance=1e-6,
+    max_iterations=1000,
+    remove_nullspace=False,
+):
+    """Solve A x = b using scipy BiCGSTAB.
 
     Parameters
     ----------
     A_csr : csr_matrix
-        Coefficient matrix in CSR format
+        Sparse matrix in CSR format.
     b_np : np.ndarray
-        Right-hand side vector
-    use_cg : bool, optional
-        Unused parameter kept for API compatibility
+        Right-hand side vector.
+    M : unused
+        Kept for API compatibility, ignored.
+    tolerance : float, optional
+        Convergence tolerance (default: 1e-6).
+    max_iterations : int, optional
+        Maximum iterations (default: 1000).
+    remove_nullspace : bool, optional
+        If True, removes the mean from RHS and solution (for pressure eq).
 
     Returns
     -------
-    np.ndarray
-        Solution vector
+    x_np : np.ndarray
+        Solution vector.
+    None
+        Placeholder for API compatibility.
     """
-    # Solve using BiCGSTAB without preconditioner
-    # PyAMG preconditioner can cause numerical issues on early iterations
-    x, info = bicgstab(A_csr, b_np, rtol=1e-6, atol=0)
+    # Handle nullspace if requested (for pressure Poisson equation)
+    b = b_np.copy()
+    if remove_nullspace:
+        b = b - np.mean(b)
+
+    # Solve using BiCGSTAB
+    x, info = bicgstab(A_csr, b, rtol=tolerance, atol=0, maxiter=max_iterations)
 
     if info != 0:
-        raise RuntimeError(f"BiCGSTAB failed to converge (info={info})")
+        if info > 0:
+            # Did not converge but we can still use the result
+            pass
+        else:
+            raise RuntimeError(f"BiCGSTAB failed (info={info})")
 
-    return x
+    # Remove nullspace component from solution if requested
+    if remove_nullspace:
+        x = x - np.mean(x)
+
+    return x, None

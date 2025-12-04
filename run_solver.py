@@ -1,194 +1,222 @@
 """
-Poisson Solver Runner - Clean Hydra + MLflow integration.
-
-Architecture:
-    - Orchestrator (main): Hydra entry, saves config, spawns MPI
-    - Worker: MPI computation, MLflow logging
+LDC Solver Runner - Hydra + MLflow integration for FV and Spectral solvers.
 
 Usage:
-    uv run python run_solver.py N=65 solver=jacobi n_ranks=1
-    uv run python run_solver.py N=129 solver=fmg n_ranks=4
+    # FV solver (32 cells)
+    uv run python run_solver.py solver=fv N=32 Re=100 max_iterations=100
 
-    # With custom MPI options (for HPC binding):
-    uv run python run_solver.py --mpi-options "--map-by ppr:12:package --bind-to core" ...
+    # Spectral solver (N=15 gives 16 nodes)
+    uv run python run_solver.py solver=spectral N=15 Re=100 max_iterations=100
+
+    # With Databricks MLflow
+    uv run python run_solver.py solver=fv mlflow=databricks
+
+    # Parameter sweep
+    uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400
 """
 
-import argparse
-import json
 import logging
 import os
-import subprocess
-import sys
-import tempfile
-from dataclasses import asdict, fields
-from typing import List, Optional
+from dataclasses import asdict
+from pathlib import Path
 
 import hydra
 import mlflow
 from hydra.core.hydra_config import HydraConfig
+from mlflow.entities import Metric
 from mlflow.tracking import MlflowClient
-from mpi4py import MPI
 from omegaconf import DictConfig, OmegaConf
-
-from Poisson.datastructures import GlobalParams, LocalParams
-from Poisson.solvers import FMGMPISolver, FMGSolver, JacobiMPISolver, JacobiSolver
 
 log = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Orchestrator (Hydra entry point)
+# Solver Factory
+# =============================================================================
+
+
+def create_solver(cfg: DictConfig):
+    """Create solver instance from Hydra config."""
+    solver_name = cfg.solver.name
+
+    # Common parameters
+    common = {
+        "Re": cfg.Re,
+        "lid_velocity": cfg.lid_velocity,
+        "Lx": cfg.Lx,
+        "Ly": cfg.Ly,
+        "nx": cfg.N,
+        "ny": cfg.N,
+        "max_iterations": cfg.max_iterations,
+        "tolerance": cfg.tolerance,
+    }
+
+    if solver_name == "fv":
+        from solvers import FVSolver
+
+        return FVSolver(
+            **common,
+            convection_scheme=cfg.solver.convection_scheme,
+            limiter=cfg.solver.limiter,
+            alpha_uv=cfg.solver.alpha_uv,
+            alpha_p=cfg.solver.alpha_p,
+            linear_solver_tol=cfg.solver.linear_solver_tol,
+        )
+    elif solver_name == "spectral":
+        from solvers import SpectralSolver
+
+        return SpectralSolver(
+            **common,
+            basis_type=cfg.solver.basis_type,
+            CFL=cfg.solver.CFL,
+            beta_squared=cfg.solver.beta_squared,
+            corner_smoothing=cfg.solver.corner_smoothing,
+        )
+    else:
+        raise ValueError(f"Unknown solver: {solver_name}")
+
+
+# =============================================================================
+# MLflow Logging
+# =============================================================================
+
+
+def setup_mlflow(cfg: DictConfig) -> str:
+    """Setup MLflow tracking and return experiment name."""
+    tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
+    mlflow.set_tracking_uri(tracking_uri)
+
+    # Build experiment name with optional project prefix
+    experiment_name = cfg.experiment_name
+    project_prefix = cfg.mlflow.get("project_prefix", "")
+    if project_prefix and not experiment_name.startswith("/"):
+        experiment_name = f"{project_prefix}/{experiment_name}"
+
+    # Databricks login if needed
+    if cfg.mlflow.mode == "databricks":
+        mlflow.login()
+
+    mlflow.set_experiment(experiment_name)
+    return experiment_name
+
+
+def log_config_params(cfg: DictConfig):
+    """Log flattened config as MLflow parameters."""
+    # Common params
+    mlflow.log_params(
+        {
+            "solver": cfg.solver.name,
+            "N": cfg.N,
+            "Re": cfg.Re,
+            "lid_velocity": cfg.lid_velocity,
+            "Lx": cfg.Lx,
+            "Ly": cfg.Ly,
+            "tolerance": cfg.tolerance,
+            "max_iterations": cfg.max_iterations,
+        }
+    )
+
+    # Solver-specific params (flatten solver config)
+    solver_params = {
+        f"solver.{k}": v for k, v in OmegaConf.to_container(cfg.solver).items() if k != "name"
+    }
+    mlflow.log_params(solver_params)
+
+
+def log_metrics_and_timeseries(solver, run_id: str):
+    """Log final metrics and timeseries to MLflow."""
+    # Final metrics
+    metrics_dict = asdict(solver.metrics)
+    # Convert booleans to int for MLflow
+    metrics_dict = {k: (int(v) if isinstance(v, bool) else v) for k, v in metrics_dict.items()}
+    mlflow.log_metrics(metrics_dict)
+
+    # Timeseries (batch logging for efficiency)
+    if solver.time_series is not None:
+        ts = asdict(solver.time_series)
+        batch_metrics = []
+        for key, values in ts.items():
+            if values is not None:
+                for step, value in enumerate(values):
+                    if value is not None:
+                        batch_metrics.append(Metric(key=key, value=value, timestamp=0, step=step))
+
+        if batch_metrics:
+            MlflowClient().log_batch(run_id=run_id, metrics=batch_metrics)
+
+
+def save_and_log_artifact(solver, cfg: DictConfig, output_dir: str):
+    """Save solver output to HDF5 and log as MLflow artifact."""
+    # Determine output filename
+    solver_name = cfg.solver.name.upper()
+    if solver_name == "SPECTRAL":
+        n_nodes = cfg.N + 1
+        filename = f"LDC_{solver_name}_N{n_nodes}_Re{int(cfg.Re)}.h5"
+    else:
+        filename = f"LDC_{solver_name}_N{cfg.N}_Re{int(cfg.Re)}.h5"
+
+    output_path = Path(output_dir) / filename
+    solver.save(output_path)
+    log.info(f"Saved results to: {output_path}")
+
+    mlflow.log_artifact(str(output_path))
+
+
+# =============================================================================
+# Main Entry Point
 # =============================================================================
 
 
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
-    """Hydra orchestrator - saves config and spawns MPI workers."""
+    """Hydra entry point - runs solver with MLflow tracking."""
     output_dir = HydraConfig.get().runtime.output_dir
-    cfg_path = os.path.join(output_dir, "config.yaml")
-    OmegaConf.save(cfg, cfg_path)
 
-    log.info(f"{cfg.solver}, N={cfg.N}, n_ranks={cfg.n_ranks}")
+    # Log resolved config
+    log.info(f"Solver: {cfg.solver.name}, N={cfg.N}, Re={cfg.Re}")
+    log.info(f"Output dir: {output_dir}")
 
-    # Build MPI command with optional binding options
-    # Use sys.executable to ensure workers use same Python as orchestrator
-    mpi_options = os.environ.get("MPI_OPTIONS", "").split()
-    cmd = ["mpiexec"] + mpi_options + [
-        "-n",
-        str(cfg.n_ranks),
-        sys.executable,
-        __file__,
-        cfg_path,
-    ]
-    log.info(f"Spawning: {' '.join(cmd)}")
+    # Save resolved config
+    OmegaConf.save(cfg, Path(output_dir) / "config.yaml")
 
-    env = os.environ.copy()
-    env["MPI_WORKER"] = "1"
-    subprocess.run(cmd, env=env, timeout=600, check=True)
+    # Setup MLflow
+    experiment_name = setup_mlflow(cfg)
+    log.info(f"MLflow experiment: {experiment_name}")
 
+    # Create solver
+    solver = create_solver(cfg)
 
-# =============================================================================
-# Worker (MPI computation)
-# =============================================================================
+    # Build run name
+    solver_name = cfg.solver.name
+    if solver_name == "spectral":
+        run_name = f"{solver_name}_N{cfg.N + 1}_Re{int(cfg.Re)}"
+    else:
+        run_name = f"{solver_name}_N{cfg.N}_Re{int(cfg.Re)}"
 
+    # Run with MLflow tracking
+    with mlflow.start_run(run_name=run_name) as run:
+        log_config_params(cfg)
 
-def worker(cfg_path: str) -> None:
-    """MPI worker - runs solver and logs to MLflow."""
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
+        # Tag with HPC job info if available
+        job_id = os.environ.get("LSB_JOBID")
+        if job_id:
+            mlflow.set_tag("lsf.job_id", job_id)
+            mlflow.set_tag("lsf.job_name", os.environ.get("LSB_JOBNAME", ""))
 
-    cfg = OmegaConf.load(cfg_path)
-    params = config_to_params(cfg)
+        # Solve
+        log.info("Starting solver...")
+        solver.solve()
 
-    # Setup MLflow (all ranks, but only rank 0 logs)
-    mlflow.set_tracking_uri(cfg.mlflow.get("tracking_uri", "./mlruns"))
+        # Log results
+        log_metrics_and_timeseries(solver, run.info.run_id)
+        save_and_log_artifact(solver, cfg, output_dir)
 
-    # Apply project prefix for Databricks (experiment names must be absolute paths)
-    experiment_name = cfg.experiment_name
-    project_prefix = cfg.mlflow.get("project_prefix", "")
-    if project_prefix and not experiment_name.startswith("/"):
-        experiment_name = f"{project_prefix}/{experiment_name}"
-    mlflow.set_experiment(experiment_name)
-
-    if rank == 0:
         log.info(
-            f"{params.solver}, N={params.N}, ranks={params.n_ranks}, "
-            f"{params.strategy}/{params.communicator}"
+            f"Done: {solver.metrics.iterations} iter, "
+            f"converged={solver.metrics.converged}, "
+            f"time={solver.metrics.wall_time_seconds:.2f}s"
         )
-
-    # Run solver
-    solver = create_solver(params, comm)
-    solver.warmup()
-    solver.solve()
-    solver.post_solve()
-
-    # Log results (rank 0 only)
-    if rank == 0:
-        log_to_mlflow(params, solver, solver.rank_topology)
-
-    log.info(
-        f"Done: {solver.metrics.iterations} iter, error={solver.metrics.final_error:.2e}, "
-        f"time={solver.metrics.wall_time:.3f}s"
-        + (f", {solver.metrics.mlups:.1f} MLup/s" if solver.metrics.mlups else "")
-    )
-
-
-# =============================================================================
-# Shared utilities
-# =============================================================================
-
-
-def config_to_params(cfg: DictConfig) -> GlobalParams:
-    """Convert Hydra config to GlobalParams."""
-    param_fields = {f.name for f in fields(GlobalParams) if f.init}
-    return GlobalParams(**{k: cfg[k] for k in param_fields})
-
-
-def create_solver(params: GlobalParams, comm):
-    """Create solver instance."""
-    common = {
-        "N": params.N,
-        "omega": params.omega,
-        "tolerance": params.tolerance,
-        "max_iter": params.max_iter,
-        "use_numba": params.use_numba,
-        "specified_numba_threads": params.specified_numba_threads,
-    }
-
-    # Use MPI solvers when n_ranks > 1, sequential otherwise
-    use_mpi = params.n_ranks > 1
-
-    if params.solver == "jacobi":
-        if use_mpi:
-            return JacobiMPISolver(
-                **common, strategy=params.strategy, communicator=params.communicator
-            )
-        return JacobiSolver(**common)
-    else:  # fmg
-        common.update(
-            n_smooth=params.n_smooth, fmg_post_vcycles=params.fmg_post_vcycles
-        )
-        if use_mpi:
-            return FMGMPISolver(
-                **common, strategy=params.strategy, communicator=params.communicator
-            )
-        return FMGSolver(**common)
-
-
-def log_to_mlflow(params: GlobalParams, solver, rank_topology: Optional[List[LocalParams]] = None) -> None:
-    """Log solver run to MLflow."""
-    with mlflow.start_run(run_name=f"{params.solver}_N{params.N}_p{params.n_ranks}") as run:
-        # Params and metrics from dataclasses
-        mlflow.log_params(params.to_mlflow())
-        mlflow.log_metrics(solver.metrics.to_mlflow())
-
-        # Timeseries: batch log step-based metrics
-        timeseries = solver.timeseries.to_mlflow_batch()
-        if timeseries:
-            MlflowClient().log_batch(run_id=run.info.run_id, metrics=timeseries)
-
-        # Rank topology artifact (for networkx visualizations)
-        if rank_topology:
-            topology_data = [asdict(rp) for rp in rank_topology]
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as f:
-                json.dump(topology_data, f, indent=2)
-                temp_path = f.name
-            mlflow.log_artifact(temp_path, artifact_path="topology")
-            os.unlink(temp_path)
-
-
-# =============================================================================
-# Entry point
-# =============================================================================
 
 
 if __name__ == "__main__":
-    if os.environ.get("MPI_WORKER"):
-        logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-        if len(sys.argv) < 2:
-            sys.exit("Error: Worker requires config path argument")
-        worker(sys.argv[1])
-    else:
-        main()
+    main()

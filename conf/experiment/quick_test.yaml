@@ -1,0 +1,11 @@
+# @package _global_
+# Quick test configuration for debugging
+# Usage: uv run python run_solver.py +experiment=quick_test solver=fv
+#        uv run python run_solver.py +experiment=quick_test solver=spectral
+
+experiment_name: Quick-Test
+
+N: 16
+Re: 100
+tolerance: 1.0e-4
+max_iterations: 100
