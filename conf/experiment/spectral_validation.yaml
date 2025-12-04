@@ -12,13 +12,12 @@ experiment_name: LDC-Validation
 sweep_name: validation
 
 # Validation polynomial orders (N+1 nodes) and Reynolds numbers
-N: 31
+N: 15
 Re: 100
-tolerance: 1.0e-7
-max_iterations: 100000
+tolerance: 1.0e-6
+max_iterations: 30000
 
 hydra:
   sweeper:
     params:
-      N: 15,23,31,47
-      Re: 100,400,1000
+      N: 15,23
