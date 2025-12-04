@@ -15,3 +15,4 @@ services:
       --default-artifact-root mlflow-artifacts:/
       --artifacts-destination /data/artifacts
       --serve-artifacts
+      --allowed-hosts '*'
