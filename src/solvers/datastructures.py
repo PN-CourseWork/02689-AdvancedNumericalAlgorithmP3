@@ -238,6 +238,11 @@ class SpectralParameters(Parameters):
     corner_smoothing: float = 0.15
     method: str = "Spectral-AC"
 
+    # Multigrid settings
+    multigrid: str = "none"  # "none", "fsg", "vmg", "fmg"
+    n_levels: int = 3
+    coarse_tolerance_factor: float = 10.0
+
 
 @dataclass
 class SpectralSolverFields:

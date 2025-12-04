@@ -379,3 +379,97 @@ class SpectralSolver(LidDrivenCavitySolver):
             "v_residual": np.linalg.norm(self.arrays.R_v),
             "continuity_residual": np.linalg.norm(self.arrays.R_p),
         }
+
+    def solve(self, tolerance: float = None, max_iter: int = None):
+        """Solve lid-driven cavity - dispatches to multigrid if configured.
+
+        Parameters
+        ----------
+        tolerance : float, optional
+            Convergence tolerance. If None, uses params.tolerance.
+        max_iter : int, optional
+            Maximum iterations. If None, uses params.max_iterations.
+        """
+        if tolerance is None:
+            tolerance = self.params.tolerance
+        if max_iter is None:
+            max_iter = self.params.max_iterations
+
+        mg_method = self.params.multigrid.lower()
+
+        if mg_method == "none":
+            # Use base class single-grid solver
+            super().solve(tolerance=tolerance, max_iter=max_iter)
+        elif mg_method == "fsg":
+            self._solve_fsg(tolerance, max_iter)
+        elif mg_method in ("vmg", "fmg"):
+            raise NotImplementedError(f"Multigrid method '{mg_method}' not yet implemented")
+        else:
+            raise ValueError(f"Unknown multigrid method: {mg_method}")
+
+    def _solve_fsg(self, tolerance: float, max_iter: int):
+        """Solve using Full Single Grid (FSG) multigrid."""
+        import time
+        from .spectral_multigrid import build_hierarchy, solve_fsg
+
+        log.info(f"Using FSG multigrid with {self.params.n_levels} levels")
+
+        # Build grid hierarchy
+        time_start = time.time()
+        levels = build_hierarchy(
+            n_fine=self.params.nx,
+            n_levels=self.params.n_levels,
+            basis_x=self.basis_x,
+            basis_y=self.basis_y,
+            Lx=self.params.Lx,
+            Ly=self.params.Ly,
+        )
+
+        # Solve using FSG
+        finest_level, total_iters, converged = solve_fsg(
+            levels=levels,
+            Re=self.params.Re,
+            beta_squared=self.params.beta_squared,
+            lid_velocity=self.params.lid_velocity,
+            corner_smoothing=self.params.corner_smoothing,
+            CFL=self.params.CFL,
+            tolerance=tolerance,
+            max_iterations=max_iter,
+            coarse_tolerance_factor=self.params.coarse_tolerance_factor,
+        )
+
+        time_end = time.time()
+        wall_time = time_end - time_start
+
+        # Copy solution from finest level to solver arrays
+        self.arrays.u[:] = finest_level.u
+        self.arrays.v[:] = finest_level.v
+        self.arrays.p[:] = finest_level.p
+
+        # Compute final residuals
+        self._compute_residuals(self.arrays.u, self.arrays.v, self.arrays.p)
+
+        # Store results using base class machinery
+        # Create minimal residual history for compatibility
+        final_residuals = self._compute_algebraic_residuals()
+        residual_history = [{
+            "rel_iter": tolerance if converged else tolerance * 10,
+            "u_eq": final_residuals["u_residual"],
+            "v_eq": final_residuals["v_residual"],
+            "continuity": final_residuals["continuity_residual"],
+        }]
+
+        self._store_results(
+            residual_history=residual_history,
+            final_iter_count=total_iters,
+            is_converged=converged,
+            wall_time=wall_time,
+            energy_history=[self._compute_energy()],
+            enstrophy_history=[self._compute_enstrophy()],
+            palinstrophy_history=[self._compute_palinstrophy()],
+        )
+
+        log.info(
+            f"FSG completed in {wall_time:.2f}s: {total_iters} iterations, "
+            f"converged={converged}"
+        )

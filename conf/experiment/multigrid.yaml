@@ -1,0 +1,27 @@
+# @package _global_
+# Multigrid testing experiment for spectral solver
+#
+# Usage - Compare single-grid vs FSG:
+#   uv run python run_solver.py -m +experiment=multigrid
+#
+# Usage - Single run:
+#   uv run python run_solver.py +experiment=multigrid solver=spectral
+#   uv run python run_solver.py +experiment=multigrid solver=spectral_fsg
+
+experiment_name: Multigrid-Test
+sweep_name: multigrid-sweep
+
+defaults:
+  - override /hydra/launcher: joblib
+
+# Sweep configuration
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      solver: spectral,spectral_fsg
+      N: "63"
+
+Re: 100
+tolerance: 1.0e-4
+max_iterations: 50000

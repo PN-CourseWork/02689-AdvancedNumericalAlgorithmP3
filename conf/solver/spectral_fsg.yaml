@@ -1,0 +1,13 @@
+# Spectral solver with FSG multigrid
+name: spectral
+
+# Spectral-specific parameters
+basis_type: chebyshev
+CFL: 0.5
+beta_squared: 5.0
+corner_smoothing: 0.15
+
+# FSG Multigrid enabled
+multigrid: fsg
+n_levels: 3
+coarse_tolerance_factor: 1.0  # Same tolerance on all levels

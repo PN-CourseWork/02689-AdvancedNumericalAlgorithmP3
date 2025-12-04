@@ -6,3 +6,8 @@ basis_type: chebyshev    # "chebyshev" or "legendre"
 CFL: 0.5
 beta_squared: 5.0        # artificial compressibility parameter
 corner_smoothing: 0.15   # fraction of grid points to smooth at corners
+
+# Multigrid settings
+multigrid: none          # "none", "fsg", "vmg", "fmg"
+n_levels: 3              # number of grid levels for multigrid
+coarse_tolerance_factor: 10.0  # relaxed tolerance on coarse grids

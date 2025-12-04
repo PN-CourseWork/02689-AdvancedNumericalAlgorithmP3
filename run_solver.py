@@ -80,6 +80,10 @@ def create_solver(cfg: DictConfig):
             CFL=cfg.solver.CFL,
             beta_squared=cfg.solver.beta_squared,
             corner_smoothing=cfg.solver.corner_smoothing,
+            # Multigrid settings
+            multigrid=cfg.solver.get("multigrid", "none"),
+            n_levels=cfg.solver.get("n_levels", 3),
+            coarse_tolerance_factor=cfg.solver.get("coarse_tolerance_factor", 10.0),
         )
     else:
         raise ValueError(f"Unknown solver: {solver_name}")
