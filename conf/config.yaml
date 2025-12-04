@@ -1,7 +1,6 @@
 defaults:
   - machine: local
   - mlflow: local
-  - override hydra/launcher: basic
   - _self_
 
 # ============================================================
