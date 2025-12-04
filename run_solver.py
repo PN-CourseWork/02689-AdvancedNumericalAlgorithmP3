@@ -17,13 +17,11 @@ Usage:
 
 import logging
 import os
-from dataclasses import asdict
 from pathlib import Path
 
 import hydra
 import mlflow
 from hydra.core.hydra_config import HydraConfig
-from mlflow.entities import Metric
 from mlflow.tracking import MlflowClient
 from omegaconf import DictConfig, OmegaConf
 
@@ -100,47 +98,19 @@ def setup_mlflow(cfg: DictConfig) -> str:
     return experiment_name
 
 
-def log_config_params(cfg: DictConfig):
-    """Log flattened config as MLflow parameters."""
-    # Common params
-    mlflow.log_params(
-        {
-            "solver": cfg.solver.name,
-            "N": cfg.N,
-            "Re": cfg.Re,
-            "lid_velocity": cfg.lid_velocity,
-            "Lx": cfg.Lx,
-            "Ly": cfg.Ly,
-            "tolerance": cfg.tolerance,
-            "max_iterations": cfg.max_iterations,
-        }
-    )
-
-    # Solver-specific params (flatten solver config)
-    solver_params = {
-        f"solver.{k}": v for k, v in OmegaConf.to_container(cfg.solver).items() if k != "name"
-    }
-    mlflow.log_params(solver_params)
+def log_params(solver):
+    """Log solver params to MLflow using dataclass to_mlflow method."""
+    mlflow.log_params(solver.params.to_mlflow())
 
 
 def log_metrics_and_timeseries(solver, run_id: str):
     """Log final metrics and timeseries to MLflow."""
-    # Final metrics
-    metrics_dict = asdict(solver.metrics)
-    # Convert booleans to int for MLflow
-    metrics_dict = {k: (int(v) if isinstance(v, bool) else v) for k, v in metrics_dict.items()}
-    mlflow.log_metrics(metrics_dict)
+    # Final metrics (using dataclass to_mlflow method)
+    mlflow.log_metrics(solver.metrics.to_mlflow())
 
-    # Timeseries (batch logging for efficiency)
+    # Timeseries (batch logging using dataclass to_mlflow_batch method)
     if solver.time_series is not None:
-        ts = asdict(solver.time_series)
-        batch_metrics = []
-        for key, values in ts.items():
-            if values is not None:
-                for step, value in enumerate(values):
-                    if value is not None:
-                        batch_metrics.append(Metric(key=key, value=value, timestamp=0, step=step))
-
+        batch_metrics = solver.time_series.to_mlflow_batch()
         if batch_metrics:
             MlflowClient().log_batch(run_id=run_id, metrics=batch_metrics)
 
@@ -195,7 +165,7 @@ def main(cfg: DictConfig) -> None:
 
     # Run with MLflow tracking
     with mlflow.start_run(run_name=run_name) as run:
-        log_config_params(cfg)
+        log_params(solver)
 
         # Tag with HPC job info if available
         job_id = os.environ.get("LSB_JOBID")
