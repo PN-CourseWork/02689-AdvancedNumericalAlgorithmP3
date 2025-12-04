@@ -9,10 +9,9 @@ Usage:
     uv run python run_solver.py solver=spectral N=15 Re=100 max_iterations=100
 
     # MLflow modes:
-    #   local-files  - file-based ./mlruns (default, no docker)
-    #   local-docker - local docker-compose (cd mlflow-server && docker compose up -d)
+    #   local-files  - file-based ./mlruns (default)
     #   coolify      - remote server (requires .env with credentials)
-    uv run python run_solver.py solver=fv mlflow=local-docker
+    uv run python run_solver.py solver=fv mlflow=local-files
     uv run python run_solver.py solver=fv mlflow=coolify
 
     # Parameter sweep
@@ -34,7 +33,6 @@ load_dotenv()
 
 import hydra
 import mlflow
-from hydra.core.hydra_config import HydraConfig
 from mlflow.tracking import MlflowClient
 from omegaconf import DictConfig, OmegaConf
 
@@ -124,8 +122,10 @@ def log_metrics_and_timeseries(solver, run_id: str):
             MlflowClient().log_batch(run_id=run_id, metrics=batch_metrics)
 
 
-def save_and_log_artifact(solver, cfg: DictConfig, output_dir: str):
-    """Save solver output to HDF5 and log as MLflow artifact."""
+def log_artifact(solver, cfg: DictConfig):
+    """Save solver output to temp HDF5 and log as MLflow artifact."""
+    import tempfile
+
     # Determine output filename
     solver_name = cfg.solver.name.upper()
     if solver_name == "SPECTRAL":
@@ -134,11 +134,12 @@ def save_and_log_artifact(solver, cfg: DictConfig, output_dir: str):
     else:
         filename = f"LDC_{solver_name}_N{cfg.N}_Re{int(cfg.Re)}.h5"
 
-    output_path = Path(output_dir) / filename
-    solver.save(output_path)
-    log.info(f"Saved results to: {output_path}")
-
-    mlflow.log_artifact(str(output_path))
+    # Save to temp file, log to MLflow, then cleanup
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_path = Path(tmpdir) / filename
+        solver.save(output_path)
+        mlflow.log_artifact(str(output_path))
+        log.info(f"Logged artifact: {filename}")
 
 
 # =============================================================================
@@ -149,14 +150,7 @@ def save_and_log_artifact(solver, cfg: DictConfig, output_dir: str):
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     """Hydra entry point - runs solver with MLflow tracking."""
-    output_dir = HydraConfig.get().runtime.output_dir
-
-    # Log resolved config
     log.info(f"Solver: {cfg.solver.name}, N={cfg.N}, Re={cfg.Re}")
-    log.info(f"Output dir: {output_dir}")
-
-    # Save resolved config
-    OmegaConf.save(cfg, Path(output_dir) / "config.yaml")
 
     # Setup MLflow
     experiment_name = setup_mlflow(cfg)
@@ -176,6 +170,9 @@ def main(cfg: DictConfig) -> None:
     with mlflow.start_run(run_name=run_name) as run:
         log_params(solver)
 
+        # Log Hydra config as artifact
+        mlflow.log_dict(OmegaConf.to_container(cfg), "config.yaml")
+
         # Tag with HPC job info if available
         job_id = os.environ.get("LSB_JOBID")
         if job_id:
@@ -188,7 +185,7 @@ def main(cfg: DictConfig) -> None:
 
         # Log results
         log_metrics_and_timeseries(solver, run.info.run_id)
-        save_and_log_artifact(solver, cfg, output_dir)
+        log_artifact(solver, cfg)
 
         log.info(
             f"Done: {solver.metrics.iterations} iter, "
