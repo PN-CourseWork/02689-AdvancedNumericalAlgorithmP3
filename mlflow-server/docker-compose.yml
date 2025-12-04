@@ -16,3 +16,4 @@ services:
       --artifacts-destination /data/artifacts
       --serve-artifacts
       --allowed-hosts '*'
+      --app-name basic-auth
