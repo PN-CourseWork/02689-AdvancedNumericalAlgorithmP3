@@ -8,7 +8,7 @@ services:
     ports:
       - "5001:5000"
     volumes:
-      - ./data:/data
+      - mlflow-data:/data
     environment:
       - MLFLOW_FLASK_SERVER_SECRET_KEY=${SERVICE_PASSWORD_MLFLOW:-defaultsecret123}
     command: >
@@ -21,3 +21,6 @@ services:
       --serve-artifacts
       --allowed-hosts '*'
       --app-name basic-auth
+
+volumes:
+  mlflow-data:
