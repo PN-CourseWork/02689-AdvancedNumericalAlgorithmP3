@@ -103,36 +103,30 @@ uv run mlflow ui --backend-store-uri ./mlruns --port 5001
 
 ### Local Docker
 
-Run the official MLflow server in Docker:
+Clone and run [mlflow-server](https://github.com/philipnickel/mlflow-server):
 
 ```bash
-# Start server
+# Clone and start server
+git clone https://github.com/philipnickel/mlflow-server.git
 cd mlflow-server && docker compose up -d
 
 # Run solver
 uv run python run_solver.py solver=fv mlflow=local-docker
 
-# View UI at http://localhost:5001
+# View UI at http://localhost:5001 (admin / password1234)
 ```
 
 ### Remote Server (Coolify)
 
-Deploy `mlflow-server/docker-compose.yml` to Coolify, then:
+Deploy [mlflow-server](https://github.com/philipnickel/mlflow-server) to Coolify. The admin password is auto-generated - find it in Coolify's environment variables (`SERVICE_PASSWORD_64_MLFLOW_ADMIN`).
 
 ```bash
-export MLFLOW_TRACKING_URI=https://mlflow.yourdomain.com
-export MLFLOW_TRACKING_USERNAME=admin
-export MLFLOW_TRACKING_PASSWORD=yourpassword
+# Setup credentials (one-time)
+cp .env.template .env
+# Edit .env with your credentials
+
+# Run solver
 uv run python run_solver.py solver=fv mlflow=coolify
-```
-
-**Authentication:** The server uses MLflow's built-in basic auth. Default credentials are `admin` / `password1234`. Change the password after first login via the UI or API:
-
-```bash
-curl -X PATCH -u admin:password1234 \
-  "$MLFLOW_TRACKING_URI/api/2.0/mlflow/users/update-password" \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "new-secure-password"}'
 ```
 
 ### Logged Data

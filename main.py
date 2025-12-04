@@ -73,7 +73,7 @@ def main():
     actions.add_argument("--copy-plots", action="store_true", help="Copy plots to report directory")
     actions.add_argument("--clean", action="store_true", help="Clean all generated files and caches")
     actions.add_argument("--setup-mlflow", action="store_true", help="Interactive MLflow setup (login to Databricks)")
-    actions.add_argument("--mlflow-ui", action="store_true", help="Start MLflow UI and open in browser")
+    actions.add_argument("--mlflow-ui", action="store_true", help="Start local MLflow UI (./mlruns)")
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -100,38 +100,37 @@ def main():
         runners.copy_to_report()
 
     if args.mlflow_ui:
+        import socket
         import subprocess
+        import threading
         import webbrowser
-        import time
 
-        print("\nStarting MLflow UI...")
+        def is_port_free(port):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                return s.connect_ex(('localhost', port)) != 0
+
+        # Find available port
+        port = 5001
+        while not is_port_free(port) and port < 5010:
+            port += 1
+
+        url = f"http://localhost:{port}"
+        print(f"\nStarting MLflow UI at {url}")
+        print("Press Ctrl+C to stop\n")
+
+        # Open browser after short delay
+        def open_browser():
+            import time
+            time.sleep(2)
+            webbrowser.open(url)
+
+        threading.Thread(target=open_browser, daemon=True).start()
+
+        # Run in foreground (blocks until Ctrl+C)
         try:
-            # Default to standard file-based backend (./mlruns)
-            cmd = ["uv", "run", "mlflow", "ui"]
-            
-            # Start MLflow UI in the background
-            log_file = open("mlflow_ui.log", "w")
-            mlflow_process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                preexec_fn=os.setsid # Detach process to run in background
-            )
-            print(f"MLflow UI started in background with PID: {mlflow_process.pid}")
-            print(f"Logs redirected to: mlflow_ui.log")
-            
-            # Give MLflow UI some time to start up
-            time.sleep(3) 
-
-            # Open in browser
-            url = "http://localhost:5000"
-            webbrowser.open_new_tab(url)
-            print(f"Opening MLflow UI in browser: {url}")
-            print("Press Ctrl+C to stop MLflow UI process later if it's still running.")
-        except FileNotFoundError:
-            print("Error: 'uv' command not found. Ensure uv is installed and in PATH.")
-        except Exception as e:
-            print(f"Error starting MLflow UI: {e}")
+            subprocess.run(["uv", "run", "mlflow", "ui", "--port", str(port)])
+        except KeyboardInterrupt:
+            print("\nMLflow UI stopped.")
 
     if args.docs:
         if not build_docs():

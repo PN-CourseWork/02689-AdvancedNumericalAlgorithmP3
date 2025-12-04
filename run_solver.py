@@ -11,17 +11,26 @@ Usage:
     # MLflow modes:
     #   local-files  - file-based ./mlruns (default, no docker)
     #   local-docker - local docker-compose (cd mlflow-server && docker compose up -d)
-    #   coolify      - remote server (set MLFLOW_TRACKING_URI, AWS credentials)
+    #   coolify      - remote server (requires .env with credentials)
     uv run python run_solver.py solver=fv mlflow=local-docker
     uv run python run_solver.py solver=fv mlflow=coolify
 
     # Parameter sweep
     uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400
+
+Setup for remote MLflow:
+    cp .env.template .env
+    # Edit .env with your credentials
 """
 
 import logging
 import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env file (for MLflow credentials)
+load_dotenv()
 
 import hydra
 import mlflow

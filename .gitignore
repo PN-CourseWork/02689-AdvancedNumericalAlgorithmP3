@@ -12,6 +12,7 @@ data/*
 outputs/
 TEMPLATE/
 mlruns/
+mlflow_ui.log
 
 # Uv stuff 
 uv.lock
