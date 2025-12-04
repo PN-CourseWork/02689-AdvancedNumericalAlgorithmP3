@@ -8,8 +8,12 @@ Usage:
     # Spectral solver (N=15 gives 16 nodes)
     uv run python run_solver.py solver=spectral N=15 Re=100 max_iterations=100
 
-    # With Databricks MLflow
-    uv run python run_solver.py solver=fv mlflow=databricks
+    # MLflow modes:
+    #   local-files  - file-based ./mlruns (default, no docker)
+    #   local-docker - local docker-compose (cd mlflow-server && docker compose up -d)
+    #   coolify      - remote server (set MLFLOW_TRACKING_URI, AWS credentials)
+    uv run python run_solver.py solver=fv mlflow=local-docker
+    uv run python run_solver.py solver=fv mlflow=coolify
 
     # Parameter sweep
     uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400
@@ -89,10 +93,6 @@ def setup_mlflow(cfg: DictConfig) -> str:
     project_prefix = cfg.mlflow.get("project_prefix", "")
     if project_prefix and not experiment_name.startswith("/"):
         experiment_name = f"{project_prefix}/{experiment_name}"
-
-    # Databricks login if needed
-    if cfg.mlflow.mode == "databricks":
-        mlflow.login()
 
     mlflow.set_experiment(experiment_name)
     return experiment_name

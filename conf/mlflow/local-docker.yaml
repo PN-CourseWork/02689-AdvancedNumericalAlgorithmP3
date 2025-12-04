@@ -1,0 +1,5 @@
+# Local Docker MLflow (official image with SQLite + local artifacts)
+# Start with: cd mlflow-server && docker compose up -d
+mode: docker
+tracking_uri: http://localhost:5001
+project_prefix: ""

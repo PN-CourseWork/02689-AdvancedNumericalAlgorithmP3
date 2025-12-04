@@ -69,8 +69,9 @@ conf/
 │   ├── fv_validation.yaml   # FV benchmark settings
 │   └── spectral_validation.yaml
 └── mlflow/
-    ├── local.yaml           # Local file-based tracking
-    └── databricks.yaml      # Cloud tracking
+    ├── local-files.yaml     # File-based tracking (default)
+    ├── local-docker.yaml    # Local Docker server
+    └── coolify.yaml         # Remote server (Coolify)
 ```
 
 ### Output Structure
@@ -85,21 +86,49 @@ outputs/{experiment_name}/Re{Re}/{solver}/{DD-MM-YY}/{HH:MM:SS}/
 └── .hydra/                  # Hydra internals
 ```
 
-## Viewing Results
+## MLflow
 
-### MLflow UI
+Results are tracked with [MLflow](https://mlflow.org/). Three tracking modes are available:
+
+### Local Files (Default)
+
+File-based tracking in `./mlruns` - no setup required:
 
 ```bash
+uv run python run_solver.py solver=fv mlflow=local-files
+
+# View UI
 uv run mlflow ui --backend-store-uri ./mlruns --port 5001
 ```
 
-Then open http://localhost:5001
+### Local Docker
+
+Run the official MLflow server in Docker:
+
+```bash
+# Start server
+cd mlflow-server && docker compose up -d
+
+# Run solver
+uv run python run_solver.py solver=fv mlflow=local-docker
+
+# View UI at http://localhost:5001
+```
+
+### Remote Server (Coolify)
+
+Deploy `mlflow-server/docker-compose.yml` to Coolify, then:
+
+```bash
+export MLFLOW_TRACKING_URI=https://mlflow.yourdomain.com
+uv run python run_solver.py solver=fv mlflow=coolify
+```
 
 ### Logged Data
 
 - **Parameters:** solver settings, grid size, Reynolds number
 - **Metrics:** iterations, convergence, wall time, residuals
-- **Timeseries:** residual history, energy, enstrophy (with step)
+- **Timeseries:** residual history, energy, enstrophy (per iteration)
 - **Artifacts:** HDF5 result files
 
 ## References

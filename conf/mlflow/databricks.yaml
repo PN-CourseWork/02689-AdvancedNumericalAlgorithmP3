@@ -1,4 +1,0 @@
-# Databricks MLflow configuration
-mode: databricks
-tracking_uri: databricks
-project_prefix: /Shared/ANA-P3

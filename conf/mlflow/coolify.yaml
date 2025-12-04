@@ -1,0 +1,5 @@
+# Coolify MLflow (same docker-compose deployed remotely)
+# Set MLFLOW_TRACKING_URI environment variable to your Coolify URL
+mode: coolify
+tracking_uri: ${oc.env:MLFLOW_TRACKING_URI,http://localhost:5000}
+project_prefix: ""

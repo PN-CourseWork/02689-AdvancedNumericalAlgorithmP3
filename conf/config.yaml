@@ -4,7 +4,7 @@
 
 defaults:
   - solver: fv
-  - mlflow: local
+  - mlflow: local-files
   - _self_
 
 # =============================================================================
