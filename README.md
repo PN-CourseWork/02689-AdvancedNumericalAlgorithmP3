@@ -121,7 +121,18 @@ Deploy `mlflow-server/docker-compose.yml` to Coolify, then:
 
 ```bash
 export MLFLOW_TRACKING_URI=https://mlflow.yourdomain.com
+export MLFLOW_TRACKING_USERNAME=admin
+export MLFLOW_TRACKING_PASSWORD=yourpassword
 uv run python run_solver.py solver=fv mlflow=coolify
+```
+
+**Authentication:** The server uses MLflow's built-in basic auth. Default credentials are `admin` / `password1234`. Change the password after first login via the UI or API:
+
+```bash
+curl -X PATCH -u admin:password1234 \
+  "$MLFLOW_TRACKING_URI/api/2.0/mlflow/users/update-password" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "new-secure-password"}'
 ```
 
 ### Logged Data
