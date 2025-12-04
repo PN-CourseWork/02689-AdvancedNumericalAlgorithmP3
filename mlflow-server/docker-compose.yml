@@ -1,7 +1,7 @@
 services:
   mlflow:
     build:
-      context: .
+      context: ./mlflow-server
       dockerfile: Dockerfile
     container_name: mlflow-server
     restart: unless-stopped
