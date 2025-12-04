@@ -2,6 +2,7 @@
 # Generated figures
 figures/
 # Report 
+*/TexReport
 
 # Generated data (keep README.md)
 data/*
