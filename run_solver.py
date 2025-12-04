@@ -122,24 +122,23 @@ def log_metrics_and_timeseries(solver, run_id: str):
             MlflowClient().log_batch(run_id=run_id, metrics=batch_metrics)
 
 
-def log_artifact(solver, cfg: DictConfig):
-    """Save solver output to temp HDF5 and log as MLflow artifact."""
+def log_fields(solver):
+    """Save solution fields as zarr arrays to MLflow artifacts."""
     import tempfile
 
-    # Determine output filename
-    solver_name = cfg.solver.name.upper()
-    if solver_name == "SPECTRAL":
-        n_nodes = cfg.N + 1
-        filename = f"LDC_{solver_name}_N{n_nodes}_Re{int(cfg.Re)}.h5"
-    else:
-        filename = f"LDC_{solver_name}_N{cfg.N}_Re{int(cfg.Re)}.h5"
+    import zarr
 
-    # Save to temp file, log to MLflow, then cleanup
+    fields = solver.fields
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        output_path = Path(tmpdir) / filename
-        solver.save(output_path)
-        mlflow.log_artifact(str(output_path))
-        log.info(f"Logged artifact: {filename}")
+        # Save each field as separate zarr array
+        for name in ["x", "y", "u", "v", "p"]:
+            arr = getattr(fields, name)
+            zarr_path = Path(tmpdir) / f"{name}.zarr"
+            zarr.save(zarr_path, arr)
+            mlflow.log_artifact(str(zarr_path), artifact_path="fields")
+
+        log.info("Logged fields: x, y, u, v, p (zarr)")
 
 
 # =============================================================================
@@ -166,8 +165,20 @@ def main(cfg: DictConfig) -> None:
     else:
         run_name = f"{solver_name}_N{cfg.N}_Re{int(cfg.Re)}"
 
+    # Check for parent run (from sweep callback)
+    parent_run_id = os.environ.get("MLFLOW_PARENT_RUN_ID")
+
     # Run with MLflow tracking
-    with mlflow.start_run(run_name=run_name) as run:
+    # Use nested=True when parent run is active (same process in local multirun)
+    run_tags = {}
+    nested = False
+    if parent_run_id:
+        run_tags["mlflow.parentRunId"] = parent_run_id
+        run_tags["parent_run_id"] = parent_run_id  # Also store as regular tag for querying
+        run_tags["sweep"] = "child"
+        nested = True  # Required when parent run is active in same process
+
+    with mlflow.start_run(run_name=run_name, tags=run_tags, nested=nested) as run:
         log_params(solver)
 
         # Log Hydra config as artifact
@@ -185,7 +196,7 @@ def main(cfg: DictConfig) -> None:
 
         # Log results
         log_metrics_and_timeseries(solver, run.info.run_id)
-        log_artifact(solver, cfg)
+        log_fields(solver)
 
         log.info(
             f"Done: {solver.metrics.iterations} iter, "

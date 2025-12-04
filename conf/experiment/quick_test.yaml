@@ -4,6 +4,7 @@
 #        uv run python run_solver.py +experiment=quick_test solver=spectral
 
 experiment_name: Quick-Test
+sweep_name: quick-test-sweep
 
 N: 16
 Re: 100

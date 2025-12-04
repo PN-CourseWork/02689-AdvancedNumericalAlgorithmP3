@@ -1,10 +1,13 @@
 # Main Hydra configuration for LDC solvers
 # Usage: uv run python run_solver.py solver=fv Re=100 N=32
 #        uv run python run_solver.py solver=spectral Re=100 N=15
+#
+# Parallel sweeps with joblib:
+#   uv run python run_solver.py -m hydra/launcher=joblib solver=fv N=16,32,64 Re=100
 
 defaults:
   - solver: fv
-  - mlflow: local-files
+  - mlflow: local
   - _self_
 
 # =============================================================================
@@ -28,13 +31,17 @@ max_iterations: 500
 
 # Experiment tracking
 experiment_name: LDC-Solver
+sweep_name: sweep  # Name for parent run in multirun sweeps
 
 # =============================================================================
-# Hydra output paths
+# Hydra output paths and callbacks
 # =============================================================================
 hydra:
   run:
-    dir: outputs/${experiment_name}/Re${Re}/${solver.name}/${now:%d-%m-%y}/${now:%H:%M:%S}
+    dir: hydra_outputs/${experiment_name}/Re${Re}/${solver.name}/${now:%d-%m-%y}/${now:%H:%M:%S}
   sweep:
-    dir: multirun/${experiment_name}/Re${Re}/${solver.name}/${now:%d-%m-%y}/${now:%H:%M:%S}
+    dir: hydra_outputs/multirun/${experiment_name}/Re${Re}/${solver.name}/${now:%d-%m-%y}/${now:%H:%M:%S}
     subdir: N${N}
+  callbacks:
+    mlflow_sweep:
+      _target_: utils.mlflow_callback.MLflowSweepCallback

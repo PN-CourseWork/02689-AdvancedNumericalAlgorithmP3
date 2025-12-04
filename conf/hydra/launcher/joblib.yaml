@@ -1,0 +1,14 @@
+# Joblib Launcher for parallel sweeps
+# Usage: uv run python run_solver.py -m hydra/launcher=joblib solver=fv N=16,32,64
+
+_target_: hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher
+
+n_jobs: -1        # -1 = all cores, -2 = all but one
+backend: loky     # loky, threading, multiprocessing
+verbose: 10       # 0-50
+timeout: null     # seconds per job (null = no timeout)
+pre_dispatch: "2*n_jobs"
+batch_size: auto
+temp_folder: null
+max_nbytes: 1M
+mmap_mode: r

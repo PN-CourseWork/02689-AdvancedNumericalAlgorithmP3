@@ -51,6 +51,8 @@ dependencies = [
   "textual>=6.6.0",
   "blessed>=1.25.0",
   "python-dotenv>=1.2.1",
+  "zarr>=3.1.5",
+  "hydra-joblib-launcher>=1.2.0",
 ]
 
 [tool.setuptools]

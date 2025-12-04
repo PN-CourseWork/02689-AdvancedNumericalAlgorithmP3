@@ -6,7 +6,10 @@
 defaults:
   - override /solver: fv
 
-experiment_name: FV-Validation
+# MLflow experiment (shared with spectral_validation)
+experiment_name: LDC-Validation
+# Parent run name - use same name across fv/spectral to group them
+sweep_name: validation
 
 # Validation grid sizes and Reynolds numbers
 N: 64

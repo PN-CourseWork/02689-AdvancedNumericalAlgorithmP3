@@ -9,7 +9,7 @@ data/*
 !data/README.md
 !data/.gitkeep
 !data/validation/
-outputs/
+hydra_outputs/
 TEMPLATE/
 mlruns/
 mlflow_ui.log

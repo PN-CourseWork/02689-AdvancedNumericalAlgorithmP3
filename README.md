@@ -46,7 +46,7 @@ uv run python run_solver.py +experiment=spectral_validation
 Run multiple configurations with Hydra's multirun:
 
 ```bash
-# Sweep over grid sizes
+# Sweep over grid sizes (sequential)
 uv run python run_solver.py -m solver=fv N=16,32,64 Re=100
 
 # Sweep over Reynolds numbers
@@ -54,6 +54,24 @@ uv run python run_solver.py -m solver=spectral N=31 Re=100,400,1000
 
 # Full validation sweep
 uv run python run_solver.py -m +experiment=fv_validation
+```
+
+### Parallel Sweeps (Joblib)
+
+Run sweeps in parallel using all CPU cores:
+
+```bash
+# Parallel sweep over grid sizes
+uv run python run_solver.py -m hydra/launcher=joblib solver=fv N=16,32,64 Re=100
+
+# Parallel sweep over solvers
+uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=32 Re=100
+
+# Parallel multi-dimensional sweep (solver x N x Re = 12 jobs)
+uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=16,32,64 Re=100,400
+
+# Control parallelism (e.g., 4 concurrent jobs)
+uv run python run_solver.py -m hydra/launcher=joblib hydra.launcher.n_jobs=4 solver=fv N=16,32,64
 ```
 
 ### Configuration Structure
@@ -68,58 +86,55 @@ conf/
 │   ├── quick_test.yaml      # Fast debugging runs
 │   ├── fv_validation.yaml   # FV benchmark settings
 │   └── spectral_validation.yaml
-└── mlflow/
-    ├── local-files.yaml     # File-based tracking (default)
-    ├── local-docker.yaml    # Local Docker server
-    └── coolify.yaml         # Remote server (Coolify)
+├── mlflow/
+│   ├── local.yaml           # File-based tracking (default)
+│   └── coolify.yaml         # Remote server (Coolify)
+└── hydra/
+    └── launcher/
+        └── joblib.yaml      # Parallel launcher (all cores)
 ```
+
+### Nested Runs for Sweeps
+
+Parameter sweeps automatically create a parent-child run hierarchy in MLflow:
+- **Parent run**: Created before sweep, logs sweep config
+- **Child runs**: Each parameter combination nested under parent
+
+This makes it easy to view all sweep runs together in the MLflow UI.
 
 ### Output Structure
 
-Each run creates a timestamped output directory:
+Each run creates a timestamped Hydra output directory:
 
 ```
-outputs/{experiment_name}/Re{Re}/{solver}/{DD-MM-YY}/{HH:MM:SS}/
-├── config.yaml              # Resolved configuration
+hydra_outputs/{experiment_name}/Re{Re}/{solver}/{DD-MM-YY}/{HH:MM:SS}/
 ├── run_solver.log           # Execution log
-├── LDC_{SOLVER}_N{N}_Re{Re}.h5  # Results (HDF5)
-└── .hydra/                  # Hydra internals
+└── .hydra/
+    ├── config.yaml          # Resolved configuration
+    ├── hydra.yaml           # Hydra settings
+    └── overrides.yaml       # CLI overrides
 ```
+
+Solution fields (u, v, p) and metrics are stored as MLflow artifacts (zarr format).
 
 ## MLflow
 
-Results are tracked with [MLflow](https://mlflow.org/). Three tracking modes are available:
+Results are tracked with [MLflow](https://mlflow.org/). Two tracking modes are available:
 
 ### Local Files (Default)
 
 File-based tracking in `./mlruns` - no setup required:
 
 ```bash
-uv run python run_solver.py solver=fv mlflow=local-files
+uv run python run_solver.py solver=fv mlflow=local
 
 # View UI
-uv run mlflow ui --backend-store-uri ./mlruns --port 5001
-```
-
-### Local Docker
-
-Clone and run [mlflow-server](https://github.com/philipnickel/mlflow-server):
-
-```bash
-# Clone and start server
-git clone https://github.com/philipnickel/mlflow-server.git
-cd mlflow-server && docker compose up -d
-
-# Run solver
-uv run python run_solver.py solver=fv mlflow=local-docker
-
-# View UI at http://localhost:5001 (admin / password1234)
+uv run main.py --mlflow-ui
 ```
 
 ### Remote Server (Coolify)
 
-Deploy [mlflow-server](https://github.com/philipnickel/mlflow-server) to Coolify. The admin password is auto-generated - find it in Coolify's environment variables (`SERVICE_PASSWORD_64_MLFLOW_ADMIN`).
-
+[mlflow-server](https://kni.dk/mlflow-ana-p3/#/experiments) 
 ```bash
 # Setup credentials (one-time)
 cp .env.template .env
@@ -129,12 +144,6 @@ cp .env.template .env
 uv run python run_solver.py solver=fv mlflow=coolify
 ```
 
-### Logged Data
-
-- **Parameters:** solver settings, grid size, Reynolds number
-- **Metrics:** iterations, convergence, wall time, residuals
-- **Timeseries:** residual history, energy, enstrophy (per iteration)
-- **Artifacts:** HDF5 result files
 
 ## References
 

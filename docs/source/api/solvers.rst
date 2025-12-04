@@ -1,9 +1,9 @@
-Lid-Driven Cavity Solvers (``ldc``)
-===================================
+Solvers (``solvers``)
+=====================
 
 Solvers for lid-driven cavity flow simulations.
 
-.. currentmodule:: ldc
+.. currentmodule:: solvers
 
 .. autosummary::
    :toctree: ../generated

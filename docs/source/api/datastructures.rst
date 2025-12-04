@@ -1,9 +1,9 @@
-Data Structures (``ldc.datastructures``)
-========================================
+Data Structures (``solvers.datastructures``)
+============================================
 
 Configuration and result data structures for solvers.
 
-.. currentmodule:: ldc.datastructures
+.. currentmodule:: solvers.datastructures
 
 .. autosummary::
    :toctree: ../generated
