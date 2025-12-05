@@ -137,12 +137,14 @@ def find_sibling_runs(parent_run_id: str, tracking_uri: str) -> list[dict]:
 
     siblings = []
     for run in runs:
-        # Extract solver name from run_name (format: {solver}_N{n}_Re{re})
         run_name = run.info.run_name or ""
-        solver_name = run_name.split("_N")[0] if "_N" in run_name else "unknown"
 
-        # Extract corner treatment from params
-        corner_treatment = run.data.params.get("corner_treatment", "unknown")
+        # Extract solver name from run_name (format: {solver}_N{n} or {solver}_N{n}_Re{re})
+        # Examples: "fv_N32", "spectral_N33", "spectral_fsg_N16"
+        if "_N" in run_name:
+            solver_name = run_name.rsplit("_N", 1)[0]  # rsplit to handle underscores in solver name
+        else:
+            solver_name = "unknown"
 
         siblings.append({
             "run_id": run.info.run_id,
@@ -150,8 +152,7 @@ def find_sibling_runs(parent_run_id: str, tracking_uri: str) -> list[dict]:
             "N": int(run.data.params.get("nx", 0)),
             "Re": float(run.data.params.get("Re", 0)),
             "solver": solver_name,
-            "corner_treatment": corner_treatment,
-            "status": run.info.status,  # Track if FINISHED or RUNNING
+            "status": run.info.status,
         })
 
     finished = sum(1 for s in siblings if s["status"] == "FINISHED")
@@ -537,7 +538,7 @@ def plot_convergence(timeseries_df: pd.DataFrame, Re: float, solver: str, N: int
 def plot_ghia_validation(fields: dict, Re: float, solver: str, N: int, output_dir: Path) -> Path:
     """Plot validation against Ghia benchmark data."""
     import matplotlib.pyplot as plt
-    from scipy.interpolate import RectBivariateSpline
+    from spectral import spectral_interpolate
 
     AVAILABLE_RE = [100, 400, 1000, 3200, 5000, 7500, 10000]
     if int(Re) not in AVAILABLE_RE:
@@ -561,18 +562,22 @@ def plot_ghia_validation(fields: dict, Re: float, solver: str, N: int, output_di
     # Restructure fields to 2D arrays
     x_unique, y_unique, U_2d, V_2d, _ = restructure_fields(fields)
 
-    U_spline = RectBivariateSpline(y_unique, x_unique, U_2d)
-    V_spline = RectBivariateSpline(y_unique, x_unique, V_2d)
-
+    # Use spectral interpolation for centerline extraction
     n_points = 200
     y_line = np.linspace(y_unique.min(), y_unique.max(), n_points)
     x_line = np.linspace(x_unique.min(), x_unique.max(), n_points)
 
-    x_center = (x_unique.min() + x_unique.max()) / 2
-    y_center = (y_unique.min() + y_unique.max()) / 2
+    # Find center indices
+    x_center_idx = len(x_unique) // 2
+    y_center_idx = len(y_unique) // 2
 
-    u_sim = U_spline(y_line, x_center).ravel()
-    v_sim = V_spline(y_center, x_line).ravel()
+    # U along vertical centerline (x = center): interpolate in y
+    u_at_center_x = U_2d[:, x_center_idx]
+    u_sim = spectral_interpolate(y_unique, u_at_center_x, y_line, basis="legendre")
+
+    # V along horizontal centerline (y = center): interpolate in x
+    v_at_center_y = V_2d[y_center_idx, :]
+    v_sim = spectral_interpolate(x_unique, v_at_center_y, x_line, basis="legendre")
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
@@ -609,16 +614,41 @@ def plot_ghia_validation(fields: dict, Re: float, solver: str, N: int, output_di
 # =============================================================================
 
 
-def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Path) -> Path:
-    """Plot Ghia comparison with all sibling runs overlaid using seaborn.
+def _build_method_label(sibling: dict) -> str:
+    """Build a unified method label from solver name.
 
-    Uses seaborn lineplot with hue and style for clear legend differentiation.
-    Data is sorted properly before plotting to ensure correct line connections.
+    Formats solver names nicely for legends:
+    - 'fv' -> 'FV'
+    - 'spectral' -> 'Spectral'
+    - 'spectral_fsg' -> 'Spectral-FSG'
+    - 'spectral_vmg' -> 'Spectral-VMG'
+    """
+    solver = sibling.get("solver", "unknown")
+
+    # Format known solver names
+    label_map = {
+        "fv": "FV",
+        "spectral": "Spectral",
+        "spectral_fsg": "Spectral-FSG",
+        "spectral_vmg": "Spectral-VMG",
+        "spectral_fmg": "Spectral-FMG",
+    }
+
+    return label_map.get(solver, solver.replace("_", "-").title())
+
+
+def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Path) -> Path:
+    """Plot Ghia comparison with all sibling runs using seaborn.
+
+    Legend system (native seaborn):
+    - hue: Method type (Spectral, FV, Spectral-FSG, etc.)
+    - style: Grid size N (different dash patterns)
+    - markers: Method-specific markers (every 20th point)
 
     Parameters
     ----------
     siblings : list[dict]
-        List of sibling run info dicts with run_id, N, Re, solver, corner_treatment
+        List of sibling run info dicts with run_id, N, Re, solver
     tracking_uri : str
         MLflow tracking URI
     output_dir : Path
@@ -631,20 +661,17 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
     """
     import matplotlib.pyplot as plt
     import seaborn as sns
-    from scipy.interpolate import RectBivariateSpline
 
     if not siblings:
         return None
 
-    # Only plot finished runs (can't download artifacts from running runs)
+    # Only plot finished runs
     finished_siblings = [s for s in siblings if s.get("status", "FINISHED") == "FINISHED"]
     if len(finished_siblings) < 2:
         log.info(f"Need at least 2 finished runs for comparison (have {len(finished_siblings)})")
         return None
 
     siblings = finished_siblings
-
-    # Get Re from first sibling (all should have same Re in a sweep)
     Re = siblings[0]["Re"]
 
     AVAILABLE_RE = [100, 400, 1000, 3200, 5000, 7500, 10000]
@@ -652,7 +679,7 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
         log.warning(f"Ghia data not available for Re={Re}")
         return None
 
-    # Project root is 1 level up from src/
+    # Load Ghia reference data
     project_root = Path(__file__).parent.parent
     ghia_dir = project_root / "data" / "validation" / "ghia"
 
@@ -666,80 +693,56 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
     ghia_u = pd.read_csv(u_file)
     ghia_v = pd.read_csv(v_file)
 
-    # Load scientific style with LaTeX
+    # Load scientific style
     style_path = project_root / "src" / "utils" / "plotting" / "scientific.mplstyle"
     if style_path.exists():
         plt.style.use(style_path)
     else:
-        # Fallback to seaborn style
         sns.set_style("whitegrid")
         sns.set_context("paper", font_scale=1.2)
 
-    # Build DataFrames for seaborn - one row per data point
-    u_records = []
-    v_records = []
-
-    # Filter to only use the most recent run per corner treatment
-    # (avoids duplicate lines from old runs)
-    seen_treatments = set()
+    # Filter to unique (method, N) combinations
+    seen_combos = set()
     unique_siblings = []
     for sibling in siblings:
-        ct = sibling.get("corner_treatment", "unknown")
-        if ct not in seen_treatments:
-            seen_treatments.add(ct)
+        method = _build_method_label(sibling)
+        N = sibling["N"]
+        combo = (method, N)
+        if combo not in seen_combos:
+            seen_combos.add(combo)
             unique_siblings.append(sibling)
 
-    log.info(f"Using {len(unique_siblings)} unique corner treatments: {list(seen_treatments)}")
+    log.info(f"Plotting {len(unique_siblings)} unique (method, N) combinations")
+
+    # Build DataFrames
+    u_records = []
+    v_records = []
 
     for sibling in unique_siblings:
         run_id = sibling["run_id"]
         N = sibling["N"]
-        corner_treatment = sibling.get("corner_treatment", "unknown")
+        method = _build_method_label(sibling)
 
         try:
-            # Download and load fields
             artifact_dir = download_mlflow_artifacts(run_id, tracking_uri)
             fields = load_fields_from_zarr(artifact_dir)
-
-            # Restructure to 2D arrays
             x_unique, y_unique, U_2d, V_2d, _ = restructure_fields(fields)
 
-            # Use our spectral interpolation for centerline extraction
-            # This preserves spectral accuracy via Vandermonde matrix approach
             from spectral import spectral_interpolate
 
             n_points = 200
             y_line = np.linspace(y_unique.min(), y_unique.max(), n_points)
             x_line = np.linspace(x_unique.min(), x_unique.max(), n_points)
 
-            # Find center indices
             x_center_idx = len(x_unique) // 2
             y_center_idx = len(y_unique) // 2
 
-            # U along vertical centerline (x = center): interpolate in y
-            u_at_center_x = U_2d[:, x_center_idx]  # U values at x=center for all y
-            u_sim = spectral_interpolate(y_unique, u_at_center_x, y_line, basis="legendre")
+            u_sim = spectral_interpolate(y_unique, U_2d[:, x_center_idx], y_line, basis="legendre")
+            v_sim = spectral_interpolate(x_unique, V_2d[y_center_idx, :], x_line, basis="legendre")
 
-            # V along horizontal centerline (y = center): interpolate in x
-            v_at_center_y = V_2d[y_center_idx, :]  # V values at y=center for all x
-            v_sim = spectral_interpolate(x_unique, v_at_center_y, x_line, basis="legendre")
-
-            # Add simulation data to records
             for i in range(n_points):
-                u_records.append({
-                    "y": y_line[i],
-                    "u": u_sim[i],
-                    "Corner Treatment": corner_treatment.capitalize(),
-                    "N": N,
-                    "source": "simulation",
-                })
-                v_records.append({
-                    "x": x_line[i],
-                    "v": v_sim[i],
-                    "Corner Treatment": corner_treatment.capitalize(),
-                    "N": N,
-                    "source": "simulation",
-                })
+                u_records.append({"y": y_line[i], "u": u_sim[i], "Method": method, "N": N})
+                v_records.append({"x": x_line[i], "v": v_sim[i], "Method": method, "N": N})
 
         except Exception as e:
             log.warning(f"Failed to load run {run_id}: {e}")
@@ -749,65 +752,42 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
         log.warning("No valid runs to plot")
         return None
 
-    # Create DataFrames and sort by position variable for proper line drawing
-    u_df = pd.DataFrame(u_records).sort_values(["Corner Treatment", "y"])
-    v_df = pd.DataFrame(v_records).sort_values(["Corner Treatment", "x"])
+    u_df = pd.DataFrame(u_records).sort_values(["Method", "N", "y"])
+    v_df = pd.DataFrame(v_records).sort_values(["Method", "N", "x"])
 
-    # Define dash styles: solid for smoothing, dashed for subtraction
-    dashes = {
-        "Smoothing": "",
-        "Subtraction": (4, 2),
-    }
-
+    # Create figure
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Plot U velocity (vertical centerline) - simulation data
+    # Plot with seaborn: hue=Method (color), style=N (dashes), markers
     sns.lineplot(
-        data=u_df,
-        x="u",
-        y="y",
-        hue="Corner Treatment",
-        style="Corner Treatment",
-        dashes=dashes,
-        linewidth=1.5,
-        sort=False,  # Data is already sorted by y
+        data=u_df, x="u", y="y",
+        hue="Method", style="N",
+        markers=True, markersize=4, markevery=20,
+        linewidth=1.5, sort=False,
         ax=axes[0],
     )
-    # Add Ghia reference as scatter (separate from seaborn to avoid marker mixing issues)
-    axes[0].scatter(
-        ghia_u["u"], ghia_u["y"],
-        c="black", s=60, marker="x", linewidths=1.5,
-        label=r"Ghia et al.\ (1982)", zorder=10
-    )
+    axes[0].scatter(ghia_u["u"], ghia_u["y"], c="black", s=60, marker="x",
+                    linewidths=1.5, label=r"Ghia et al.\ (1982)", zorder=10)
     axes[0].set_xlabel(r"$u$")
     axes[0].set_ylabel(r"$y$")
     axes[0].set_title(r"$u$-velocity (vertical centerline)")
-    axes[0].legend(loc="best", title=None)
+    axes[0].legend(loc="best", fontsize=8)
     axes[0].set_xlim(-0.4, 1.05)
     axes[0].set_ylim(0, 1)
 
-    # Plot V velocity (horizontal centerline) - simulation data
     sns.lineplot(
-        data=v_df,
-        x="x",
-        y="v",
-        hue="Corner Treatment",
-        style="Corner Treatment",
-        dashes=dashes,
-        linewidth=1.5,
-        sort=False,  # Data is already sorted by x
+        data=v_df, x="x", y="v",
+        hue="Method", style="N",
+        markers=True, markersize=4, markevery=20,
+        linewidth=1.5, sort=False,
         ax=axes[1],
     )
-    # Add Ghia reference as scatter
-    axes[1].scatter(
-        ghia_v["x"], ghia_v["v"],
-        c="black", s=60, marker="x", linewidths=1.5,
-        label=r"Ghia et al.\ (1982)", zorder=10
-    )
+    axes[1].scatter(ghia_v["x"], ghia_v["v"], c="black", s=60, marker="x",
+                    linewidths=1.5, label=r"Ghia et al.\ (1982)", zorder=10)
     axes[1].set_xlabel(r"$x$")
     axes[1].set_ylabel(r"$v$")
     axes[1].set_title(r"$v$-velocity (horizontal centerline)")
-    axes[1].legend(loc="best", title=None)
+    axes[1].legend(loc="best", fontsize=8)
     axes[1].set_xlim(0, 1)
 
     fig.suptitle(rf"Ghia Benchmark Comparison --- $\mathrm{{Re}}={int(Re)}$")
