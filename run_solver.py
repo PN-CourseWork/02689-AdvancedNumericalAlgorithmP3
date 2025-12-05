@@ -27,18 +27,18 @@ import os
 import sys
 from pathlib import Path
 
+import hydra
+import mlflow
 from dotenv import load_dotenv
+from hydra.utils import instantiate
+from mlflow.tracking import MlflowClient
+from omegaconf import DictConfig, OmegaConf
 
 # Load .env file (for MLflow credentials)
 load_dotenv()
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-import hydra
-import mlflow
-from mlflow.tracking import MlflowClient
-from omegaconf import DictConfig, OmegaConf
 
 log = logging.getLogger(__name__)
 
@@ -49,58 +49,8 @@ log = logging.getLogger(__name__)
 
 
 def create_solver(cfg: DictConfig):
-    """Create solver instance from Hydra config."""
-    solver_name = cfg.solver.name
-
-    # Common parameters
-    common = {
-        "Re": cfg.Re,
-        "lid_velocity": cfg.lid_velocity,
-        "Lx": cfg.Lx,
-        "Ly": cfg.Ly,
-        "nx": cfg.N,
-        "ny": cfg.N,
-        "max_iterations": cfg.max_iterations,
-        "tolerance": cfg.tolerance,
-    }
-
-    if solver_name == "fv":
-        from solvers import FVSolver
-
-        return FVSolver(
-            **common,
-            convection_scheme=cfg.solver.convection_scheme,
-            limiter=cfg.solver.limiter,
-            alpha_uv=cfg.solver.alpha_uv,
-            alpha_p=cfg.solver.alpha_p,
-            linear_solver_tol=cfg.solver.linear_solver_tol,
-        )
-    elif solver_name.startswith("spectral"):
-        from solvers import SpectralSolver
-
-        # Get transfer operator settings (nested under solver.transfer)
-        transfer_cfg = cfg.solver.get("transfer", {})
-        prolongation_method = transfer_cfg.get("prolongation", "fft") if transfer_cfg else "fft"
-        restriction_method = transfer_cfg.get("restriction", "fft") if transfer_cfg else "fft"
-
-        return SpectralSolver(
-            **common,
-            basis_type=cfg.solver.basis_type,
-            CFL=cfg.solver.CFL,
-            beta_squared=cfg.solver.beta_squared,
-            # Corner singularity treatment
-            corner_treatment=cfg.solver.get("corner_treatment", "smoothing"),
-            corner_smoothing=cfg.solver.get("corner_smoothing", 0.15),
-            # Multigrid settings
-            multigrid=cfg.solver.get("multigrid", "none"),
-            n_levels=cfg.solver.get("n_levels", 3),
-            coarse_tolerance_factor=cfg.solver.get("coarse_tolerance_factor", 10.0),
-            # Transfer operators
-            prolongation_method=prolongation_method,
-            restriction_method=restriction_method,
-        )
-    else:
-        raise ValueError(f"Unknown solver: {solver_name}")
+    """Instantiate solver using Hydra's instantiate on solver subtree."""
+    return instantiate(cfg.solver, _convert_="partial")
 
 
 # =============================================================================
@@ -111,6 +61,10 @@ def create_solver(cfg: DictConfig):
 def setup_mlflow(cfg: DictConfig) -> str:
     """Setup MLflow tracking and return experiment name."""
     tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
+    # If defaulting to local file backend, clear any env override
+    if str(cfg.mlflow.get("mode", "")).lower() in ("files", "local"):
+        os.environ.pop("MLFLOW_TRACKING_URI", None)
+    os.environ["MLFLOW_TRACKING_URI"] = str(tracking_uri)
     mlflow.set_tracking_uri(tracking_uri)
 
     # Build experiment name with optional project prefix
@@ -119,7 +73,19 @@ def setup_mlflow(cfg: DictConfig) -> str:
     if project_prefix and not experiment_name.startswith("/"):
         experiment_name = f"{project_prefix}/{experiment_name}"
 
-    mlflow.set_experiment(experiment_name)
+    try:
+        mlflow.set_experiment(experiment_name)
+    except Exception as exc:
+        # If experiment was previously deleted, fall back to a new name
+        fallback = f"{experiment_name}-restored"
+        log.warning(
+            "MLflow set_experiment failed for '%s' (%s); falling back to '%s'",
+            experiment_name,
+            exc,
+            fallback,
+        )
+        experiment_name = fallback
+        mlflow.set_experiment(experiment_name)
     return experiment_name
 
 
@@ -192,7 +158,9 @@ def main(cfg: DictConfig) -> None:
     nested = False
     if parent_run_id:
         run_tags["mlflow.parentRunId"] = parent_run_id
-        run_tags["parent_run_id"] = parent_run_id  # Also store as regular tag for querying
+        run_tags["parent_run_id"] = (
+            parent_run_id  # Also store as regular tag for querying
+        )
         run_tags["sweep"] = "child"
         nested = True  # Required when parent run is active in same process
 
@@ -224,9 +192,11 @@ def main(cfg: DictConfig) -> None:
 
         # Generate plots
         if cfg.get("generate_plots", True):
-            from plotting import generate_plots_for_run
+            from shared.plotting.ldc_plotter import generate_plots_for_run
 
-            output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+            output_dir = Path(
+                hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+            )
             tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
             generate_plots_for_run(
                 run_id=run.info.run_id,

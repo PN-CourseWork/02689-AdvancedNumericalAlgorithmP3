@@ -4,14 +4,12 @@
 import argparse
 import sys
 from pathlib import Path
-import os # Added for os.setsid
 
 # Ensure src directory is in python path
 sys.path.append(str(Path(__file__).parent / "src"))
 
-from utils import runners
-from utils import mlflow as mlflow_utils
-from utils.config import get_repo_root, clean_all
+from utilities import runners
+from utilities.config import get_repo_root, clean_all
 
 
 def build_docs():
@@ -31,7 +29,15 @@ def build_docs():
 
     try:
         result = subprocess.run(
-            ["uv", "run", "sphinx-build", "-M", "html", str(source_dir), str(build_dir)],
+            [
+                "uv",
+                "run",
+                "sphinx-build",
+                "-M",
+                "html",
+                str(source_dir),
+                str(build_dir),
+            ],
             capture_output=True,
             text=True,
             timeout=300,
@@ -67,13 +73,29 @@ def main():
     )
 
     actions = parser.add_argument_group("Actions")
-    actions.add_argument("--docs", action="store_true", help="Build Sphinx HTML documentation")
-    actions.add_argument("--compute", action="store_true", help="Run all compute scripts (sequentially)")
-    actions.add_argument("--plot", action="store_true", help="Run all plotting scripts (in parallel)")
-    actions.add_argument("--copy-plots", action="store_true", help="Copy plots to report directory")
-    actions.add_argument("--clean", action="store_true", help="Clean all generated files and caches")
-    actions.add_argument("--setup-mlflow", action="store_true", help="Interactive MLflow setup (login to Databricks)")
-    actions.add_argument("--mlflow-ui", action="store_true", help="Start local MLflow UI (./mlruns)")
+    actions.add_argument(
+        "--docs", action="store_true", help="Build Sphinx HTML documentation"
+    )
+    actions.add_argument(
+        "--compute", action="store_true", help="Run all compute scripts (sequentially)"
+    )
+    actions.add_argument(
+        "--plot", action="store_true", help="Run all plotting scripts (in parallel)"
+    )
+    actions.add_argument(
+        "--copy-plots", action="store_true", help="Copy plots to report directory"
+    )
+    actions.add_argument(
+        "--clean", action="store_true", help="Clean all generated files and caches"
+    )
+    actions.add_argument(
+        "--setup-mlflow",
+        action="store_true",
+        help="Interactive MLflow setup (login to Databricks)",
+    )
+    actions.add_argument(
+        "--mlflow-ui", action="store_true", help="Start local MLflow UI (./mlruns)"
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -87,6 +109,7 @@ def main():
 
     if args.setup_mlflow:
         import mlflow
+
         print("\nSetting up MLflow...")
         mlflow.login(backend="databricks", interactive=True)
 
@@ -107,7 +130,7 @@ def main():
 
         def is_port_free(port):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(('localhost', port)) != 0
+                return s.connect_ex(("localhost", port)) != 0
 
         # Find available port
         port = 5001
@@ -121,6 +144,7 @@ def main():
         # Open browser after short delay
         def open_browser():
             import time
+
             time.sleep(2)
             webbrowser.open(url)
 

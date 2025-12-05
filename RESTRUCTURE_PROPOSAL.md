@@ -301,6 +301,13 @@ hydra:
 4. Update `__init__.py` exports
 5. Delete stale `__pycache__/` and `*.nbc` artifacts after moves to avoid packaging noise
 
+### Hydra Instantiation Direction
+
+- Add `_target_` to solver configs and instantiate solvers via `hydra.utils.instantiate(cfg.solver, _convert_="partial")` in `run_solver.py`.
+- Keep solver inputs scoped to the solver subtree: carry `Re`, `N`, `lid_velocity`, `Lx`, `Ly`, `max_iterations`, `tolerance`, etc. into the solver config via interpolation; do **not** pass the full runtime `cfg` (which includes MLflow/Hydra metadata) into solver constructors.
+- Rely on solver constructors accepting `**kwargs` (already true) and their `Parameters` dataclasses as the single source of truth. Multigrid/transfer variants remain pure config choices.
+- This removes manual parameter plucking in `create_solver`, keeps separation of concerns, and makes adding new solver variants config-only.
+
 ### Phase 2: Reorganize `conf/`
 
 1. Create new directory structure

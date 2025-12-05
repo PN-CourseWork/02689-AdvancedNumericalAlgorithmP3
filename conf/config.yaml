@@ -7,7 +7,7 @@
 
 defaults:
   - solver: fv
-  - mlflow: local
+  - shared/mlflow@mlflow: local
   - _self_
 
 # =============================================================================
@@ -28,6 +28,7 @@ Ly: 1.0
 # Solver control
 tolerance: 1.0e-6
 max_iterations: 500
+generate_plots: true
 
 # Experiment tracking
 experiment_name: LDC-Solver
@@ -44,4 +45,4 @@ hydra:
     subdir: N${N}
   callbacks:
     mlflow_sweep:
-      _target_: utils.mlflow_callback.MLflowSweepCallback
+      _target_: utilities.mlflow.callback.MLflowSweepCallback

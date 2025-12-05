@@ -15,7 +15,7 @@ Spatial      -                             Fields
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -30,6 +30,7 @@ import pandas as pd
 class Parameters:
     """Base solver parameters - input configuration for all solvers."""
 
+    name: str = ""
     Re: float = 100
     lid_velocity: float = 1.0
     Lx: float = 1.0
@@ -43,8 +44,7 @@ class Parameters:
     def to_mlflow(self) -> dict:
         """Convert to MLflow-compatible params dict."""
         return {
-            k: (int(v) if isinstance(v, bool) else v)
-            for k, v in self.__dict__.items()
+            k: (int(v) if isinstance(v, bool) else v) for k, v in self.__dict__.items()
         }
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -114,9 +114,7 @@ class TimeSeries:
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to DataFrame with one row per iteration."""
-        return pd.DataFrame({
-            k: v for k, v in self.__dict__.items() if v
-        })
+        return pd.DataFrame({k: v for k, v in self.__dict__.items() if v})
 
 
 # ============================================================================
@@ -136,10 +134,9 @@ class Fields:
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to DataFrame with one row per grid point."""
-        return pd.DataFrame({
-            "x": self.x, "y": self.y,
-            "u": self.u, "v": self.v, "p": self.p
-        })
+        return pd.DataFrame(
+            {"x": self.x, "y": self.y, "u": self.u, "v": self.v, "p": self.p}
+        )
 
 
 # ============================================================================

@@ -1,14 +1,16 @@
-"""Utility modules for I/O, formatting, plotting, and numerical norms."""
+"""Compatibility wrappers for migrated utilities."""
 
-from .io import ensure_output_dir, load_simulation_data, save_simulation_data
-from .formatting import (
+from utilities.io import ensure_output_dir, load_simulation_data, save_simulation_data
+from solvers.metrics import (
     extract_metadata,
     format_dt_latex,
     format_parameter_range,
     build_parameter_string,
+    discrete_l2_error,
+    discrete_l2_norm,
+    discrete_linf_error,
 )
-from .plotting import get_repo_root
-from .norms import discrete_l2_error, discrete_l2_norm, discrete_linf_error
+from shared.plotting.plotting import get_repo_root
 
 __all__ = [
     # I/O

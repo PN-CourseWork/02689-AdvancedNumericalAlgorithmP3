@@ -1,9 +1,9 @@
-Spectral Solver (``solvers.spectral_solver``)
+Spectral Solver (``solvers.spectral.solver``)
 =============================================
 
 Spectral solver using Chebyshev collocation with artificial compressibility.
 
-.. currentmodule:: solvers.spectral_solver
+.. currentmodule:: solvers.spectral.solver
 
 .. autosummary::
    :toctree: ../generated

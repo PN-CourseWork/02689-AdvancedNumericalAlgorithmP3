@@ -8,7 +8,6 @@ defaults:
 
 # MLflow experiment (shared with fv_validation)
 experiment_name: LDC-Validation
-# Parent run name - use same name across fv/spectral to group them
 sweep_name: validation
 
 # Validation polynomial orders (N+1 nodes) and Reynolds numbers
@@ -20,4 +19,4 @@ max_iterations: 30000
 hydra:
   sweeper:
     params:
-      N: 15,23
+      N: 15,19

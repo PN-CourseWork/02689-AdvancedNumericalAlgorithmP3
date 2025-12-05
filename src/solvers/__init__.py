@@ -10,7 +10,7 @@ LidDrivenCavitySolver (abstract base - defines problem)
     └── MultigridSpectralSolver (extends with multigrid acceleration)
 """
 
-from .base_solver import LidDrivenCavitySolver
+from .base import LidDrivenCavitySolver
 from .datastructures import (
     # Base classes (shared by all solvers)
     Parameters,
@@ -24,8 +24,8 @@ from .datastructures import (
     SpectralParameters,
     SpectralSolverFields,
 )
-from .spectral_solver import SpectralSolver
-from .fv_solver import FVSolver
+from solvers.fv.solver import FVSolver
+from solvers.spectral.solver import SpectralSolver
 
 
 __all__ = [

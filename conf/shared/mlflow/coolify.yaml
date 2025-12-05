@@ -1,0 +1,6 @@
+# @package mlflow
+# Coolify MLflow (same docker-compose deployed remotely)
+# Required: set MLFLOW_TRACKING_URI environment variable
+mode: coolify
+tracking_uri: ${oc.env:MLFLOW_TRACKING_URI}
+project_prefix: ""

@@ -1,0 +1,6 @@
+# @package mlflow
+# Local file-based MLflow (no docker required)
+# Results stored in ./mlruns directory
+mode: files
+tracking_uri: ./mlruns
+project_prefix: ""

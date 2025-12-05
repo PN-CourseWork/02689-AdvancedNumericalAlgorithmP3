@@ -1,0 +1,9 @@
+# @package solver
+defaults:
+  - default
+
+name: spectral_fsg
+multigrid: fsg
+prolongation_method: fft
+restriction_method: fft
+

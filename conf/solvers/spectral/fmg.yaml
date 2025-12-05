@@ -1,0 +1,10 @@
+# @package solver
+defaults:
+  - default
+
+name: spectral_fmg
+multigrid: fmg
+prolongation_method: fft
+restriction_method: fft
+n_levels: 3
+
