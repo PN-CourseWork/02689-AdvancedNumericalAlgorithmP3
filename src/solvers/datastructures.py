@@ -235,13 +235,22 @@ class SpectralParameters(Parameters):
     basis_type: str = "legendre"
     CFL: float = 0.1
     beta_squared: float = 5.0
-    corner_smoothing: float = 0.15
     method: str = "Spectral-AC"
+
+    # Corner singularity treatment
+    # Options: "smoothing" (simple cosine smoothing) or "subtraction" (Botella & Peyret 1998)
+    corner_treatment: str = "smoothing"
+    corner_smoothing: float = 0.15  # smoothing width for smoothing method
 
     # Multigrid settings
     multigrid: str = "none"  # "none", "fsg", "vmg", "fmg"
     n_levels: int = 3
     coarse_tolerance_factor: float = 10.0
+
+    # Transfer operators (prolongation/restriction) for multigrid
+    # Options: "fft" (Zhang & Xi 2010 paper) or "polynomial"/"injection"
+    prolongation_method: str = "fft"
+    restriction_method: str = "fft"
 
 
 @dataclass

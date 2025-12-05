@@ -1,32 +1,29 @@
 """
-Solution Plotter - Automatically finds and plots MLflow runs matching config.
+Solution Plotter - Generates plots for MLflow runs.
 
-Uses the same Hydra config as run_solver.py to find matching runs.
+Can be used standalone via Hydra or called directly from run_solver.py.
 
 For individual runs: generates fields, streamlines, vorticity, centerlines,
                      ghia_validation, and convergence plots.
 
 For sweeps: additionally generates a Ghia comparison plot uploaded to parent run.
 
-Usage:
+Usage (standalone):
     # Plot single run
-    uv run python Experiments/Solution/plot_solution.py solver=spectral N=31 Re=100
+    uv run python src/plotting.py solver=spectral N=31 Re=100
 
     # Plot sweep (comparison plot goes to parent)
-    uv run python Experiments/Solution/plot_solution.py -m solver=spectral N=15,31,63 Re=100
+    uv run python src/plotting.py -m solver=spectral N=15,31,63 Re=100
 
-    # Use remote MLflow
-    uv run python Experiments/Solution/plot_solution.py solver=spectral N=31 Re=100 mlflow=coolify
+Usage (from run_solver.py):
+    from plotting import generate_plots_for_run
+    generate_plots_for_run(run_id, tracking_uri, output_dir, parent_run_id)
 """
 
 import logging
-import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
-
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from dotenv import load_dotenv
 
@@ -128,8 +125,8 @@ def find_sibling_runs(parent_run_id: str, tracking_uri: str) -> list[dict]:
     parent_run = client.get_run(parent_run_id)
     experiment_id = parent_run.info.experiment_id
 
-    # Find all children of this parent
-    filter_string = f"tags.parent_run_id = '{parent_run_id}' AND attributes.status = 'FINISHED'"
+    # Find all children of this parent (include RUNNING for parallel sweeps)
+    filter_string = f"tags.parent_run_id = '{parent_run_id}'"
 
     runs = client.search_runs(
         experiment_ids=[experiment_id],
@@ -143,15 +140,22 @@ def find_sibling_runs(parent_run_id: str, tracking_uri: str) -> list[dict]:
         # Extract solver name from run_name (format: {solver}_N{n}_Re{re})
         run_name = run.info.run_name or ""
         solver_name = run_name.split("_N")[0] if "_N" in run_name else "unknown"
+
+        # Extract corner treatment from params
+        corner_treatment = run.data.params.get("corner_treatment", "unknown")
+
         siblings.append({
             "run_id": run.info.run_id,
             "run_name": run_name,
             "N": int(run.data.params.get("nx", 0)),
             "Re": float(run.data.params.get("Re", 0)),
             "solver": solver_name,
+            "corner_treatment": corner_treatment,
+            "status": run.info.status,  # Track if FINISHED or RUNNING
         })
 
-    log.info(f"Found {len(siblings)} sibling runs in sweep")
+    finished = sum(1 for s in siblings if s["status"] == "FINISHED")
+    log.info(f"Found {len(siblings)} sibling runs in sweep ({finished} finished)")
     return siblings
 
 
@@ -346,7 +350,7 @@ def plot_fields(fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_
     fig.suptitle(f"Solution Fields — {solver.upper()} N={N}, Re={Re:.0f}", fontweight="bold", fontsize=14)
     plt.tight_layout()
 
-    output_path = output_dir / "fields.png"
+    output_path = output_dir / "fields.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -392,7 +396,7 @@ def plot_streamlines(fields_df: pd.DataFrame, Re: float, solver: str, N: int, ou
     plt.colorbar(cf, ax=ax, label="Velocity magnitude")
     plt.tight_layout()
 
-    output_path = output_dir / "streamlines.png"
+    output_path = output_dir / "streamlines.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -437,7 +441,7 @@ def plot_vorticity(fields_df: pd.DataFrame, Re: float, solver: str, N: int, outp
     plt.colorbar(cf, ax=ax, label=r"$\omega$")
     plt.tight_layout()
 
-    output_path = output_dir / "vorticity.png"
+    output_path = output_dir / "vorticity.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -489,7 +493,7 @@ def plot_centerlines(fields_df: pd.DataFrame, Re: float, solver: str, N: int, ou
     fig.suptitle(f"Centerline Profiles — {solver.upper()} N={N}, Re={Re:.0f}", fontweight="bold", fontsize=14)
     plt.tight_layout()
 
-    output_path = output_dir / "centerlines.png"
+    output_path = output_dir / "centerlines.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -523,7 +527,7 @@ def plot_convergence(timeseries_df: pd.DataFrame, Re: float, solver: str, N: int
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    output_path = output_dir / "convergence.png"
+    output_path = output_dir / "convergence.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -540,8 +544,8 @@ def plot_ghia_validation(fields: dict, Re: float, solver: str, N: int, output_di
         log.warning(f"Ghia data not available for Re={Re}. Available: {AVAILABLE_RE}")
         return None
 
-    # Project root is 2 levels up from this file
-    project_root = Path(__file__).parent.parent.parent
+    # Project root is 1 level up from src/
+    project_root = Path(__file__).parent.parent
     ghia_dir = project_root / "data" / "validation" / "ghia"
 
     u_file = ghia_dir / f"ghia_Re{int(Re)}_u_centerline.csv"
@@ -593,7 +597,7 @@ def plot_ghia_validation(fields: dict, Re: float, solver: str, N: int, output_di
     fig.suptitle(f"Ghia Benchmark Validation — Re={Re:.0f}", fontweight="bold", fontsize=14)
     plt.tight_layout()
 
-    output_path = output_dir / "ghia_validation.png"
+    output_path = output_dir / "ghia_validation.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -606,12 +610,15 @@ def plot_ghia_validation(fields: dict, Re: float, solver: str, N: int, output_di
 
 
 def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Path) -> Path:
-    """Plot Ghia comparison with all sibling runs overlaid.
+    """Plot Ghia comparison with all sibling runs overlaid using seaborn.
+
+    Uses seaborn lineplot with hue and style for clear legend differentiation.
+    Data is sorted properly before plotting to ensure correct line connections.
 
     Parameters
     ----------
     siblings : list[dict]
-        List of sibling run info dicts with run_id, N, Re, solver
+        List of sibling run info dicts with run_id, N, Re, solver, corner_treatment
     tracking_uri : str
         MLflow tracking URI
     output_dir : Path
@@ -623,10 +630,19 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
         Path to comparison plot
     """
     import matplotlib.pyplot as plt
+    import seaborn as sns
     from scipy.interpolate import RectBivariateSpline
 
     if not siblings:
         return None
+
+    # Only plot finished runs (can't download artifacts from running runs)
+    finished_siblings = [s for s in siblings if s.get("status", "FINISHED") == "FINISHED"]
+    if len(finished_siblings) < 2:
+        log.info(f"Need at least 2 finished runs for comparison (have {len(finished_siblings)})")
+        return None
+
+    siblings = finished_siblings
 
     # Get Re from first sibling (all should have same Re in a sweep)
     Re = siblings[0]["Re"]
@@ -636,8 +652,8 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
         log.warning(f"Ghia data not available for Re={Re}")
         return None
 
-    # Project root is 2 levels up from this file
-    project_root = Path(__file__).parent.parent.parent
+    # Project root is 1 level up from src/
+    project_root = Path(__file__).parent.parent
     ghia_dir = project_root / "data" / "validation" / "ghia"
 
     u_file = ghia_dir / f"ghia_Re{int(Re)}_u_centerline.csv"
@@ -650,16 +666,23 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
     ghia_u = pd.read_csv(u_file)
     ghia_v = pd.read_csv(v_file)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # Load scientific style with LaTeX
+    style_path = project_root / "src" / "utils" / "plotting" / "scientific.mplstyle"
+    if style_path.exists():
+        plt.style.use(style_path)
+    else:
+        # Fallback to seaborn style
+        sns.set_style("whitegrid")
+        sns.set_context("paper", font_scale=1.2)
 
-    # Color map and line styles for different runs
-    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(siblings)))
-    linestyles = ["-", "--", "-.", ":", (0, (3, 1, 1, 1))]  # Solid, dashed, dashdot, dotted, custom
+    # Build DataFrames for seaborn - one row per data point
+    u_records = []
+    v_records = []
 
-    for i, sibling in enumerate(siblings):
+    for sibling in siblings:
         run_id = sibling["run_id"]
         N = sibling["N"]
-        solver = sibling["solver"]
+        corner_treatment = sibling.get("corner_treatment", "unknown")
 
         try:
             # Download and load fields
@@ -682,40 +705,100 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
             u_sim = U_spline(y_line, x_center).ravel()
             v_sim = V_spline(y_center, x_line).ravel()
 
-            label = f"{solver.upper()} N={N}"
-            ls = linestyles[i % len(linestyles)]
-            axes[0].plot(u_sim, y_line, color=colors[i], linewidth=2.5, linestyle=ls, label=label)
-            axes[1].plot(x_line, v_sim, color=colors[i], linewidth=2.5, linestyle=ls, label=label)
+            # Add simulation data to records
+            for i in range(n_points):
+                u_records.append({
+                    "y": y_line[i],
+                    "u": u_sim[i],
+                    "Corner Treatment": corner_treatment.capitalize(),
+                    "N": N,
+                    "source": "simulation",
+                })
+                v_records.append({
+                    "x": x_line[i],
+                    "v": v_sim[i],
+                    "Corner Treatment": corner_treatment.capitalize(),
+                    "N": N,
+                    "source": "simulation",
+                })
 
         except Exception as e:
             log.warning(f"Failed to load run {run_id}: {e}")
             continue
 
-    # Add Ghia reference
-    axes[0].scatter(ghia_u["u"], ghia_u["y"], c="black", s=60, marker="x",
-                    label="Ghia et al. (1982)", zorder=10)
-    axes[0].set_xlabel("u", fontsize=12)
-    axes[0].set_ylabel("y", fontsize=12)
-    axes[0].set_title("U velocity (vertical centerline)", fontweight="bold")
-    axes[0].legend(frameon=True, loc="best")
-    axes[0].grid(True, alpha=0.3)
+    if not u_records:
+        log.warning("No valid runs to plot")
+        return None
 
-    axes[1].scatter(ghia_v["x"], ghia_v["v"], c="black", s=60, marker="x",
-                    label="Ghia et al. (1982)", zorder=10)
-    axes[1].set_xlabel("x", fontsize=12)
-    axes[1].set_ylabel("v", fontsize=12)
-    axes[1].set_title("V velocity (horizontal centerline)", fontweight="bold")
-    axes[1].legend(frameon=True, loc="best")
-    axes[1].grid(True, alpha=0.3)
+    # Create DataFrames and sort by position variable for proper line drawing
+    u_df = pd.DataFrame(u_records).sort_values(["Corner Treatment", "y"])
+    v_df = pd.DataFrame(v_records).sort_values(["Corner Treatment", "x"])
 
-    fig.suptitle(f"Ghia Benchmark Comparison — Re={Re:.0f}", fontweight="bold", fontsize=14)
+    # Define dash styles: solid for smoothing, dashed for subtraction
+    dashes = {
+        "Smoothing": "",
+        "Subtraction": (4, 2),
+    }
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Plot U velocity (vertical centerline) - simulation data
+    sns.lineplot(
+        data=u_df,
+        x="u",
+        y="y",
+        hue="Corner Treatment",
+        style="Corner Treatment",
+        dashes=dashes,
+        linewidth=1.5,
+        sort=False,  # Data is already sorted by y
+        ax=axes[0],
+    )
+    # Add Ghia reference as scatter (separate from seaborn to avoid marker mixing issues)
+    axes[0].scatter(
+        ghia_u["u"], ghia_u["y"],
+        c="black", s=60, marker="x", linewidths=1.5,
+        label=r"Ghia et al.\ (1982)", zorder=10
+    )
+    axes[0].set_xlabel(r"$u$")
+    axes[0].set_ylabel(r"$y$")
+    axes[0].set_title(r"$u$-velocity (vertical centerline)")
+    axes[0].legend(loc="best", title=None)
+    axes[0].set_xlim(-0.4, 1.05)
+    axes[0].set_ylim(0, 1)
+
+    # Plot V velocity (horizontal centerline) - simulation data
+    sns.lineplot(
+        data=v_df,
+        x="x",
+        y="v",
+        hue="Corner Treatment",
+        style="Corner Treatment",
+        dashes=dashes,
+        linewidth=1.5,
+        sort=False,  # Data is already sorted by x
+        ax=axes[1],
+    )
+    # Add Ghia reference as scatter
+    axes[1].scatter(
+        ghia_v["x"], ghia_v["v"],
+        c="black", s=60, marker="x", linewidths=1.5,
+        label=r"Ghia et al.\ (1982)", zorder=10
+    )
+    axes[1].set_xlabel(r"$x$")
+    axes[1].set_ylabel(r"$v$")
+    axes[1].set_title(r"$v$-velocity (horizontal centerline)")
+    axes[1].legend(loc="best", title=None)
+    axes[1].set_xlim(0, 1)
+
+    fig.suptitle(rf"Ghia Benchmark Comparison --- $\mathrm{{Re}}={int(Re)}$")
     plt.tight_layout()
 
-    output_path = output_dir / "ghia_comparison.png"
+    output_path = output_dir / "ghia_comparison.pdf"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
-    log.info(f"Saved comparison plot: {output_path}")
+    log.info(f"Saved comparison plot: {output_path.name}")
     return output_path
 
 
@@ -730,18 +813,174 @@ def upload_plots_to_mlflow(run_id: str, plot_paths: list, tracking_uri: str, art
 
     valid_paths = [p for p in plot_paths if p and p.exists()]
 
-    with mlflow.start_run(run_id=run_id):
+    # Check if we're already in an active run
+    active_run = mlflow.active_run()
+    if active_run and active_run.info.run_id == run_id:
+        # Already in the correct run, just log artifacts
         for path in valid_paths:
             mlflow.log_artifact(str(path), artifact_path=artifact_subdir)
             log.info(f"Uploaded: {artifact_subdir}/{path.name}")
+    else:
+        # Start/resume run to upload artifacts
+        with mlflow.start_run(run_id=run_id, nested=True):
+            for path in valid_paths:
+                mlflow.log_artifact(str(path), artifact_path=artifact_subdir)
+                log.info(f"Uploaded: {artifact_subdir}/{path.name}")
 
 
 # =============================================================================
-# Main Entry Point
+# Direct API for run_solver.py
 # =============================================================================
 
 
-@hydra.main(config_path="../../conf", config_name="config", version_base=None)
+def generate_plots_for_run(
+    run_id: str,
+    tracking_uri: str,
+    output_dir: Path,
+    solver_name: str,
+    N: int,
+    Re: float,
+    parent_run_id: Optional[str] = None,
+    upload_to_mlflow: bool = True,
+) -> list[Path]:
+    """Generate all plots for a completed run.
+
+    Called directly from run_solver.py after solver completes.
+
+    Parameters
+    ----------
+    run_id : str
+        MLflow run ID
+    tracking_uri : str
+        MLflow tracking URI
+    output_dir : Path
+        Directory to save plots
+    solver_name : str
+        Solver name (e.g., "spectral", "spectral_fsg", "fv")
+    N : int
+        Grid size parameter
+    Re : float
+        Reynolds number
+    parent_run_id : str, optional
+        Parent run ID if this is part of a sweep
+    upload_to_mlflow : bool
+        Whether to upload plots to MLflow
+
+    Returns
+    -------
+    list[Path]
+        List of generated plot paths
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Download artifacts and load data
+    artifact_dir = download_mlflow_artifacts(run_id, tracking_uri)
+    fields = load_fields_from_zarr(artifact_dir)
+    fields_df = fields_to_dataframe(fields)
+    timeseries_df = load_timeseries_from_mlflow(run_id, tracking_uri)
+
+    log.info(f"Generating plots for {solver_name} N={N} Re={Re}")
+
+    # Generate individual plots
+    plot_paths = []
+    plot_paths.append(plot_fields(fields_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_streamlines(fields_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_vorticity(fields_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_centerlines(fields_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_convergence(timeseries_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_ghia_validation(fields, Re, solver_name, N, output_dir))
+
+    plot_paths = [p for p in plot_paths if p is not None]
+    log.info(f"Generated {len(plot_paths)} plots for run")
+
+    # Upload to individual run
+    if upload_to_mlflow:
+        upload_plots_to_mlflow(run_id, plot_paths, tracking_uri)
+
+    log.info("Plotting done!")
+    return plot_paths
+
+
+def generate_comparison_plots_for_sweep(
+    parent_run_ids: list[str],
+    tracking_uri: str,
+    output_dir: Path,
+    upload_to_mlflow: bool = True,
+) -> dict[str, Path]:
+    """Generate comparison plots for all parent runs after sweep completes.
+
+    Called from MLflow callback's on_multirun_end after all jobs finish.
+
+    Parameters
+    ----------
+    parent_run_ids : list[str]
+        List of parent run IDs (one per Re value)
+    tracking_uri : str
+        MLflow tracking URI
+    output_dir : Path
+        Base output directory for comparison plots
+    upload_to_mlflow : bool
+        Whether to upload plots to MLflow
+
+    Returns
+    -------
+    dict[str, Path]
+        Mapping of parent_run_id to comparison plot path
+    """
+    import mlflow
+
+    mlflow.set_tracking_uri(tracking_uri)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    results = {}
+
+    for parent_run_id in parent_run_ids:
+        log.info(f"Generating comparison plot for parent run: {parent_run_id[:8]}...")
+
+        # Find all children of this parent
+        siblings = find_sibling_runs(parent_run_id, tracking_uri)
+
+        if len(siblings) < 2:
+            log.warning(f"  Only {len(siblings)} child run(s), skipping comparison")
+            continue
+
+        # Check all siblings are finished
+        unfinished = [s for s in siblings if s.get("status") != "FINISHED"]
+        if unfinished:
+            log.warning(f"  {len(unfinished)} run(s) still not finished, skipping")
+            continue
+
+        # Get parent run info for naming
+        client = mlflow.tracking.MlflowClient()
+        parent_run = client.get_run(parent_run_id)
+        parent_name = parent_run.info.run_name or parent_run_id[:8]
+
+        # Create comparison plot
+        comparison_dir = output_dir / parent_name
+        comparison_dir.mkdir(exist_ok=True)
+
+        comparison_path = plot_ghia_comparison(siblings, tracking_uri, comparison_dir)
+
+        if comparison_path:
+            results[parent_run_id] = comparison_path
+            log.info(f"  Created comparison plot: {comparison_path.name}")
+
+            if upload_to_mlflow:
+                upload_plots_to_mlflow(parent_run_id, [comparison_path], tracking_uri, "plots")
+                log.info(f"  Uploaded to parent run")
+
+    log.info(f"Generated {len(results)} comparison plot(s)")
+    return results
+
+
+# =============================================================================
+# Main Entry Point (Standalone Hydra Usage)
+# =============================================================================
+
+
+@hydra.main(config_path="../conf", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     """Hydra entry point - finds matching run and generates plots."""
 

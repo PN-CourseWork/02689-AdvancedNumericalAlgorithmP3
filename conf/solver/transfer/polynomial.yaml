@@ -1,0 +1,11 @@
+# Polynomial-based transfer operators
+# Uses Chebyshev polynomial fitting and evaluation
+name: polynomial
+
+# Prolongation: coarse -> fine interpolation
+prolongation:
+  method: polynomial  # Uses chebfit/chebval for Chebyshev interpolation
+
+# Restriction: fine -> coarse interpolation (for residuals in VMG/FMG)
+restriction:
+  method: injection  # Direct injection (coarse nodes are subset of fine nodes)

@@ -1,0 +1,31 @@
+# @package _global_
+# Transfer Operators Comparison Experiment
+#
+# Compares single-grid vs FSG with FFT vs polynomial transfer operators
+#
+# Usage - Single Re:
+#   uv run python run_solver.py -m +experiment=transfer_operators
+#
+# Usage - Multiple Re values (creates separate parent runs per Re):
+#   uv run python run_solver.py -m +experiment=transfer_operators Re=100,400,1000
+#
+# Each Re value gets its own parent run in MLflow for easy comparison
+
+experiment_name: Transfer-Operators
+sweep_name: transfer-Re${Re}  # Creates separate parent per Re
+
+defaults:
+  - override /hydra/launcher: joblib
+
+# Sweep over solvers: single-grid, FSG-FFT, FSG-Polynomial
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      solver: spectral,spectral_fsg_fft,spectral_fsg_poly
+      N: "31"
+
+# Default physics parameters
+Re: 100
+tolerance: 1.0e-6
+max_iterations: 100000

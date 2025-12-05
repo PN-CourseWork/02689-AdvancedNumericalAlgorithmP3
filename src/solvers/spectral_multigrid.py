@@ -7,6 +7,9 @@ Implements:
 - FSG (Full Single Grid): Sequential solve from coarse to fine
 - VMG (V-cycle Multigrid with FAS): Coming in Phase 2
 - FMG (Full Multigrid): Coming in Phase 3
+
+Transfer operators (prolongation/restriction) are pluggable via Hydra config.
+Corner singularity treatment is also pluggable.
 """
 
 import logging
@@ -14,7 +17,15 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
 import numpy as np
-from scipy.fft import dct, idct
+
+from src.spectral.transfer_operators import (
+    TransferOperators,
+    create_transfer_operators,
+)
+from src.spectral.corner_singularity import (
+    CornerTreatment,
+    create_corner_treatment,
+)
 
 log = logging.getLogger(__name__)
 
@@ -283,82 +294,10 @@ def build_hierarchy(
 # =============================================================================
 
 
-def prolongate_chebyshev_1d(u_coarse: np.ndarray, n_fine: int) -> np.ndarray:
-    """Interpolate 1D array from coarse to fine Chebyshev-Lobatto grid.
-
-    Uses polynomial fitting and evaluation at fine grid points.
-
-    Parameters
-    ----------
-    u_coarse : np.ndarray
-        Values on coarse Chebyshev-Lobatto grid (n_coarse points)
-    n_fine : int
-        Number of points on fine grid
-
-    Returns
-    -------
-    np.ndarray
-        Interpolated values on fine grid
-    """
-    from numpy.polynomial.chebyshev import chebfit, chebval
-
-    n_coarse = len(u_coarse)
-
-    if n_coarse == n_fine:
-        return u_coarse.copy()
-
-    # Chebyshev-Lobatto nodes on [-1, 1]
-    x_coarse = np.cos(np.pi * np.arange(n_coarse) / (n_coarse - 1))
-    x_fine = np.cos(np.pi * np.arange(n_fine) / (n_fine - 1))
-
-    # Fit Chebyshev polynomial to coarse data
-    coeffs = chebfit(x_coarse, u_coarse, deg=n_coarse - 1)
-
-    # Evaluate at fine grid points
-    u_fine = chebval(x_fine, coeffs)
-
-    return u_fine
-
-
-def prolongate_2d(
-    u_coarse_2d: np.ndarray,
-    shape_fine: Tuple[int, int],
-) -> np.ndarray:
-    """Prolongate 2D field from coarse to fine grid.
-
-    Uses row-column algorithm: interpolate in x-direction, then y-direction.
-
-    Parameters
-    ----------
-    u_coarse_2d : np.ndarray
-        Field on coarse grid, shape (nx_c, ny_c)
-    shape_fine : tuple
-        Target shape (nx_f, ny_f)
-
-    Returns
-    -------
-    np.ndarray
-        Field on fine grid
-    """
-    nx_c, ny_c = u_coarse_2d.shape
-    nx_f, ny_f = shape_fine
-
-    # Interpolate in x-direction (column by column)
-    temp = np.zeros((nx_f, ny_c))
-    for j in range(ny_c):
-        temp[:, j] = prolongate_chebyshev_1d(u_coarse_2d[:, j], nx_f)
-
-    # Interpolate in y-direction (row by row)
-    u_fine_2d = np.zeros((nx_f, ny_f))
-    for i in range(nx_f):
-        u_fine_2d[i, :] = prolongate_chebyshev_1d(temp[i, :], ny_f)
-
-    return u_fine_2d
-
-
 def prolongate_solution(
     level_coarse: SpectralLevel,
     level_fine: SpectralLevel,
+    transfer_ops: TransferOperators,
 ) -> None:
     """Prolongate solution (u, v, p) from coarse level to fine level.
 
@@ -370,20 +309,28 @@ def prolongate_solution(
         Source (coarse) level with converged solution
     level_fine : SpectralLevel
         Target (fine) level to receive interpolated solution
+    transfer_ops : TransferOperators
+        Configured transfer operators for prolongation
     """
     # Prolongate velocities (full grid)
     u_coarse_2d = level_coarse.u.reshape(level_coarse.shape_full)
     v_coarse_2d = level_coarse.v.reshape(level_coarse.shape_full)
 
-    u_fine_2d = prolongate_2d(u_coarse_2d, level_fine.shape_full)
-    v_fine_2d = prolongate_2d(v_coarse_2d, level_fine.shape_full)
+    u_fine_2d = transfer_ops.prolongation.prolongate_2d(
+        u_coarse_2d, level_fine.shape_full
+    )
+    v_fine_2d = transfer_ops.prolongation.prolongate_2d(
+        v_coarse_2d, level_fine.shape_full
+    )
 
     level_fine.u[:] = u_fine_2d.ravel()
     level_fine.v[:] = v_fine_2d.ravel()
 
     # Prolongate pressure (inner grid)
     p_coarse_2d = level_coarse.p.reshape(level_coarse.shape_inner)
-    p_fine_2d = prolongate_2d(p_coarse_2d, level_fine.shape_inner)
+    p_fine_2d = transfer_ops.prolongation.prolongate_2d(
+        p_coarse_2d, level_fine.shape_inner
+    )
     level_fine.p[:] = p_fine_2d.ravel()
 
     log.debug(
@@ -409,40 +356,34 @@ class MultigridSmoother:
         Re: float,
         beta_squared: float,
         lid_velocity: float,
-        corner_smoothing: float,
         CFL: float,
+        corner_treatment: CornerTreatment,
+        Lx: float = 1.0,
+        Ly: float = 1.0,
     ):
         self.level = level
         self.Re = Re
         self.beta_squared = beta_squared
         self.lid_velocity = lid_velocity
-        self.corner_smoothing = corner_smoothing
         self.CFL = CFL
+        self.corner_treatment = corner_treatment
+        self.Lx = Lx
+        self.Ly = Ly
 
-        # Pre-compute corner smoothing factors
-        self._setup_corner_smoothing()
+    def _apply_lid_boundary(self, u_2d: np.ndarray, v_2d: np.ndarray):
+        """Apply lid boundary condition using corner treatment."""
+        x_lid = self.level.X[:, -1]
+        y_lid = self.level.Y[:, -1]
 
-    def _setup_corner_smoothing(self):
-        """Pre-compute corner smoothing factors."""
-        level = self.level
-        if self.corner_smoothing > 0:
-            smooth_width = int(self.corner_smoothing * level.n)
-            if smooth_width > 0:
-                i_values = np.arange(smooth_width)
-                self._corner_factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
-                self._corner_indices = i_values
-                self._corner_width = smooth_width
-            else:
-                self._corner_width = 0
-        else:
-            self._corner_width = 0
+        u_lid, v_lid = self.corner_treatment.get_lid_velocity(
+            x_lid, y_lid,
+            lid_velocity=self.lid_velocity,
+            Lx=self.Lx,
+            Ly=self.Ly,
+        )
 
-    def _apply_corner_smoothing(self, u_2d: np.ndarray):
-        """Apply corner smoothing to lid velocity."""
-        if self._corner_width > 0:
-            N = self.level.n
-            u_2d[self._corner_indices, -1] = self._corner_factors * self.lid_velocity
-            u_2d[N - self._corner_indices, -1] = self._corner_factors * self.lid_velocity
+        u_2d[:, -1] = u_lid
+        v_2d[:, -1] = v_lid
 
     def _extrapolate_to_full_grid(self, inner_2d: np.ndarray) -> np.ndarray:
         """Extrapolate from inner grid to full grid."""
@@ -515,22 +456,34 @@ class MultigridSmoother:
         lvl.R_p[:] = -self.beta_squared * divergence_inner
 
     def _enforce_boundary_conditions(self, u: np.ndarray, v: np.ndarray):
-        """Enforce no-slip BCs on all walls, moving lid on top."""
+        """Enforce boundary conditions using corner treatment."""
         u_2d = u.reshape(self.level.shape_full)
         v_2d = v.reshape(self.level.shape_full)
 
-        # No-slip everywhere
-        u_2d[0, :] = 0.0
-        u_2d[-1, :] = 0.0
-        u_2d[:, 0] = 0.0
-        v_2d[0, :] = 0.0
-        v_2d[-1, :] = 0.0
-        v_2d[:, 0] = 0.0
-        v_2d[:, -1] = 0.0
+        # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
+        # West boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.level.X[0, :], self.level.Y[0, :], self.Lx, self.Ly
+        )
+        u_2d[0, :] = u_wall
+        v_2d[0, :] = v_wall
 
-        # Moving lid
-        u_2d[:, -1] = self.lid_velocity
-        self._apply_corner_smoothing(u_2d)
+        # East boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.level.X[-1, :], self.level.Y[-1, :], self.Lx, self.Ly
+        )
+        u_2d[-1, :] = u_wall
+        v_2d[-1, :] = v_wall
+
+        # South boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.level.X[:, 0], self.level.Y[:, 0], self.Lx, self.Ly
+        )
+        u_2d[:, 0] = u_wall
+        v_2d[:, 0] = v_wall
+
+        # North boundary (moving lid)
+        self._apply_lid_boundary(u_2d, v_2d)
 
     def _compute_adaptive_timestep(self) -> float:
         """Compute adaptive timestep based on CFL."""
@@ -545,10 +498,10 @@ class MultigridSmoother:
         return self.CFL / (lambda_x + lambda_y)
 
     def initialize_lid(self):
-        """Initialize lid velocity boundary condition."""
+        """Initialize lid velocity boundary condition using corner treatment."""
         u_2d = self.level.u.reshape(self.level.shape_full)
-        u_2d[:, -1] = self.lid_velocity
-        self._apply_corner_smoothing(u_2d)
+        v_2d = self.level.v.reshape(self.level.shape_full)
+        self._apply_lid_boundary(u_2d, v_2d)
 
     def step(self) -> Tuple[float, float]:
         """Perform one RK4 pseudo time-step.
@@ -624,10 +577,13 @@ def solve_fsg(
     Re: float,
     beta_squared: float,
     lid_velocity: float,
-    corner_smoothing: float,
     CFL: float,
     tolerance: float,
     max_iterations: int,
+    transfer_ops: Optional[TransferOperators] = None,
+    corner_treatment: Optional[CornerTreatment] = None,
+    Lx: float = 1.0,
+    Ly: float = 1.0,
     coarse_tolerance_factor: float = 1.0,  # Not used anymore, kept for API compat
 ) -> Tuple[SpectralLevel, int, bool]:
     """Solve using Full Single Grid (FSG) multigrid.
@@ -642,22 +598,41 @@ def solve_fsg(
     ----------
     levels : List[SpectralLevel]
         Grid hierarchy (index 0 = coarsest)
-    Re, beta_squared, lid_velocity, corner_smoothing, CFL : float
+    Re, beta_squared, lid_velocity, CFL : float
         Solver parameters
     tolerance : float
         Global convergence tolerance (used on ALL levels)
     max_iterations : int
         Max iterations per level
+    transfer_ops : TransferOperators, optional
+        Configured transfer operators. If None, uses default FFT operators.
+    corner_treatment : CornerTreatment, optional
+        Corner singularity treatment handler. If None, uses default smoothing.
+    Lx, Ly : float
+        Domain dimensions
 
     Returns
     -------
     tuple
         (finest_level, total_iterations, converged)
     """
+    # Create default transfer operators if not provided
+    if transfer_ops is None:
+        transfer_ops = create_transfer_operators(
+            prolongation_method="fft",
+            restriction_method="fft",
+        )
+
+    # Create default corner treatment if not provided
+    if corner_treatment is None:
+        corner_treatment = create_corner_treatment(method="smoothing")
+
     total_iterations = 0
     n_levels = len(levels)
 
     for level_idx, level in enumerate(levels):
+        is_finest = level_idx == n_levels - 1
+
         # Use same tolerance on ALL levels (per Zhang & Xi 2010)
         level_tol = tolerance
 
@@ -674,11 +649,18 @@ def solve_fsg(
             level.p[:] = 0.0
         else:
             # Prolongate from previous (coarser) level
-            prolongate_solution(levels[level_idx - 1], level)
+            prolongate_solution(levels[level_idx - 1], level, transfer_ops)
 
         # Create smoother for this level
         smoother = MultigridSmoother(
-            level, Re, beta_squared, lid_velocity, corner_smoothing, CFL
+            level=level,
+            Re=Re,
+            beta_squared=beta_squared,
+            lid_velocity=lid_velocity,
+            CFL=CFL,
+            corner_treatment=corner_treatment,
+            Lx=Lx,
+            Ly=Ly,
         )
         smoother.initialize_lid()
 

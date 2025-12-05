@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timedelta
+from typing import Dict, Optional
 
 from hydra.core.utils import JobReturn
 from hydra.experimental.callback import Callback
@@ -12,28 +12,32 @@ log = logging.getLogger(__name__)
 
 
 class MLflowSweepCallback(Callback):
-    """Creates or reuses a parent MLflow run for Hydra multiruns.
+    """Creates or reuses parent MLflow runs for Hydra multiruns.
 
-    Child runs will be nested under the parent, making it easy to:
-    - View all sweep runs together
-    - Log sweep-level config to parent
-    - Group multiple sweeps under the same parent (shared sweep_name)
+    Supports grouping by Reynolds number (or other parameters):
+    - If sweep_name contains ${Re}, separate parent runs are created per Re value
+    - Child runs are nested under their respective parent
+    - Makes it easy to compare solvers at the same Re
 
-    If a parent run with the same sweep_name exists and was created within
-    the last hour, it will be reused. Otherwise, a new parent is created.
+    Example sweep_name patterns:
+    - "my-sweep"           -> Single parent for all runs
+    - "my-sweep-Re${Re}"   -> Separate parent per Reynolds number
     """
 
     def __init__(self) -> None:
-        self._parent_run = None
-        self._parent_run_id = None
-        self._owns_parent = False  # Whether we created the parent (vs reusing)
+        self._parent_runs: Dict[str, str] = {}  # sweep_name -> run_id
+        self._active_parent_runs: Dict[str, object] = {}  # sweep_name -> run object
+        self._current_parent_id: Optional[str] = None
+        self._tracking_uri: Optional[str] = None
+        self._full_experiment_name: Optional[str] = None
+        self._base_sweep_name: Optional[str] = None
+        self._sweep_dir: Optional[str] = None  # Store sweep dir while HydraConfig available
 
-    def _find_recent_parent(self, experiment_name: str, sweep_name: str, max_age_hours: float = 1.0):
-        """Find a recent parent run with the same sweep_name."""
+    def _find_existing_parent(self, experiment_name: str, sweep_name: str) -> Optional[str]:
+        """Find an existing parent run with the same sweep_name."""
         import mlflow
 
         try:
-            # Search for parent runs with matching name
             runs = mlflow.search_runs(
                 experiment_names=[experiment_name],
                 filter_string=f"tags.sweep = 'parent' AND tags.`mlflow.runName` = '{sweep_name}'",
@@ -44,84 +48,145 @@ class MLflowSweepCallback(Callback):
             if runs.empty:
                 return None
 
-            # Check if recent enough
-            run = runs.iloc[0]
-            start_time = run["start_time"]
-
-            # Handle timezone-aware timestamps
-            if hasattr(start_time, 'tzinfo') and start_time.tzinfo is not None:
-                now = datetime.now(start_time.tzinfo)
-            else:
-                now = datetime.now()
-
-            age = now - start_time
-            if age < timedelta(hours=max_age_hours):
-                return run["run_id"]
+            return runs.iloc[0]["run_id"]
 
         except Exception as e:
             log.warning(f"Error searching for parent run: {e}")
 
         return None
 
+    def _get_or_create_parent(self, sweep_name: str, config: DictConfig) -> str:
+        """Get existing parent run or create a new one for this sweep_name."""
+        import mlflow
+
+        # Check our cache first
+        if sweep_name in self._parent_runs:
+            return self._parent_runs[sweep_name]
+
+        # Check for existing parent in MLflow
+        existing_id = self._find_existing_parent(self._full_experiment_name, sweep_name)
+        if existing_id:
+            self._parent_runs[sweep_name] = existing_id
+            log.info(f"Reusing existing parent run '{sweep_name}': {existing_id}")
+            return existing_id
+
+        # Create new parent run
+        parent_run = mlflow.start_run(run_name=sweep_name)
+        parent_id = parent_run.info.run_id
+        self._parent_runs[sweep_name] = parent_id
+        self._active_parent_runs[sweep_name] = parent_run
+
+        # Log config and tags to parent
+        mlflow.log_dict(OmegaConf.to_container(config), "sweep_config.yaml")
+        mlflow.set_tag("sweep", "parent")
+
+        # Extract Re from sweep_name if present
+        if "Re" in sweep_name:
+            # Try to extract Re value from sweep_name like "sweep-Re100"
+            import re
+            match = re.search(r'Re(\d+)', sweep_name)
+            if match:
+                mlflow.set_tag("Re", match.group(1))
+
+        # Log HPC job info if available
+        job_id = os.environ.get("LSB_JOBID")
+        if job_id:
+            mlflow.set_tag("lsf.job_id", job_id)
+            mlflow.set_tag("lsf.job_name", os.environ.get("LSB_JOBNAME", ""))
+
+        # End the run context (we'll reference it by ID)
+        mlflow.end_run()
+
+        log.info(f"Created parent run '{sweep_name}': {parent_id}")
+        return parent_id
+
     def on_multirun_start(self, config: DictConfig, **kwargs) -> None:
-        """Create or reuse parent run before sweep starts."""
+        """Setup MLflow tracking before sweep starts."""
         import mlflow
         from dotenv import load_dotenv
 
         load_dotenv()
 
         # Setup MLflow tracking
-        tracking_uri = config.mlflow.get("tracking_uri", "./mlruns")
-        mlflow.set_tracking_uri(tracking_uri)
+        self._tracking_uri = config.mlflow.get("tracking_uri", "./mlruns")
+        mlflow.set_tracking_uri(self._tracking_uri)
 
         # Build experiment name
         experiment_name = config.experiment_name
         project_prefix = config.mlflow.get("project_prefix", "")
         if project_prefix and not experiment_name.startswith("/"):
-            full_experiment_name = f"{project_prefix}/{experiment_name}"
+            self._full_experiment_name = f"{project_prefix}/{experiment_name}"
         else:
-            full_experiment_name = experiment_name
+            self._full_experiment_name = experiment_name
 
-        mlflow.set_experiment(full_experiment_name)
+        mlflow.set_experiment(self._full_experiment_name)
 
-        sweep_name = config.get("sweep_name", "sweep")
+        # Store base sweep name (may contain ${Re} placeholder)
+        self._base_sweep_name = config.get("sweep_name", "sweep")
 
-        # Check for existing recent parent run with same name
-        existing_parent_id = self._find_recent_parent(full_experiment_name, sweep_name)
+        # Store sweep directory while HydraConfig is available
+        try:
+            import hydra.core.hydra_config
+            hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
+            self._sweep_dir = hydra_cfg.sweep.dir
+        except Exception:
+            self._sweep_dir = None
 
-        if existing_parent_id:
-            # Reuse existing parent
-            self._parent_run_id = existing_parent_id
-            self._owns_parent = False
-            log.info(f"Reusing existing parent run: {self._parent_run_id}")
-        else:
-            # Create new parent run
-            self._parent_run = mlflow.start_run(run_name=sweep_name)
-            self._parent_run_id = self._parent_run.info.run_id
-            self._owns_parent = True
+        log.info(f"MLflow sweep callback initialized for experiment: {self._full_experiment_name}")
 
-            # Log sweep config to parent
-            mlflow.log_dict(OmegaConf.to_container(config), "sweep_config.yaml")
-            mlflow.set_tag("sweep", "parent")
-
-            # Log HPC job info if available
-            job_id = os.environ.get("LSB_JOBID")
-            if job_id:
-                mlflow.set_tag("lsf.job_id", job_id)
-                mlflow.set_tag("lsf.job_name", os.environ.get("LSB_JOBNAME", ""))
-
-            log.info(f"Created parent run: {self._parent_run_id}")
-
-        # Set env var so child processes can find parent
-        os.environ["MLFLOW_PARENT_RUN_ID"] = self._parent_run_id
-
-    def on_multirun_end(self, config: DictConfig, **kwargs) -> None:
-        """End parent run after sweep completes (only if we created it)."""
+    def on_job_start(self, config: DictConfig, **kwargs) -> None:
+        """Set parent run ID for each job based on its Re value."""
         import mlflow
 
-        if self._owns_parent and self._parent_run is not None:
-            mlflow.end_run()
-            log.info(f"Ended parent run: {self._parent_run_id}")
+        # Ensure tracking is set up
+        if self._tracking_uri:
+            mlflow.set_tracking_uri(self._tracking_uri)
+        if self._full_experiment_name:
+            mlflow.set_experiment(self._full_experiment_name)
 
+        # Resolve sweep_name with current job's config (e.g., Re value)
+        sweep_name = self._base_sweep_name
+        if "${Re}" in sweep_name or "{Re}" in sweep_name:
+            re_value = int(config.get("Re", 100))
+            sweep_name = sweep_name.replace("${Re}", str(re_value)).replace("{Re}", str(re_value))
+
+        # Get or create parent for this sweep_name
+        parent_id = self._get_or_create_parent(sweep_name, config)
+        self._current_parent_id = parent_id
+
+        # Set env var so child run can find parent
+        os.environ["MLFLOW_PARENT_RUN_ID"] = parent_id
+
+    def on_multirun_end(self, config: DictConfig, **kwargs) -> None:
+        """Clean up after sweep completes and generate comparison plots."""
         # Clean up env var
         os.environ.pop("MLFLOW_PARENT_RUN_ID", None)
+
+        # Log summary
+        log.info(f"Sweep completed. Created {len(self._active_parent_runs)} parent run(s).")
+        for name, run_id in self._parent_runs.items():
+            log.info(f"  - {name}: {run_id}")
+
+        # Generate comparison plots for all parent runs
+        if self._parent_runs and config.get("generate_plots", True):
+            try:
+                from plotting import generate_comparison_plots_for_sweep
+                from pathlib import Path
+
+                # Use stored sweep directory (HydraConfig may not be available here)
+                if self._sweep_dir:
+                    output_dir = Path(self._sweep_dir) / "comparison_plots"
+                else:
+                    output_dir = Path("outputs") / "comparison_plots"
+
+                parent_run_ids = list(self._parent_runs.values())
+                log.info(f"Generating comparison plots for {len(parent_run_ids)} parent run(s)...")
+
+                generate_comparison_plots_for_sweep(
+                    parent_run_ids=parent_run_ids,
+                    tracking_uri=self._tracking_uri,
+                    output_dir=output_dir,
+                    upload_to_mlflow=True,
+                )
+            except Exception as e:
+                log.warning(f"Failed to generate comparison plots: {e}")

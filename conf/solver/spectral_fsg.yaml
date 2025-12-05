@@ -9,5 +9,10 @@ corner_smoothing: 0.15
 
 # FSG Multigrid enabled
 multigrid: fsg
-n_levels: 5  # 2 levels: coarse (15) -> fine (19)
-coarse_tolerance_factor: 1.0  # Same tolerance on all levels
+n_levels: 5              # Number of grid levels
+coarse_tolerance_factor: 1.0  # Same tolerance on all levels (per Zhang & Xi 2010)
+
+# Transfer operators for multigrid (Zhang & Xi 2010 paper method)
+transfer:
+  prolongation: fft      # "fft" (paper) or "polynomial"
+  restriction: fft       # "fft" or "injection" (only needed for VMG/FMG)

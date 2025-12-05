@@ -12,6 +12,22 @@ from .spectral import (
     legendre_diff_matrix,
     legendre_mass_matrix,
 )
+from .transfer_operators import (
+    TransferOperators,
+    create_transfer_operators,
+    FFTProlongation,
+    FFTRestriction,
+    PolynomialProlongation,
+    InjectionRestriction,
+)
+from .corner_singularity import (
+    CornerTreatment,
+    SmoothingTreatment,
+    SubtractionTreatment,
+    create_corner_treatment,
+)
+
+# Note: CornerTreatmentMethod enum removed for simplicity - use string method names
 from .utils.plotting import get_repo_root
 
 __all__ = [
@@ -27,6 +43,18 @@ __all__ = [
     "fourier_diff_matrix_cotangent",
     "fourier_diff_matrix_complex",
     "fourier_diff_matrix_on_interval",
+    # Transfer operators (multigrid)
+    "TransferOperators",
+    "create_transfer_operators",
+    "FFTProlongation",
+    "FFTRestriction",
+    "PolynomialProlongation",
+    "InjectionRestriction",
+    # Corner singularity treatment
+    "CornerTreatment",
+    "SmoothingTreatment",
+    "SubtractionTreatment",
+    "create_corner_treatment",
     # Utilities
     "get_repo_root",
 ]

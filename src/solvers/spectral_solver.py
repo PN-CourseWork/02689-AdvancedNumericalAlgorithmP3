@@ -5,6 +5,10 @@ This solver implements the PN-PN-2 method with:
 - Pressure on reduced (Nx-1)×(Ny-1) inner grid
 - Artificial compressibility for pressure-velocity coupling
 - 4-stage RK4 explicit time stepping with adaptive CFL
+
+Corner singularity treatment options:
+- "smoothing": Simple cosine smoothing of lid velocity near corners
+- "subtraction": Analytical singular solution subtraction (Botella & Peyret 1998)
 """
 
 import logging
@@ -14,6 +18,7 @@ import numpy as np
 from .base_solver import LidDrivenCavitySolver
 from .datastructures import SpectralParameters, SpectralSolverFields
 from spectral.spectral import LegendreLobattoBasis, ChebyshevLobattoBasis
+from spectral.corner_singularity import create_corner_treatment
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +81,34 @@ class SpectralSolver(LidDrivenCavitySolver):
         self.dp_dx_inner_2d = self.arrays.dp_dx_inner.reshape(self.shape_inner)
         self.dp_dy_inner_2d = self.arrays.dp_dy_inner.reshape(self.shape_inner)
 
-        # Initialize lid velocity with corner smoothing
+        # Create corner treatment handler
+        self.corner_treatment = create_corner_treatment(
+            method=self.params.corner_treatment,
+            smoothing_width=self.params.corner_smoothing,
+        )
+        log.info(f"Using corner treatment: {self.params.corner_treatment}")
+
+        # Cache singular velocity and derivatives if using subtraction method
+        self._uses_modified_convection = self.corner_treatment.uses_modified_convection()
+        if self._uses_modified_convection:
+            log.info("Subtraction method: caching singular velocity and derivatives")
+            # Get singular velocity u_s, v_s at all grid points
+            u_s_2d, v_s_2d = self.corner_treatment.get_singular_velocity(
+                self.x_full, self.y_full, self.params.Lx, self.params.Ly
+            )
+            self._u_s = u_s_2d.ravel()
+            self._v_s = v_s_2d.ravel()
+
+            # Get analytical derivatives (NOT spectral!)
+            dus_dx, dus_dy, dvs_dx, dvs_dy = self.corner_treatment.get_singular_velocity_derivatives(
+                self.x_full, self.y_full, self.params.Lx, self.params.Ly
+            )
+            self._dus_dx = dus_dx.ravel()
+            self._dus_dy = dus_dy.ravel()
+            self._dvs_dx = dvs_dx.ravel()
+            self._dvs_dy = dvs_dy.ravel()
+
+        # Initialize lid velocity with corner treatment
         self._initialize_lid_velocity()
 
     def _setup_grids(self):
@@ -97,25 +129,27 @@ class SpectralSolver(LidDrivenCavitySolver):
         self.dx_min = np.min(np.diff(x_nodes))
         self.dy_min = np.min(np.diff(y_nodes))
 
-    def _apply_corner_smoothing(self, u_2d):
-        """Apply corner smoothing to lid velocity on top boundary.
+    def _apply_lid_boundary(self, u_2d, v_2d):
+        """Apply lid boundary condition using corner treatment.
 
         Parameters
         ----------
-        u_2d : np.ndarray
-            2D velocity array on full grid (Nx+1, Ny+1), modified in place
+        u_2d, v_2d : np.ndarray
+            2D velocity arrays on full grid (Nx+1, Ny+1), modified in place
         """
-        if self.params.corner_smoothing > 0:
-            Nx = self.params.nx
-            smooth_width = int(self.params.corner_smoothing * Nx)
-            if smooth_width > 0:
-                # Vectorized corner smoothing
-                i_values = np.arange(smooth_width)
-                factors = 0.5 * (1 - np.cos(np.pi * i_values / smooth_width))
+        # Get lid velocity from corner treatment
+        x_lid = self.x_full[:, -1]  # x coordinates on top boundary
+        y_lid = self.y_full[:, -1]  # y coordinates on top boundary
 
-                # Left and right corners
-                u_2d[i_values, -1] = factors * self.params.lid_velocity
-                u_2d[Nx - i_values, -1] = factors * self.params.lid_velocity
+        u_lid, v_lid = self.corner_treatment.get_lid_velocity(
+            x_lid, y_lid,
+            lid_velocity=self.params.lid_velocity,
+            Lx=self.params.Lx,
+            Ly=self.params.Ly,
+        )
+
+        u_2d[:, -1] = u_lid
+        v_2d[:, -1] = v_lid
 
     def _extrapolate_to_full_grid(self, inner_2d):
         """Extrapolate field from inner grid (Nx-1, Ny-1) to full grid (Nx+1, Ny+1).
@@ -189,12 +223,9 @@ class SpectralSolver(LidDrivenCavitySolver):
         self.Dy_inner = np.kron(Ix_inner, Dy_inner_1d)
 
     def _initialize_lid_velocity(self):
-        """Initialize lid velocity with corner smoothing to avoid spurious modes."""
-        # Set top boundary (y = Ly) to lid velocity
-        self.u_2d[:, -1] = self.params.lid_velocity
-
-        # Apply corner smoothing using smooth transition
-        self._apply_corner_smoothing(self.u_2d)
+        """Initialize lid velocity using corner treatment."""
+        # Apply lid boundary condition using corner treatment handler
+        self._apply_lid_boundary(self.u_2d, self.v_2d)
 
     def _interpolate_pressure_gradient(self):
         """Compute pressure gradient on inner grid and interpolate to full grid.
@@ -220,15 +251,18 @@ class SpectralSolver(LidDrivenCavitySolver):
         """Compute RHS residuals for pseudo time-stepping.
 
         PN-PN-2 method:
-        - u, v on full (Nx+1) × (Ny+1) grid
+        - u, v on full (Nx+1) × (Ny+1) grid (these are u_c, v_c for subtraction method)
         - p on inner (Nx-1) × (Ny-1) grid
         - R_u, R_v on full grid
         - R_p on inner grid
 
+        For subtraction method (Zhang & Xi 2010):
+        Modified convection: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
+
         Parameters
         ----------
         u, v : np.ndarray
-            Current velocity fields on full grid
+            Current velocity fields on full grid (u_c, v_c for subtraction)
         p : np.ndarray
             Current pressure field on INNER grid
 
@@ -236,7 +270,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         -------
         self.arrays.R_u, self.arrays.R_v (full grid), self.arrays.R_p (inner grid)
         """
-        # Compute velocity derivatives on full grid
+        # Compute velocity derivatives on full grid (spectral differentiation of u_c)
         self.arrays.du_dx[:] = self.Dx @ u
         self.arrays.du_dy[:] = self.Dy @ u
         self.arrays.dv_dx[:] = self.Dx @ v
@@ -249,9 +283,28 @@ class SpectralSolver(LidDrivenCavitySolver):
         # Compute pressure gradient from inner grid p and interpolate to full grid
         self._interpolate_pressure_gradient()
 
-        # Momentum residuals on FULL grid: R = -(u·∇)u - ∇p + (1/Re)∇²u
-        conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
-        conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
+        # Compute convection terms
+        if self._uses_modified_convection:
+            # Subtraction method: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
+            # Term 1: u_c·∇u_c (standard convection of computational velocity)
+            conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
+            conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
+
+            # Term 2: u_s·∇u_c (singular velocity advecting computational gradient)
+            conv_u += self._u_s * self.arrays.du_dx + self._v_s * self.arrays.du_dy
+            conv_v += self._u_s * self.arrays.dv_dx + self._v_s * self.arrays.dv_dy
+
+            # Term 3: u_c·∇u_s (computational velocity advecting singular gradient)
+            conv_u += u * self._dus_dx + v * self._dus_dy
+            conv_v += u * self._dvs_dx + v * self._dvs_dy
+
+            # Term 4: u_s·∇u_s (singular velocity advecting singular gradient)
+            conv_u += self._u_s * self._dus_dx + self._v_s * self._dus_dy
+            conv_v += self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
+        else:
+            # Standard convection: (u·∇)u
+            conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
+            conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
 
         nu = 1.0 / self.params.Re
 
@@ -268,7 +321,10 @@ class SpectralSolver(LidDrivenCavitySolver):
         self.arrays.R_p[:] = -self.params.beta_squared * divergence_inner
 
     def _enforce_boundary_conditions(self, u, v):
-        """Enforce no-slip boundary conditions on all walls.
+        """Enforce boundary conditions on all walls using corner treatment.
+
+        For smoothing method: No-slip on walls, smoothed lid velocity on top.
+        For subtraction method: u_c = -u_s on walls, u_c = V_lid - u_s on top.
 
         Parameters
         ----------
@@ -279,18 +335,30 @@ class SpectralSolver(LidDrivenCavitySolver):
         u_2d = u.reshape(self.shape_full)
         v_2d = v.reshape(self.shape_full)
 
-        # No-slip on all boundaries
-        u_2d[0, :] = 0.0  # West
-        u_2d[-1, :] = 0.0  # East
-        u_2d[:, 0] = 0.0  # South
-        v_2d[0, :] = 0.0  # West
-        v_2d[-1, :] = 0.0  # East
-        v_2d[:, 0] = 0.0  # South
-        v_2d[:, -1] = 0.0  # North
+        # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
+        # West boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.x_full[0, :], self.y_full[0, :], self.params.Lx, self.params.Ly
+        )
+        u_2d[0, :] = u_wall
+        v_2d[0, :] = v_wall
 
-        # Moving lid on north boundary
-        u_2d[:, -1] = self.params.lid_velocity
-        self._apply_corner_smoothing(u_2d)
+        # East boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.x_full[-1, :], self.y_full[-1, :], self.params.Lx, self.params.Ly
+        )
+        u_2d[-1, :] = u_wall
+        v_2d[-1, :] = v_wall
+
+        # South boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.x_full[:, 0], self.y_full[:, 0], self.params.Lx, self.params.Ly
+        )
+        u_2d[:, 0] = u_wall
+        v_2d[:, 0] = v_wall
+
+        # North boundary (moving lid)
+        self._apply_lid_boundary(u_2d, v_2d)
 
     def _compute_adaptive_timestep(self):
         """Compute adaptive pseudo-timestep based on CFL condition.
@@ -411,8 +479,19 @@ class SpectralSolver(LidDrivenCavitySolver):
         """Solve using Full Single Grid (FSG) multigrid."""
         import time
         from .spectral_multigrid import build_hierarchy, solve_fsg
+        from src.spectral.transfer_operators import create_transfer_operators
 
         log.info(f"Using FSG multigrid with {self.params.n_levels} levels")
+        log.info(
+            f"Transfer operators: prolongation={self.params.prolongation_method}, "
+            f"restriction={self.params.restriction_method}"
+        )
+
+        # Create transfer operators from config
+        transfer_ops = create_transfer_operators(
+            prolongation_method=self.params.prolongation_method,
+            restriction_method=self.params.restriction_method,
+        )
 
         # Build grid hierarchy
         time_start = time.time()
@@ -431,10 +510,13 @@ class SpectralSolver(LidDrivenCavitySolver):
             Re=self.params.Re,
             beta_squared=self.params.beta_squared,
             lid_velocity=self.params.lid_velocity,
-            corner_smoothing=self.params.corner_smoothing,
             CFL=self.params.CFL,
             tolerance=tolerance,
             max_iterations=max_iter,
+            transfer_ops=transfer_ops,
+            corner_treatment=self.corner_treatment,
+            Lx=self.params.Lx,
+            Ly=self.params.Ly,
             coarse_tolerance_factor=self.params.coarse_tolerance_factor,
         )
 

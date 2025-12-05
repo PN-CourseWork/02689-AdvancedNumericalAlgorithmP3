@@ -1,0 +1,11 @@
+# FFT/DCT-based transfer operators (Zhang & Xi 2010 paper method)
+# Uses Discrete Cosine Transform for spectral interpolation
+name: fft
+
+# Prolongation: coarse -> fine interpolation
+prolongation:
+  method: fft  # Uses DCT coefficients, zero-padding, and inverse DCT
+
+# Restriction: fine -> coarse interpolation (for residuals in VMG/FMG)
+restriction:
+  method: fft  # Uses DCT, truncate high frequencies, inverse DCT

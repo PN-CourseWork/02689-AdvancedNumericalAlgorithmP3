@@ -19,9 +19,9 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      solver: spectral_fsg
-      N: "51"
+      solver: spectral,spectral_fsg
+      N: "19"
 
-Re: 400
+Re: 100
 tolerance: 1.0e-6
 max_iterations: 100000

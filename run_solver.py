@@ -24,12 +24,16 @@ Setup for remote MLflow:
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 # Load .env file (for MLflow credentials)
 load_dotenv()
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import hydra
 import mlflow
@@ -71,19 +75,29 @@ def create_solver(cfg: DictConfig):
             alpha_p=cfg.solver.alpha_p,
             linear_solver_tol=cfg.solver.linear_solver_tol,
         )
-    elif solver_name in ("spectral", "spectral_fsg"):
+    elif solver_name.startswith("spectral"):
         from solvers import SpectralSolver
+
+        # Get transfer operator settings (nested under solver.transfer)
+        transfer_cfg = cfg.solver.get("transfer", {})
+        prolongation_method = transfer_cfg.get("prolongation", "fft") if transfer_cfg else "fft"
+        restriction_method = transfer_cfg.get("restriction", "fft") if transfer_cfg else "fft"
 
         return SpectralSolver(
             **common,
             basis_type=cfg.solver.basis_type,
             CFL=cfg.solver.CFL,
             beta_squared=cfg.solver.beta_squared,
-            corner_smoothing=cfg.solver.corner_smoothing,
+            # Corner singularity treatment
+            corner_treatment=cfg.solver.get("corner_treatment", "smoothing"),
+            corner_smoothing=cfg.solver.get("corner_smoothing", 0.15),
             # Multigrid settings
             multigrid=cfg.solver.get("multigrid", "none"),
             n_levels=cfg.solver.get("n_levels", 3),
             coarse_tolerance_factor=cfg.solver.get("coarse_tolerance_factor", 10.0),
+            # Transfer operators
+            prolongation_method=prolongation_method,
+            restriction_method=restriction_method,
         )
     else:
         raise ValueError(f"Unknown solver: {solver_name}")
@@ -162,19 +176,19 @@ def main(cfg: DictConfig) -> None:
     # Create solver
     solver = create_solver(cfg)
 
-    # Build run name
+    # Build run name (Re is in parent run, not child run name)
     solver_name = cfg.solver.name
-    if solver_name in ("spectral", "spectral_fsg"):
-        run_name = f"{solver_name}_N{cfg.N + 1}_Re{int(cfg.Re)}"
+    if solver_name.startswith("spectral"):
+        run_name = f"{solver_name}_N{cfg.N + 1}"
     else:
-        run_name = f"{solver_name}_N{cfg.N}_Re{int(cfg.Re)}"
+        run_name = f"{solver_name}_N{cfg.N}"
 
     # Check for parent run (from sweep callback)
     parent_run_id = os.environ.get("MLFLOW_PARENT_RUN_ID")
 
     # Run with MLflow tracking
     # Use nested=True when parent run is active (same process in local multirun)
-    run_tags = {}
+    run_tags = {"solver": solver_name}  # Always tag with solver name
     nested = False
     if parent_run_id:
         run_tags["mlflow.parentRunId"] = parent_run_id
@@ -207,6 +221,23 @@ def main(cfg: DictConfig) -> None:
             f"converged={solver.metrics.converged}, "
             f"time={solver.metrics.wall_time_seconds:.2f}s"
         )
+
+        # Generate plots
+        if cfg.get("generate_plots", True):
+            from plotting import generate_plots_for_run
+
+            output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+            tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
+            generate_plots_for_run(
+                run_id=run.info.run_id,
+                tracking_uri=tracking_uri,
+                output_dir=output_dir / "plots",
+                solver_name=solver_name,
+                N=cfg.N,
+                Re=cfg.Re,
+                parent_run_id=parent_run_id,
+                upload_to_mlflow=True,
+            )
 
 
 if __name__ == "__main__":
