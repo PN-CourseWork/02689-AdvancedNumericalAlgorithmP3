@@ -346,3 +346,85 @@ def modal_to_nodal(x: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
         Pn = eval_jacobi(n, 0, 0, x)
         result += cn * Pn
     return result
+
+
+def spectral_interpolate(
+    x_nodes: np.ndarray,
+    f_values: np.ndarray,
+    x_eval: np.ndarray,
+    basis: str = "legendre",
+) -> np.ndarray:
+    """
+    Spectrally interpolate function values at new points.
+
+    Uses the Vandermonde matrix approach: compute modal coefficients from
+    nodal values, then evaluate the polynomial expansion at new points.
+    This preserves spectral accuracy unlike spline interpolation.
+
+    Parameters
+    ----------
+    x_nodes : np.ndarray
+        Original collocation nodes (e.g., Chebyshev-Gauss-Lobatto or LGL nodes)
+    f_values : np.ndarray
+        Function values at x_nodes
+    x_eval : np.ndarray
+        Points where to evaluate the interpolant
+    basis : str, optional
+        Polynomial basis: "legendre" (alpha=beta=0) or "chebyshev" (alpha=beta=-0.5)
+        Default is "legendre".
+
+    Returns
+    -------
+    np.ndarray
+        Interpolated values at x_eval
+
+    Notes
+    -----
+    The interpolation is computed as:
+
+    .. math::
+
+        f(x_{eval}) = V_{eval} V^{-1} f_{nodes}
+
+    where V is the Vandermonde matrix at the original nodes and V_eval is
+    the Vandermonde matrix at the evaluation points.
+
+    For Chebyshev nodes, using Legendre basis still works well and avoids
+    the weight function singularities of Chebyshev polynomials at endpoints.
+
+    References
+    ----------
+    Engsig-Karup, "Lecture 2: Polynomial Methods", p. 55-56
+    """
+    # Set Jacobi parameters based on basis
+    if basis.lower() == "legendre":
+        alpha, beta = 0.0, 0.0
+    elif basis.lower() == "chebyshev":
+        alpha, beta = -0.5, -0.5
+    else:
+        raise ValueError(f"Unknown basis: {basis}. Use 'legendre' or 'chebyshev'.")
+
+    # Map nodes and eval points to [-1, 1] if needed
+    x_min, x_max = x_nodes.min(), x_nodes.max()
+    if not (np.isclose(x_min, -1.0) and np.isclose(x_max, 1.0)):
+        # Affine map to reference domain [-1, 1]
+        x_nodes_ref = 2.0 * (x_nodes - x_min) / (x_max - x_min) - 1.0
+        x_eval_ref = 2.0 * (x_eval - x_min) / (x_max - x_min) - 1.0
+    else:
+        x_nodes_ref = x_nodes
+        x_eval_ref = x_eval
+
+    # Compute Vandermonde matrix at original nodes
+    V = vandermonde(x_nodes_ref, alpha, beta)
+
+    # Compute modal coefficients: f_modal = V^{-1} f_nodal
+    f_modal = np.linalg.solve(V, f_values)
+
+    # Build Vandermonde at evaluation points (may have different size)
+    N = len(x_nodes)
+    V_eval = np.zeros((len(x_eval), N))
+    for n in range(N):
+        V_eval[:, n] = jacobi_poly(x_eval_ref, alpha, beta, n)
+
+    # Evaluate polynomial: f_interp = V_eval @ f_modal
+    return V_eval @ f_modal

@@ -679,7 +679,19 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
     u_records = []
     v_records = []
 
+    # Filter to only use the most recent run per corner treatment
+    # (avoids duplicate lines from old runs)
+    seen_treatments = set()
+    unique_siblings = []
     for sibling in siblings:
+        ct = sibling.get("corner_treatment", "unknown")
+        if ct not in seen_treatments:
+            seen_treatments.add(ct)
+            unique_siblings.append(sibling)
+
+    log.info(f"Using {len(unique_siblings)} unique corner treatments: {list(seen_treatments)}")
+
+    for sibling in unique_siblings:
         run_id = sibling["run_id"]
         N = sibling["N"]
         corner_treatment = sibling.get("corner_treatment", "unknown")
@@ -692,18 +704,25 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
             # Restructure to 2D arrays
             x_unique, y_unique, U_2d, V_2d, _ = restructure_fields(fields)
 
-            U_spline = RectBivariateSpline(y_unique, x_unique, U_2d)
-            V_spline = RectBivariateSpline(y_unique, x_unique, V_2d)
+            # Use our spectral interpolation for centerline extraction
+            # This preserves spectral accuracy via Vandermonde matrix approach
+            from spectral import spectral_interpolate
 
             n_points = 200
             y_line = np.linspace(y_unique.min(), y_unique.max(), n_points)
             x_line = np.linspace(x_unique.min(), x_unique.max(), n_points)
 
-            x_center = (x_unique.min() + x_unique.max()) / 2
-            y_center = (y_unique.min() + y_unique.max()) / 2
+            # Find center indices
+            x_center_idx = len(x_unique) // 2
+            y_center_idx = len(y_unique) // 2
 
-            u_sim = U_spline(y_line, x_center).ravel()
-            v_sim = V_spline(y_center, x_line).ravel()
+            # U along vertical centerline (x = center): interpolate in y
+            u_at_center_x = U_2d[:, x_center_idx]  # U values at x=center for all y
+            u_sim = spectral_interpolate(y_unique, u_at_center_x, y_line, basis="legendre")
+
+            # V along horizontal centerline (y = center): interpolate in x
+            v_at_center_y = V_2d[y_center_idx, :]  # V values at y=center for all x
+            v_sim = spectral_interpolate(x_unique, v_at_center_y, x_line, basis="legendre")
 
             # Add simulation data to records
             for i in range(n_points):

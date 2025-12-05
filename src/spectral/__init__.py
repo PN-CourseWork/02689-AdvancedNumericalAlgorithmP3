@@ -12,6 +12,7 @@ from .spectral import (
     legendre_diff_matrix,
     legendre_mass_matrix,
 )
+from .polynomial import spectral_interpolate
 from .transfer_operators import (
     TransferOperators,
     create_transfer_operators,
@@ -43,6 +44,8 @@ __all__ = [
     "fourier_diff_matrix_cotangent",
     "fourier_diff_matrix_complex",
     "fourier_diff_matrix_on_interval",
+    # Interpolation
+    "spectral_interpolate",
     # Transfer operators (multigrid)
     "TransferOperators",
     "create_transfer_operators",
