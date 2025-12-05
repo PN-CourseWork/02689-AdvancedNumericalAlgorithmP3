@@ -71,7 +71,7 @@ def create_solver(cfg: DictConfig):
             alpha_p=cfg.solver.alpha_p,
             linear_solver_tol=cfg.solver.linear_solver_tol,
         )
-    elif solver_name == "spectral":
+    elif solver_name in ("spectral", "spectral_fsg"):
         from solvers import SpectralSolver
 
         return SpectralSolver(
@@ -164,7 +164,7 @@ def main(cfg: DictConfig) -> None:
 
     # Build run name
     solver_name = cfg.solver.name
-    if solver_name == "spectral":
+    if solver_name in ("spectral", "spectral_fsg"):
         run_name = f"{solver_name}_N{cfg.N + 1}_Re{int(cfg.Re)}"
     else:
         run_name = f"{solver_name}_N{cfg.N}_Re{int(cfg.Re)}"

@@ -140,12 +140,15 @@ def find_sibling_runs(parent_run_id: str, tracking_uri: str) -> list[dict]:
 
     siblings = []
     for run in runs:
+        # Extract solver name from run_name (format: {solver}_N{n}_Re{re})
+        run_name = run.info.run_name or ""
+        solver_name = run_name.split("_N")[0] if "_N" in run_name else "unknown"
         siblings.append({
             "run_id": run.info.run_id,
-            "run_name": run.info.run_name,
+            "run_name": run_name,
             "N": int(run.data.params.get("nx", 0)),
             "Re": float(run.data.params.get("Re", 0)),
-            "solver": "spectral" if "basis_type" in run.data.params else "fv",
+            "solver": solver_name,
         })
 
     log.info(f"Found {len(siblings)} sibling runs in sweep")
@@ -649,8 +652,9 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Color map for different runs
+    # Color map and line styles for different runs
     colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(siblings)))
+    linestyles = ["-", "--", "-.", ":", (0, (3, 1, 1, 1))]  # Solid, dashed, dashdot, dotted, custom
 
     for i, sibling in enumerate(siblings):
         run_id = sibling["run_id"]
@@ -679,8 +683,9 @@ def plot_ghia_comparison(siblings: list[dict], tracking_uri: str, output_dir: Pa
             v_sim = V_spline(y_center, x_line).ravel()
 
             label = f"{solver.upper()} N={N}"
-            axes[0].plot(u_sim, y_line, color=colors[i], linewidth=2, label=label)
-            axes[1].plot(x_line, v_sim, color=colors[i], linewidth=2, label=label)
+            ls = linestyles[i % len(linestyles)]
+            axes[0].plot(u_sim, y_line, color=colors[i], linewidth=2.5, linestyle=ls, label=label)
+            axes[1].plot(x_line, v_sim, color=colors[i], linewidth=2.5, linestyle=ls, label=label)
 
         except Exception as e:
             log.warning(f"Failed to load run {run_id}: {e}")
