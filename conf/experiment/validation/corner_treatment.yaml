@@ -1,0 +1,27 @@
+# @package _global_
+# Corner Treatment Comparison: Smoothing vs Subtraction Method
+# Compares the two approaches for handling corner singularities in spectral LDC solver
+#
+# Run with:
+#   uv run python run_solver.py -m +experiment=validation/corner_treatment
+#
+# References:
+#   - Subtraction method: Zhang & Xi (2010), Botella & Peyret (1998)
+#   - Smoothing: Simple cosine smoothing near corners
+
+defaults:
+  - override /solver: spectral/sg
+
+# MLflow experiment
+experiment_name: LDC-CornerTreatment
+sweep_name: corner-comparison-Re${Re}
+
+hydra:
+  sweeper:
+    params:
+      # Compare both corner treatment methods
+      solver.corner_treatment: smoothing,subtraction
+      # Test across multiple grid sizes to see convergence behavior
+      N: 16,32,64
+      # Reynolds number (can add more: 100,400,1000)
+      Re: 100

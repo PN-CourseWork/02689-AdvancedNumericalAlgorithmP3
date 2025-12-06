@@ -213,8 +213,8 @@ def plot_ghia_comparison(
                     x_unique, V_2d[y_center_idx, :], x_line, basis="legendre"
                 )
 
-            # Create combined method-N label
-            method_label = f"{method}-{N}"
+            # Create combined method-N label with LaTeX formatting
+            method_label = f"{method}, $N={N}$"
 
             for i in range(n_points):
                 u_records.append(
@@ -262,22 +262,24 @@ def plot_ghia_comparison(
         sort=False,
         linewidth=2,
         markersize=7,
+        markevery=15,
     )
     sns.scatterplot(
         data=ghia_u,
         x="u",
         y="y",
         marker="o",
-        s=80,
+        s=50,
         facecolors="none",
         edgecolors="#333333",
-        linewidths=1.8,
+        linewidths=1.2,
         label="Ghia et al. (1982)",
         ax=axes[0],
         zorder=10,
     )
-    axes[0].set_xlabel(r"$u$-velocity", fontsize=11)
-    axes[0].set_ylabel(r"$y$-coordinate", fontsize=11)
+    axes[0].set_xlabel(r"$u$", fontsize=11)
+    axes[0].set_ylabel(r"$y$", fontsize=11)
+    axes[0].set_title(r"$u$-velocity (vertical centerline)", fontsize=11)
 
     # Right: v-velocity (horizontal centerline)
     sns.lineplot(
@@ -289,39 +291,29 @@ def plot_ghia_comparison(
         markers=True,
         ax=axes[1],
         sort=False,
-        legend=False,
         linewidth=2,
         markersize=7,
+        markevery=15,
     )
     sns.scatterplot(
         data=ghia_v,
         x="x",
         y="v",
         marker="o",
-        s=80,
+        s=50,
         facecolors="none",
         edgecolors="#333333",
-        linewidths=1.8,
+        linewidths=1.2,
         label="Ghia et al. (1982)",
         ax=axes[1],
         zorder=10,
     )
-    axes[1].set_xlabel(r"$x$-coordinate", fontsize=11)
-    axes[1].set_ylabel(r"$v$-velocity", fontsize=11)
-
-    # Set markevery with offset for each method
-    unique_methods = u_df["Method"].unique()
-    marker_interval = 20
-
-    for ax in axes:
-        lines = [l for l in ax.get_lines() if l.get_linestyle() != 'None']
-        for i, line in enumerate(lines):
-            method_idx = i % len(unique_methods)
-            offset = method_idx * 3
-            line.set_markevery((offset, marker_interval))
+    axes[1].set_xlabel(r"$x$", fontsize=11)
+    axes[1].set_ylabel(r"$v$", fontsize=11)
+    axes[1].set_title(r"$v$-velocity (horizontal centerline)", fontsize=11)
 
     # Overall title
-    fig.suptitle(rf"Ghia Benchmark Comparison (Re = {int(Re)})", fontsize=13, y=0.98)
+    fig.suptitle(rf"Ghia Benchmark Comparison ($\mathrm{{Re}} = {int(Re)}$)", fontsize=13, y=1.00)
 
     # Tight layout for better spacing
     plt.tight_layout()
