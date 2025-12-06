@@ -47,29 +47,31 @@ def plot_centerlines(
     u_vertical = U_spline(y_line, x_center).ravel()
     v_horizontal = V_spline(y_center, x_line).ravel()
 
-    fig, axes = plt.subplots(1, 2)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    axes[0].plot(u_vertical, y_line)
-    axes[0].set_xlabel(r"$u$")
-    axes[0].set_ylabel(r"$y$")
-    axes[0].set_title(r"\textbf{$u$-velocity along vertical centerline}")
-    axes[0].grid(True, alpha=0.3)
-    axes[0].axvline(x=0, color="gray", linestyle="--", alpha=0.5)
+    axes[0].plot(u_vertical, y_line, linewidth=2)
+    axes[0].set_xlabel(r"$u$", fontsize=11)
+    axes[0].set_ylabel(r"$y$", fontsize=11)
+    axes[0].set_title(r"\textbf{$u$-velocity along vertical centerline}", fontsize=12)
+    axes[0].axvline(x=0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
 
-    axes[1].plot(x_line, v_horizontal)
-    axes[1].set_xlabel(r"$x$")
-    axes[1].set_ylabel(r"$v$")
-    axes[1].set_title(r"\textbf{$v$-velocity along horizontal centerline}")
-    axes[1].grid(True, alpha=0.3)
-    axes[1].axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+    axes[1].plot(x_line, v_horizontal, linewidth=2)
+    axes[1].set_xlabel(r"$x$", fontsize=11)
+    axes[1].set_ylabel(r"$v$", fontsize=11)
+    axes[1].set_title(r"\textbf{$v$-velocity along horizontal centerline}", fontsize=12)
+    axes[1].axhline(y=0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
 
     solver_label = solver.upper().replace("_", r"\_")
     fig.suptitle(
-        rf"\textbf{{Centerline Profiles}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+        rf"\textbf{{Centerline Profiles}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
+        fontsize=13,
+        y=0.98,
     )
 
+    plt.tight_layout()
+
     output_path = output_dir / "centerlines.pdf"
-    fig.savefig(output_path)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     return output_path
@@ -211,12 +213,15 @@ def plot_ghia_comparison(
                     x_unique, V_2d[y_center_idx, :], x_line, basis="legendre"
                 )
 
+            # Create combined method-N label
+            method_label = f"{method}-{N}"
+
             for i in range(n_points):
                 u_records.append(
                     {
                         "y": y_line[i],
                         "u": u_sim[i],
-                        "Method": method,
+                        "Method": method_label,
                         "Solver": solver_name,
                         "N": N,
                     }
@@ -225,7 +230,7 @@ def plot_ghia_comparison(
                     {
                         "x": x_line[i],
                         "v": v_sim[i],
-                        "Method": method,
+                        "Method": method_label,
                         "Solver": solver_name,
                         "N": N,
                     }
@@ -239,85 +244,90 @@ def plot_ghia_comparison(
         log.warning("No valid runs to plot")
         return None
 
-    u_df = pd.DataFrame(u_records).sort_values(["N", "Method", "y"])
-    v_df = pd.DataFrame(v_records).sort_values(["N", "Method", "x"])
+    u_df = pd.DataFrame(u_records)
+    v_df = pd.DataFrame(v_records)
 
-    # Create figure with 4:3 aspect ratio per subplot
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    # Create subplots with publication-quality sizing
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Plot u-velocity with seaborn (sort=False to preserve y-ordering)
+    # Left: u-velocity (vertical centerline)
     sns.lineplot(
         data=u_df,
         x="u",
         y="y",
-        hue="N",
+        hue="Method",
         style="Method",
         markers=True,
-        dashes=True,
-        sort=False,
         ax=axes[0],
-    )
-    # Set markevery on all lines
-    for line in axes[0].get_lines():
-        line.set_markevery(20)
-    # Plot Ghia data with hollow circles
-    axes[0].plot(
-        ghia_u["u"],
-        ghia_u["y"],
-        "o",
-        color="#333333",
-        label="Ghia et al. (1982)",
+        sort=False,
+        linewidth=2,
         markersize=7,
-        markerfacecolor="none",
-        markeredgewidth=1.2,
+    )
+    sns.scatterplot(
+        data=ghia_u,
+        x="u",
+        y="y",
+        marker="o",
+        s=80,
+        facecolors="none",
+        edgecolors="#333333",
+        linewidths=1.8,
+        label="Ghia et al. (1982)",
+        ax=axes[0],
         zorder=10,
     )
-    axes[0].set_xlabel(r"$u$-velocity")
-    axes[0].set_ylabel(r"$y$-coordinate")
-    axes[0].set_title(r"$u$-velocity (vertical centerline)")
-    axes[0].set_xlim(-0.4, 1.05)
-    axes[0].set_ylim(0, 1)
+    axes[0].set_xlabel(r"$u$-velocity", fontsize=11)
+    axes[0].set_ylabel(r"$y$-coordinate", fontsize=11)
 
-    # Plot v-velocity with seaborn (sort=False to preserve x-ordering)
+    # Right: v-velocity (horizontal centerline)
     sns.lineplot(
         data=v_df,
         x="x",
         y="v",
-        hue="N",
+        hue="Method",
         style="Method",
         markers=True,
-        dashes=True,
-        sort=False,
         ax=axes[1],
+        sort=False,
         legend=False,
-    )
-    # Set markevery on all lines
-    for line in axes[1].get_lines():
-        line.set_markevery(20)
-    # Plot Ghia data with hollow circles
-    axes[1].plot(
-        ghia_v["x"],
-        ghia_v["v"],
-        "o",
-        color="#333333",
-        label="Ghia et al. (1982)",
+        linewidth=2,
         markersize=7,
-        markerfacecolor="none",
-        markeredgewidth=1.2,
+    )
+    sns.scatterplot(
+        data=ghia_v,
+        x="x",
+        y="v",
+        marker="o",
+        s=80,
+        facecolors="none",
+        edgecolors="#333333",
+        linewidths=1.8,
+        label="Ghia et al. (1982)",
+        ax=axes[1],
         zorder=10,
     )
-    axes[1].set_xlabel(r"$x$-coordinate")
-    axes[1].set_ylabel(r"$v$-velocity")
-    axes[1].set_title(r"$v$-velocity (horizontal centerline)")
-    axes[1].set_xlim(0, 1)
-    axes[1].set_ylim(-0.6, 0.4)
+    axes[1].set_xlabel(r"$x$-coordinate", fontsize=11)
+    axes[1].set_ylabel(r"$v$-velocity", fontsize=11)
 
-    # Set overall title
-    fig.suptitle(rf"Ghia Benchmark Comparison (Re = {int(Re)})", fontsize=12)
-    #fig.tight_layout()
+    # Set markevery with offset for each method
+    unique_methods = u_df["Method"].unique()
+    marker_interval = 20
+
+    for ax in axes:
+        lines = [l for l in ax.get_lines() if l.get_linestyle() != 'None']
+        for i, line in enumerate(lines):
+            method_idx = i % len(unique_methods)
+            offset = method_idx * 3
+            line.set_markevery((offset, marker_interval))
+
+    # Overall title
+    fig.suptitle(rf"Ghia Benchmark Comparison (Re = {int(Re)})", fontsize=13, y=0.98)
+
+    # Tight layout for better spacing
+    plt.tight_layout()
 
     output_path = output_dir / "ghia_comparison.pdf"
-    fig.savefig(output_path)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     log.info(f"Saved comparison plot: {output_path.name}")

@@ -38,36 +38,43 @@ def plot_fields(
     U_interp = RectBivariateSpline(y_unique, x_unique, U)(y_fine, x_fine)
     V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
 
-    fig, axes = plt.subplots(1, 3)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
 
-    cf_p = axes[0].contourf(X_fine, Y_fine, P_interp, levels=25, cmap="viridis")
-    axes[0].set_xlabel(r"$x$")
-    axes[0].set_ylabel(r"$y$")
-    axes[0].set_title(r"\textbf{Pressure}")
+    cf_p = axes[0].contourf(X_fine, Y_fine, P_interp, levels=30, cmap="viridis")
+    axes[0].set_xlabel(r"$x$", fontsize=11)
+    axes[0].set_ylabel(r"$y$", fontsize=11)
+    axes[0].set_title(r"\textbf{Pressure}", fontsize=12)
     axes[0].set_aspect("equal")
-    plt.colorbar(cf_p, ax=axes[0], label=r"$p$")
+    cbar_p = plt.colorbar(cf_p, ax=axes[0], label=r"$p$")
+    cbar_p.ax.tick_params(labelsize=9)
 
-    cf_u = axes[1].contourf(X_fine, Y_fine, U_interp, levels=25, cmap="RdBu_r")
-    axes[1].set_xlabel(r"$x$")
-    axes[1].set_ylabel(r"$y$")
-    axes[1].set_title(r"\textbf{$u$-velocity}")
+    cf_u = axes[1].contourf(X_fine, Y_fine, U_interp, levels=30, cmap="RdBu_r")
+    axes[1].set_xlabel(r"$x$", fontsize=11)
+    axes[1].set_ylabel(r"$y$", fontsize=11)
+    axes[1].set_title(r"\textbf{$u$-velocity}", fontsize=12)
     axes[1].set_aspect("equal")
-    plt.colorbar(cf_u, ax=axes[1], label=r"$u$")
+    cbar_u = plt.colorbar(cf_u, ax=axes[1], label=r"$u$")
+    cbar_u.ax.tick_params(labelsize=9)
 
-    cf_v = axes[2].contourf(X_fine, Y_fine, V_interp, levels=25, cmap="RdBu_r")
-    axes[2].set_xlabel(r"$x$")
-    axes[2].set_ylabel(r"$y$")
-    axes[2].set_title(r"\textbf{$v$-velocity}")
+    cf_v = axes[2].contourf(X_fine, Y_fine, V_interp, levels=30, cmap="RdBu_r")
+    axes[2].set_xlabel(r"$x$", fontsize=11)
+    axes[2].set_ylabel(r"$y$", fontsize=11)
+    axes[2].set_title(r"\textbf{$v$-velocity}", fontsize=12)
     axes[2].set_aspect("equal")
-    plt.colorbar(cf_v, ax=axes[2], label=r"$v$")
+    cbar_v = plt.colorbar(cf_v, ax=axes[2], label=r"$v$")
+    cbar_v.ax.tick_params(labelsize=9)
 
     solver_label = solver.upper().replace("_", r"\_")
     fig.suptitle(
-        rf"\textbf{{Solution Fields}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+        rf"\textbf{{Solution Fields}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
+        fontsize=13,
+        y=1.00,
     )
 
+    plt.tight_layout()
+
     output_path = output_dir / "fields.pdf"
-    fig.savefig(output_path)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     return output_path
@@ -93,25 +100,38 @@ def plot_streamlines(
     V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
     vel_mag = np.sqrt(U_interp**2 + V_interp**2)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(7, 6))
 
     X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
-    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=25, cmap="viridis")
+    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=30, cmap="RdYlBu_r")
     ax.streamplot(
-        x_fine, y_fine, U_interp, V_interp, density=1.5, arrowsize=1.0, arrowstyle="->"
+        x_fine,
+        y_fine,
+        U_interp,
+        V_interp,
+        density=1.8,
+        linewidth=1.0,
+        arrowsize=1.2,
+        arrowstyle="->",
+        color="white",
+        zorder=2,
     )
 
-    ax.set_xlabel(r"$x$")
-    ax.set_ylabel(r"$y$")
+    ax.set_xlabel(r"$x$", fontsize=11)
+    ax.set_ylabel(r"$y$", fontsize=11)
     solver_label = solver.upper().replace("_", r"\_")
     ax.set_title(
-        rf"\textbf{{Streamlines}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+        rf"\textbf{{Streamlines}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
+        fontsize=12,
     )
     ax.set_aspect("equal")
-    plt.colorbar(cf, ax=ax, label=r"$|\mathbf{u}|$")
+    cbar = plt.colorbar(cf, ax=ax, label=r"$|\mathbf{u}|$")
+    cbar.ax.tick_params(labelsize=10)
+
+    plt.tight_layout()
 
     output_path = output_dir / "streamlines.pdf"
-    fig.savefig(output_path)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     return output_path
@@ -141,24 +161,30 @@ def plot_vorticity(
     dudy = U_spline(y_fine, x_fine, dy=1)
     vorticity = dvdx - dudy
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(7, 6))
 
     vmax = np.max(np.abs(vorticity))
     cf = ax.contourf(
-        X_fine, Y_fine, vorticity, levels=25, vmin=-vmax, vmax=vmax, cmap="RdBu_r"
+        X_fine, Y_fine, vorticity, levels=30, vmin=-vmax, vmax=vmax, cmap="RdBu_r"
     )
 
-    ax.set_xlabel(r"$x$")
-    ax.set_ylabel(r"$y$")
+    ax.set_xlabel(r"$x$", fontsize=11)
+    ax.set_ylabel(r"$y$", fontsize=11)
     solver_label = solver.upper().replace("_", r"\_")
     ax.set_title(
-        rf"\textbf{{Vorticity}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+        rf"\textbf{{Vorticity}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
+        fontsize=12,
     )
     ax.set_aspect("equal")
-    plt.colorbar(cf, ax=ax, label=r"$\omega = \partial v/\partial x - \partial u/\partial y$")
+    cbar = plt.colorbar(
+        cf, ax=ax, label=r"$\omega = \partial v/\partial x - \partial u/\partial y$"
+    )
+    cbar.ax.tick_params(labelsize=10)
+
+    plt.tight_layout()
 
     output_path = output_dir / "vorticity.pdf"
-    fig.savefig(output_path)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
     return output_path
