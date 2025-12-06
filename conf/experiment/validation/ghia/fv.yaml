@@ -1,0 +1,17 @@
+# @package _global_
+# Ghia validation - Finite Volume solver
+# Sweeps over grid sizes N=32, N=64
+
+defaults:
+  - override /solver: fv
+
+# MLflow experiment
+experiment_name: LDC-Validation
+sweep_name: ghia-Re${Re}
+
+hydra:
+  sweeper:
+    params:
+      # Sweep over FV grid sizes
+      N: 32,64
+      Re: 100

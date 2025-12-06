@@ -1,0 +1,11 @@
+# @package _global_
+# Lid-Driven Cavity Problem Definition
+# Defines the physics and domain for the lid-driven cavity benchmark
+
+# Physics parameters
+Re: 100              # Reynolds number
+lid_velocity: 1.0    # Velocity of the moving lid
+
+# Domain geometry
+Lx: 1.0             # Domain length in x-direction
+Ly: 1.0             # Domain length in y-direction

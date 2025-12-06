@@ -1,0 +1,10 @@
+# @package _global_
+# HPC machine configuration - run jobs sequentially (one at a time)
+# Use this when running on HPC cluster to avoid oversubscribing resources
+
+defaults:
+  - override /hydra/launcher: joblib
+
+hydra:
+  launcher:
+    n_jobs: 1  # Run jobs sequentially on HPC

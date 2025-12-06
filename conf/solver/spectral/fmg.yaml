@@ -1,0 +1,17 @@
+# @package solver
+# Full MultiGrid (FMG) Spectral Solver with multigrid acceleration
+
+defaults:
+  - /solver/spectral/sg  # Extend single grid spectral solver using absolute path
+
+_target_: solvers.spectral.fmg.FMGSolver
+
+# Override name for FMG variant
+name: spectral_fmg
+
+# FMG Multigrid settings
+multigrid: fmg
+n_levels: 3
+coarse_tolerance_factor: 10.0
+prolongation_method: fft
+restriction_method: fft

@@ -1,6 +1,6 @@
-"""Spectral solver for lid-driven cavity using pseudospectral method.
+"""Single Grid (SG) Spectral solver for lid-driven cavity.
 
-This solver implements the PN-PN-2 method with:
+This is the base spectral solver using pseudospectral method without multigrid:
 - Velocities on full (Nx+1)×(Ny+1) Legendre-Gauss-Lobatto grid
 - Pressure on reduced (Nx-1)×(Ny-1) inner grid
 - Artificial compressibility for pressure-velocity coupling
@@ -26,11 +26,14 @@ from solvers.spectral.operators.corner import create_corner_treatment
 log = logging.getLogger(__name__)
 
 
-class SpectralSolver(LidDrivenCavitySolver):
-    """Pseudospectral solver for lid-driven cavity problem.
+class SGSolver(LidDrivenCavitySolver):
+    """Single Grid Pseudospectral solver for lid-driven cavity problem.
 
     Uses explicit time-stepping with artificial compressibility to solve
     the incompressible Navier-Stokes equations on a Legendre-Gauss-Lobatto grid.
+
+    This is the base spectral solver without multigrid acceleration.
+    For multigrid variants, see FSGSolver, VMGSolver, FMGSolver.
 
     Parameters
     ----------
@@ -42,7 +45,7 @@ class SpectralSolver(LidDrivenCavitySolver):
     Parameters = SpectralParameters
 
     def __init__(self, **kwargs):
-        """Initialize spectral solver."""
+        """Initialize single grid spectral solver."""
         super().__init__(**kwargs)
 
         # Create spectral basis based on params
@@ -445,7 +448,7 @@ class SpectralSolver(LidDrivenCavitySolver):
         self.fields.p[:] = p_full_2d.ravel()
 
     def _compute_algebraic_residuals(self):
-        """Return algebraic residuals from pseudo-time stepping.
+        """Return algebraic residuals from pseudo time-stepping.
 
         For spectral solver, the algebraic residuals are the RHS of the
         time-stepping equations (R_u, R_v, R_p) computed during step().
@@ -455,118 +458,3 @@ class SpectralSolver(LidDrivenCavitySolver):
             "v_residual": np.linalg.norm(self.arrays.R_v),
             "continuity_residual": np.linalg.norm(self.arrays.R_p),
         }
-
-    def solve(self, tolerance: float = None, max_iter: int = None):
-        """Solve lid-driven cavity - dispatches to multigrid if configured.
-
-        Parameters
-        ----------
-        tolerance : float, optional
-            Convergence tolerance. If None, uses params.tolerance.
-        max_iter : int, optional
-            Maximum iterations. If None, uses params.max_iterations.
-        """
-        if tolerance is None:
-            tolerance = self.params.tolerance
-        if max_iter is None:
-            max_iter = self.params.max_iterations
-
-        mg_method = self.params.multigrid.lower()
-
-        if mg_method == "none":
-            # Use base class single-grid solver
-            super().solve(tolerance=tolerance, max_iter=max_iter)
-        elif mg_method == "fsg":
-            self._solve_fsg(tolerance, max_iter)
-        elif mg_method in ("vmg", "fmg"):
-            raise NotImplementedError(
-                f"Multigrid method '{mg_method}' not yet implemented"
-            )
-        else:
-            raise ValueError(f"Unknown multigrid method: {mg_method}")
-
-    def _solve_fsg(self, tolerance: float, max_iter: int):
-        """Solve using Full Single Grid (FSG) multigrid."""
-        import time
-
-        from solvers.spectral.multigrid.fsg import build_hierarchy, solve_fsg
-        from solvers.spectral.operators.transfer_operators import (
-            create_transfer_operators,
-        )
-
-        log.info(f"Using FSG multigrid with {self.params.n_levels} levels")
-        log.info(
-            f"Transfer operators: prolongation={self.params.prolongation_method}, "
-            f"restriction={self.params.restriction_method}"
-        )
-
-        # Create transfer operators from config
-        transfer_ops = create_transfer_operators(
-            prolongation_method=self.params.prolongation_method,
-            restriction_method=self.params.restriction_method,
-        )
-
-        # Build grid hierarchy
-        time_start = time.time()
-        levels = build_hierarchy(
-            n_fine=self.params.nx,
-            n_levels=self.params.n_levels,
-            basis_x=self.basis_x,
-            basis_y=self.basis_y,
-            Lx=self.params.Lx,
-            Ly=self.params.Ly,
-        )
-
-        # Solve using FSG
-        finest_level, total_iters, converged = solve_fsg(
-            levels=levels,
-            Re=self.params.Re,
-            beta_squared=self.params.beta_squared,
-            lid_velocity=self.params.lid_velocity,
-            CFL=self.params.CFL,
-            tolerance=tolerance,
-            max_iterations=max_iter,
-            transfer_ops=transfer_ops,
-            corner_treatment=self.corner_treatment,
-            Lx=self.params.Lx,
-            Ly=self.params.Ly,
-            coarse_tolerance_factor=self.params.coarse_tolerance_factor,
-        )
-
-        time_end = time.time()
-        wall_time = time_end - time_start
-
-        # Copy solution from finest level to solver arrays
-        self.arrays.u[:] = finest_level.u
-        self.arrays.v[:] = finest_level.v
-        self.arrays.p[:] = finest_level.p
-
-        # Compute final residuals
-        self._compute_residuals(self.arrays.u, self.arrays.v, self.arrays.p)
-
-        # Store results using base class machinery
-        # Create minimal residual history for compatibility
-        final_residuals = self._compute_algebraic_residuals()
-        residual_history = [
-            {
-                "rel_iter": tolerance if converged else tolerance * 10,
-                "u_eq": final_residuals["u_residual"],
-                "v_eq": final_residuals["v_residual"],
-                "continuity": final_residuals["continuity_residual"],
-            }
-        ]
-
-        self._store_results(
-            residual_history=residual_history,
-            final_iter_count=total_iters,
-            is_converged=converged,
-            wall_time=wall_time,
-            energy_history=[self._compute_energy()],
-            enstrophy_history=[self._compute_enstrophy()],
-            palinstrophy_history=[self._compute_palinstrophy()],
-        )
-
-        log.info(
-            f"FSG completed in {wall_time:.2f}s: {total_iters} iterations, "
-            f"converged={converged}"
-        )

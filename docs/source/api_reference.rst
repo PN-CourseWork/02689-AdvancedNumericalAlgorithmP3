@@ -10,7 +10,3 @@ This page provides an overview of the solver modules.
    :maxdepth: 2
 
    api/solvers
-   api/base_solver
-   api/fv_solver
-   api/spectral_solver
-   api/datastructures

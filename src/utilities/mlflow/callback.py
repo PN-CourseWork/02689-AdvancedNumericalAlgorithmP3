@@ -189,7 +189,7 @@ class MLflowSweepCallback(Callback):
         os.environ["MLFLOW_PARENT_RUN_ID"] = parent_id
 
     def on_multirun_end(self, config: DictConfig, **kwargs) -> None:
-        """Clean up after sweep completes and generate comparison plots."""
+        """Clean up after sweep completes and generate plots."""
         if os.environ.get("MLFLOW_SWEEP_ACTIVE") != "1":
             return
 
@@ -197,46 +197,37 @@ class MLflowSweepCallback(Callback):
         os.environ.pop("MLFLOW_PARENT_RUN_ID", None)
         os.environ.pop("MLFLOW_SWEEP_ACTIVE", None)
 
-        # Log summary
-        log.info(
-            f"Sweep completed. Using {len(self._parent_runs)} parent run(s) "
-            f"({len(self._active_parent_runs)} created, {len(self._parent_runs) - len(self._active_parent_runs)} reused)."
-        )
-        for name, run_id in self._parent_runs.items():
-            log.info(f"  - {name}: {run_id}")
+        log.info("Multirun sweep completed")
 
-        # Generate plots for all parent runs and their children
-        if self._parent_runs and config.get("generate_plots", True):
-            try:
-                import sys
-                from pathlib import Path
+        # Generate plots using plot_runs.py
+        try:
+            import sys
+            from pathlib import Path
 
-                # Add repo root to path for plot_runs import
-                repo_root = Path(__file__).parent.parent.parent.parent
-                if str(repo_root) not in sys.path:
-                    sys.path.insert(0, str(repo_root))
+            # Add repo root to path for imports
+            repo_root = Path(__file__).parent.parent.parent.parent
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
 
-                from plot_runs import plot_experiment
+            # Use stored sweep directory for output
+            if self._sweep_dir:
+                output_dir = Path(self._sweep_dir) / "plots"
+            else:
+                output_dir = Path("outputs") / "plots"
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-                # Use stored sweep directory (HydraConfig may not be available here)
-                if self._sweep_dir:
-                    output_dir = Path(self._sweep_dir) / "plots"
-                else:
-                    output_dir = Path("outputs") / "plots"
+            from plot_runs import plot_experiment
 
-                parent_run_ids = list(self._parent_runs.values())
-                log.info(
-                    f"Generating plots for {len(parent_run_ids)} parent run(s) "
-                    "and all their children..."
-                )
+            log.info(f"Generating plots for experiment: {self._full_experiment_name}")
 
-                # Plot all runs (individual + comparison) for each parent
-                plot_experiment(
-                    experiment_name=self._full_experiment_name,
-                    tracking_uri=self._tracking_uri,
-                    output_dir=output_dir,
-                    parent_run_ids=parent_run_ids,
-                    upload_to_mlflow=True,
-                )
-            except Exception as e:
-                log.warning(f"Failed to generate plots: {e}")
+            # Plot all parent runs and their children
+            plot_experiment(
+                experiment_name=self._full_experiment_name,
+                tracking_uri=self._tracking_uri,
+                output_dir=output_dir,
+                parent_run_ids=None,  # Find all parent runs automatically
+                upload_to_mlflow=True,
+            )
+
+        except Exception as e:
+            log.warning(f"Failed to generate plots: {e}")
