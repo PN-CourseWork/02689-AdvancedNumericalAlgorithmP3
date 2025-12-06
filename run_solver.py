@@ -49,8 +49,22 @@ log = logging.getLogger(__name__)
 
 
 def create_solver(cfg: DictConfig):
-    """Instantiate solver using Hydra's instantiate on solver subtree."""
-    return instantiate(cfg.solver, _convert_="partial")
+    """Instantiate solver using Hydra's instantiate on solver subtree.
+
+    Common parameters from root config are passed to the solver constructor.
+    """
+    return instantiate(
+        cfg.solver,
+        Re=cfg.Re,
+        lid_velocity=cfg.lid_velocity,
+        Lx=cfg.Lx,
+        Ly=cfg.Ly,
+        nx=cfg.N,
+        ny=cfg.N,
+        max_iterations=cfg.max_iterations,
+        tolerance=cfg.tolerance,
+        _convert_="partial",
+    )
 
 
 # =============================================================================
@@ -139,6 +153,34 @@ def main(cfg: DictConfig) -> None:
     experiment_name = setup_mlflow(cfg)
     log.info(f"MLflow experiment: {experiment_name}")
 
+    # Plot-only mode: find existing run and regenerate plots
+    if cfg.get("plot_only", False):
+        log.info("Plot-only mode: finding existing run to regenerate plots")
+        from shared.plotting.ldc import generate_plots_for_run, find_matching_run
+
+        tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
+        run_id, parent_run_id = find_matching_run(cfg, tracking_uri)
+
+        if run_id is None:
+            log.error(f"No matching run found for solver={cfg.solver.name}, N={cfg.N}, Re={cfg.Re}")
+            return
+
+        log.info(f"Found existing run: {run_id}")
+        output_dir = Path(
+            hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+        )
+        generate_plots_for_run(
+            run_id=run_id,
+            tracking_uri=tracking_uri,
+            output_dir=output_dir / "plots",
+            solver_name=cfg.solver.name,
+            N=cfg.N,
+            Re=cfg.Re,
+            parent_run_id=parent_run_id,
+        )
+        log.info("Plot regeneration complete!")
+        return
+
     # Create solver
     solver = create_solver(cfg)
 
@@ -192,7 +234,7 @@ def main(cfg: DictConfig) -> None:
 
         # Generate plots
         if cfg.get("generate_plots", True):
-            from shared.plotting.ldc_plotter import generate_plots_for_run
+            from shared.plotting.ldc import generate_plots_for_run
 
             output_dir = Path(
                 hydra.core.hydra_config.HydraConfig.get().runtime.output_dir

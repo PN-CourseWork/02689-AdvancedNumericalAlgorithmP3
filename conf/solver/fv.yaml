@@ -1,4 +1,10 @@
-# @package _global_
-defaults:
-  - /solvers/fv@solver: default
+# @package solver
+_target_: solvers.fv.solver.FVSolver
+name: fv
 
+# FV-specific parameters
+convection_scheme: Upwind
+limiter: MUSCL
+alpha_uv: 0.6        # velocity under-relaxation
+alpha_p: 0.4         # pressure under-relaxation
+linear_solver_tol: 1.0e-6  # SciPy linear solver tolerance

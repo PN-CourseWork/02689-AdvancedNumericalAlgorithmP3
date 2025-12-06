@@ -1,4 +1,22 @@
-# @package _global_
-defaults:
-  - /solvers/spectral@solver: default
+# @package solver
+_target_: solvers.spectral.solver.SpectralSolver
+name: spectral
 
+# Spectral-specific parameters
+basis_type: chebyshev    # "chebyshev" or "legendre"
+CFL: 0.5
+beta_squared: 5.0        # artificial compressibility parameter
+
+# Corner singularity treatment
+# Options: "smoothing" (simple cosine smoothing) or "subtraction" (Botella & Peyret 1998)
+corner_treatment: smoothing
+corner_smoothing: 0.15   # smoothing width (fraction of domain) for smoothing method
+
+# Multigrid settings
+multigrid: none          # "none", "fsg", "vmg", "fmg"
+n_levels: 3              # number of grid levels for multigrid
+coarse_tolerance_factor: 10.0  # relaxed tolerance on coarse grids
+
+# Transfer operators for multigrid (prolongation: coarse->fine, restriction: fine->coarse Options: fft (Zhang & Xi 2010 paper method) or polynomial/injection
+prolongation_method: fft      # "fft" or "polynomial"
+restriction_method: fft       # "fft" or "injection"

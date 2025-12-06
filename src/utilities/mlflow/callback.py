@@ -199,7 +199,8 @@ class MLflowSweepCallback(Callback):
 
         # Log summary
         log.info(
-            f"Sweep completed. Created {len(self._active_parent_runs)} parent run(s)."
+            f"Sweep completed. Using {len(self._parent_runs)} parent run(s) "
+            f"({len(self._active_parent_runs)} created, {len(self._parent_runs) - len(self._active_parent_runs)} reused)."
         )
         for name, run_id in self._parent_runs.items():
             log.info(f"  - {name}: {run_id}")
@@ -207,7 +208,7 @@ class MLflowSweepCallback(Callback):
         # Generate comparison plots for all parent runs
         if self._parent_runs and config.get("generate_plots", True):
             try:
-                from shared.plotting.ldc_plotter import (
+                from shared.plotting.ldc import (
                     generate_comparison_plots_for_sweep,
                 )
                 from pathlib import Path

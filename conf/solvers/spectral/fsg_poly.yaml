@@ -1,9 +1,0 @@
-# @package solver
-defaults:
-  - default
-
-name: spectral_fsg_poly
-multigrid: fsg
-prolongation_method: polynomial
-restriction_method: injection
-

@@ -1,0 +1,164 @@
+"""
+Field Visualization Plots for LDC.
+
+Generates contour plots for pressure/velocity fields,
+streamlines, and vorticity.
+"""
+
+import logging
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.interpolate import RectBivariateSpline
+
+log = logging.getLogger(__name__)
+
+
+def plot_fields(
+    fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
+) -> Path:
+    """Generate field contour plots (p, u, v)."""
+    x_unique = np.sort(fields_df["x"].unique())
+    y_unique = np.sort(fields_df["y"].unique())
+    nx, ny = len(x_unique), len(y_unique)
+
+    sorted_df = fields_df.sort_values(["y", "x"])
+    P = sorted_df["p"].values.reshape(ny, nx)
+    U = sorted_df["u"].values.reshape(ny, nx)
+    V = sorted_df["v"].values.reshape(ny, nx)
+
+    n_fine = 200
+    x_fine = np.linspace(x_unique[0], x_unique[-1], n_fine)
+    y_fine = np.linspace(y_unique[0], y_unique[-1], n_fine)
+    X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
+
+    P_interp = RectBivariateSpline(y_unique, x_unique, P)(y_fine, x_fine)
+    U_interp = RectBivariateSpline(y_unique, x_unique, U)(y_fine, x_fine)
+    V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
+
+    fig, axes = plt.subplots(1, 3)
+
+    cf_p = axes[0].contourf(X_fine, Y_fine, P_interp, levels=25, cmap="viridis")
+    axes[0].set_xlabel(r"$x$")
+    axes[0].set_ylabel(r"$y$")
+    axes[0].set_title(r"\textbf{Pressure}")
+    axes[0].set_aspect("equal")
+    plt.colorbar(cf_p, ax=axes[0], label=r"$p$")
+
+    cf_u = axes[1].contourf(X_fine, Y_fine, U_interp, levels=25, cmap="RdBu_r")
+    axes[1].set_xlabel(r"$x$")
+    axes[1].set_ylabel(r"$y$")
+    axes[1].set_title(r"\textbf{$u$-velocity}")
+    axes[1].set_aspect("equal")
+    plt.colorbar(cf_u, ax=axes[1], label=r"$u$")
+
+    cf_v = axes[2].contourf(X_fine, Y_fine, V_interp, levels=25, cmap="RdBu_r")
+    axes[2].set_xlabel(r"$x$")
+    axes[2].set_ylabel(r"$y$")
+    axes[2].set_title(r"\textbf{$v$-velocity}")
+    axes[2].set_aspect("equal")
+    plt.colorbar(cf_v, ax=axes[2], label=r"$v$")
+
+    solver_label = solver.upper().replace("_", r"\_")
+    fig.suptitle(
+        rf"\textbf{{Solution Fields}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+    )
+
+    output_path = output_dir / "fields.pdf"
+    fig.savefig(output_path)
+    plt.close(fig)
+
+    return output_path
+
+
+def plot_streamlines(
+    fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
+) -> Path:
+    """Generate streamline plot with velocity magnitude."""
+    x_unique = np.sort(fields_df["x"].unique())
+    y_unique = np.sort(fields_df["y"].unique())
+    nx, ny = len(x_unique), len(y_unique)
+
+    sorted_df = fields_df.sort_values(["y", "x"])
+    U = sorted_df["u"].values.reshape(ny, nx)
+    V = sorted_df["v"].values.reshape(ny, nx)
+
+    n_fine = 200
+    x_fine = np.linspace(x_unique[0], x_unique[-1], n_fine)
+    y_fine = np.linspace(y_unique[0], y_unique[-1], n_fine)
+
+    U_interp = RectBivariateSpline(y_unique, x_unique, U)(y_fine, x_fine)
+    V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
+    vel_mag = np.sqrt(U_interp**2 + V_interp**2)
+
+    fig, ax = plt.subplots()
+
+    X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
+    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=25, cmap="viridis")
+    ax.streamplot(
+        x_fine, y_fine, U_interp, V_interp, density=1.5, arrowsize=1.0, arrowstyle="->"
+    )
+
+    ax.set_xlabel(r"$x$")
+    ax.set_ylabel(r"$y$")
+    solver_label = solver.upper().replace("_", r"\_")
+    ax.set_title(
+        rf"\textbf{{Streamlines}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+    )
+    ax.set_aspect("equal")
+    plt.colorbar(cf, ax=ax, label=r"$|\mathbf{u}|$")
+
+    output_path = output_dir / "streamlines.pdf"
+    fig.savefig(output_path)
+    plt.close(fig)
+
+    return output_path
+
+
+def plot_vorticity(
+    fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
+) -> Path:
+    """Generate vorticity contour plot."""
+    x_unique = np.sort(fields_df["x"].unique())
+    y_unique = np.sort(fields_df["y"].unique())
+    nx, ny = len(x_unique), len(y_unique)
+
+    sorted_df = fields_df.sort_values(["y", "x"])
+    U = sorted_df["u"].values.reshape(ny, nx)
+    V = sorted_df["v"].values.reshape(ny, nx)
+
+    n_fine = 200
+    x_fine = np.linspace(x_unique[0], x_unique[-1], n_fine)
+    y_fine = np.linspace(y_unique[0], y_unique[-1], n_fine)
+    X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
+
+    U_spline = RectBivariateSpline(y_unique, x_unique, U)
+    V_spline = RectBivariateSpline(y_unique, x_unique, V)
+
+    dvdx = V_spline(y_fine, x_fine, dx=1)
+    dudy = U_spline(y_fine, x_fine, dy=1)
+    vorticity = dvdx - dudy
+
+    fig, ax = plt.subplots()
+
+    vmax = np.max(np.abs(vorticity))
+    cf = ax.contourf(
+        X_fine, Y_fine, vorticity, levels=25, vmin=-vmax, vmax=vmax, cmap="RdBu_r"
+    )
+
+    ax.set_xlabel(r"$x$")
+    ax.set_ylabel(r"$y$")
+    solver_label = solver.upper().replace("_", r"\_")
+    ax.set_title(
+        rf"\textbf{{Vorticity}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+    )
+    ax.set_aspect("equal")
+    plt.colorbar(cf, ax=ax, label=r"$\omega = \partial v/\partial x - \partial u/\partial y$")
+
+    output_path = output_dir / "vorticity.pdf"
+    fig.savefig(output_path)
+    plt.close(fig)
+
+    return output_path

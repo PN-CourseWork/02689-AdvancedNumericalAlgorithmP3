@@ -1,4 +1,20 @@
-# @package _global_
-defaults:
-  - /solvers/spectral@solver: fsg
+# @package solver
+_target_: solvers.spectral.solver.SpectralSolver
+name: spectral_fsg
+
+# Spectral-specific parameters
+basis_type: chebyshev
+CFL: 0.5
+beta_squared: 5.0
+
+# Corner singularity treatment
+corner_treatment: smoothing
+corner_smoothing: 0.15
+
+# Multigrid settings - FSG variant
+multigrid: fsg
+n_levels: 3
+coarse_tolerance_factor: 10.0
+prolongation_method: fft
+restriction_method: fft
 

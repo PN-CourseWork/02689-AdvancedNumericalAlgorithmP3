@@ -15,8 +15,11 @@ max_iterations: 100000
 # Default N (overridden by sweep)
 N: 15
 
+defaults:
+  - override /solver: spectral
+
 hydra:
   sweeper:
     params:
-      # Sweep over both solver types
+      # Sweep over spectral solver variants
       solver: spectral,spectral_fsg
