@@ -1,0 +1,22 @@
+# @package _global_
+# Comparison: Spectral solver vs Spectral-FSG (Full Single Grid multigrid)
+# Usage: uv run python run_solver.py +experiment=spectral_multigrid_comparison
+#        uv run python run_solver.py -m +experiment=spectral_multigrid_comparison  (sweep all)
+
+# MLflow experiment name for tracking
+experiment_name: LDC-Multigrid-Comparison
+sweep_name: spectral_vs_fsg
+
+# Common parameters
+Re: 100
+tolerance: 1.0e-6
+max_iterations: 100000
+
+# Default N (overridden by sweep)
+N: 15
+
+hydra:
+  sweeper:
+    params:
+      # Sweep over both solver types
+      solver: spectral,spectral_fsg

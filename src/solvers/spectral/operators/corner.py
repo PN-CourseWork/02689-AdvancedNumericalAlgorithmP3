@@ -9,7 +9,8 @@ Two methods for handling corner singularities at the lid-wall junctions:
 2. Subtraction method: Analytical singular solution subtraction.
    - Following Zhang & Xi (2010), Botella & Peyret (1998), Hancock et al. (1981)
    - Decomposes u = u_c + u_s where u_s is the Moffatt singular solution
-   - Modified NS equations: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s = -∇p_c + Re⁻¹∇²u_c
+   - Modified NS equations: u_c*nabla(u_c) + u_s*nabla(u_c) + u_c*nabla(u_s) + u_s*nabla(u_s)
+                          = -nabla(p_c) + Re^(-1) * laplacian(u_c)
    - Requires analytical computation of u_s and its derivatives
 """
 
@@ -163,22 +164,63 @@ class SubtractionTreatment(CornerTreatment):
     - Solve modified NS for smooth part u_c
 
     The singular solution comes from the Stokes streamfunction:
-    ψ = r^λ f(θ) where λ ≈ 1.5446 for 90° corner
+    psi = r^lambda * f(theta) where lambda ~ 1.5446 for 90 deg corner
 
-    Velocities: u_s ~ r^(λ-1) (bounded), but ∇u_s ~ r^(λ-2) (singular)
+    Velocities: u_s ~ r^(lambda-1) (bounded), but grad(u_s) ~ r^(lambda-2) (singular)
 
-    Modified convection: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
+    Modified convection: u_c*grad(u_c) + u_s*grad(u_c) + u_c*grad(u_s) + u_s*grad(u_s)
 
     Boundary conditions:
     - Lid: u_c = V_lid - u_s, v_c = -v_s
     - Walls: u_c = -u_s, v_c = -v_s
     """
 
-    # Moffatt eigenvalue for 90° corner: sin(λπ/2) = λ (first root > 1)
+    # Moffatt eigenvalue for 90 deg corner: sin(lambda*pi/2) = lambda (first root > 1)
     LAMBDA = 1.5445840107634553
 
     def __init__(self):
         self.lam = self.LAMBDA
+        # Precompute constants for angular function
+        self._sin_lam_pi2 = np.sin(self.lam * np.pi / 2)
+        self._sin_lam2_pi2 = np.sin((self.lam - 2) * np.pi / 2)
+        # Normalization: f'(0) = 1
+        self._C = (
+            self.lam / self._sin_lam_pi2 - (self.lam - 2) / self._sin_lam2_pi2
+        )
+
+    def _f_and_derivatives(self, theta: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute angular function f(theta), f'(theta), and f''(theta).
+
+        The Moffatt angular function satisfies:
+        - f(0) = 0, f'(0) = 1 (unit lid velocity)
+        - f(-pi/2) = 0, f'(-pi/2) = 0 (no-slip wall)
+
+        f(theta) = [sin(lambda*theta)/sin(lambda*pi/2)
+                   - sin((lambda-2)*theta)/sin((lambda-2)*pi/2)] / C
+
+        Returns
+        -------
+        f, df, ddf : np.ndarray
+            Angular function and its first two derivatives
+        """
+        lam = self.lam
+
+        # f(theta)
+        term1 = np.sin(lam * theta) / self._sin_lam_pi2
+        term2 = np.sin((lam - 2) * theta) / self._sin_lam2_pi2
+        f = (term1 - term2) / self._C
+
+        # f'(theta)
+        dterm1 = lam * np.cos(lam * theta) / self._sin_lam_pi2
+        dterm2 = (lam - 2) * np.cos((lam - 2) * theta) / self._sin_lam2_pi2
+        df = (dterm1 - dterm2) / self._C
+
+        # f''(theta)
+        ddterm1 = -lam**2 * np.sin(lam * theta) / self._sin_lam_pi2
+        ddterm2 = -(lam - 2)**2 * np.sin((lam - 2) * theta) / self._sin_lam2_pi2
+        ddf = (ddterm1 - ddterm2) / self._C
+
+        return f, df, ddf
 
     def _compute_singular_solution(
         self,
@@ -190,119 +232,159 @@ class SubtractionTreatment(CornerTreatment):
         Ly: float,
         compute_derivatives: bool = False,
     ) -> dict:
-        """Compute Moffatt singular solution near one corner.
+        """Compute Moffatt singular solution and optionally its derivatives.
 
-        The Stokes streamfunction near a corner is ψ = A r^λ f(θ).
-        For a 90° corner with moving lid, we use the first-order solution.
+        For the streamfunction psi = r^lambda * f(theta):
+        - Polar velocities: u_r = (1/r) * d_psi/d_theta, u_theta = -d_psi/d_r
+        - Cartesian velocities: u = u_r*cos - u_theta*sin, v = u_r*sin + u_theta*cos
 
-        In local polar coords centered at corner:
-        - r = distance from corner
-        - θ = angle (0 along lid, -π/2 along wall going down)
-
-        The angular function f(θ) satisfies boundary conditions:
-        - f(0) = 0, f'(0) = 1 (lid velocity condition)
-        - f(-π/2) = 0, f'(-π/2) = 0 (no-slip wall)
-
-        For the Moffatt solution:
-        f(θ) = [sin(λθ)/sin(λπ/2) - sin((λ-2)θ)/sin((λ-2)π/2)] / C
-        where C normalizes to give unit lid velocity.
+        Derivatives use chain rule:
+        - d/dx = cos * d/dr - (sin/r) * d/d_theta
+        - d/dy = sin * d/dr + (cos/r) * d/d_theta
         """
         x_arr = np.asarray(x, dtype=float)
         y_arr = np.asarray(y, dtype=float)
+        original_shape = x_arr.shape
+
+        # Flatten for computation
+        x_flat = x_arr.ravel()
+        y_flat = y_arr.ravel()
 
         # Local coordinates relative to corner
-        dx = x_arr - corner_x
-        dy = y_arr - corner_y
+        dx = x_flat - corner_x
+        dy = y_flat - corner_y
 
         r = np.sqrt(dx**2 + dy**2)
-        r_safe = np.maximum(r, 1e-14)  # Avoid division by zero
+        r_safe = np.maximum(r, 1e-14)
 
-        # Angle measured from horizontal (lid direction)
-        # For left corner (0, Ly): θ = 0 along +x (lid), θ = -π/2 along -y (wall)
-        # For right corner (Lx, Ly): need to flip orientation
-        if corner_x < Lx / 2:  # Left corner
+        # Angle: for left corner theta=0 along +x, for right corner flip
+        is_left = corner_x < Lx / 2
+        if is_left:
             theta = np.arctan2(dy, dx)
-        else:  # Right corner - mirror the geometry
-            theta = np.arctan2(dy, -dx)  # Flip x direction
+        else:
+            theta = np.arctan2(dy, -dx)
+
+        cos_t = np.where(r > 1e-14, dx / r_safe, 1.0)
+        sin_t = np.where(r > 1e-14, dy / r_safe, 0.0)
+
+        if not is_left:
+            cos_t = -cos_t  # Flip for right corner geometry
 
         lam = self.lam
 
-        # Moffatt angular function and its derivative
-        # f(θ) chosen to satisfy BCs: f(0)=0, f'(0)=1, f(-π/2)=0, f'(-π/2)=0
-        # Using the standard form for corner flow
-        sin_lam_pi2 = np.sin(lam * np.pi / 2)
-        sin_lam2_pi2 = np.sin((lam - 2) * np.pi / 2)
+        # Get angular function and derivatives
+        f, df, ddf = self._f_and_derivatives(theta)
 
-        # Avoid division by zero (these are nonzero for λ ≈ 1.5446)
-        term1 = np.sin(lam * theta) / sin_lam_pi2
-        term2 = np.sin((lam - 2) * theta) / sin_lam2_pi2
+        # Powers of r
+        r_lam_1 = r_safe ** (lam - 1)  # For velocities
+        r_lam_2 = r_safe ** (lam - 2)  # For velocity derivatives
 
-        # Normalization constant to give unit velocity at θ = 0
-        # f'(0) = λ/sin(λπ/2) - (λ-2)/sin((λ-2)π/2) = 1 after normalization
-        C = lam / sin_lam_pi2 - (lam - 2) / sin_lam2_pi2
+        # Polar velocities: u_r = r^(lam-1) * f', u_theta = -lam * r^(lam-1) * f
+        u_r = r_lam_1 * df
+        u_theta = -lam * r_lam_1 * f
 
-        f_theta = (term1 - term2) / C
+        # Convert to Cartesian (before any corner flip)
+        u_s_local = u_r * cos_t - u_theta * sin_t
+        v_s_local = u_r * sin_t + u_theta * cos_t
 
-        # f'(θ) = [λ cos(λθ)/sin(λπ/2) - (λ-2)cos((λ-2)θ)/sin((λ-2)π/2)] / C
-        df_theta = (
-            lam * np.cos(lam * theta) / sin_lam_pi2
-            - (lam - 2) * np.cos((lam - 2) * theta) / sin_lam2_pi2
-        ) / C
+        # For right corner, flip u back
+        if not is_left:
+            u_s = -u_s_local
+            v_s = v_s_local
+        else:
+            u_s = u_s_local
+            v_s = v_s_local
 
-        # Streamfunction: ψ = r^λ f(θ)
-        # Velocities in polar coords:
-        #   u_r = (1/r) ∂ψ/∂θ = r^(λ-1) f'(θ)
-        #   u_θ = -∂ψ/∂r = -λ r^(λ-1) f(θ)
-
-        r_power = r_safe ** (lam - 1)
-
-        u_r = r_power * df_theta
-        u_theta = -lam * r_power * f_theta
-
-        # Convert to Cartesian
-        cos_theta = dx / r_safe
-        sin_theta = dy / r_safe
-
-        if corner_x < Lx / 2:  # Left corner
-            u_s = u_r * cos_theta - u_theta * sin_theta
-            v_s = u_r * sin_theta + u_theta * cos_theta
-        else:  # Right corner - flip back
-            u_s = -(u_r * cos_theta - u_theta * sin_theta)  # Flip u
-            v_s = u_r * sin_theta + u_theta * cos_theta
-
-        # Zero out at exact corner to avoid numerical issues
+        # Zero at exact corner
         at_corner = r < 1e-12
         u_s = np.where(at_corner, 0.0, u_s)
         v_s = np.where(at_corner, 0.0, v_s)
 
-        result = {"u_s": u_s, "v_s": v_s}
+        result = {
+            "u_s": u_s.reshape(original_shape),
+            "v_s": v_s.reshape(original_shape),
+        }
 
         if compute_derivatives:
-            # Analytical derivatives of singular solution
-            # ∂u_s/∂x, ∂u_s/∂y, ∂v_s/∂x, ∂v_s/∂y
-            # These go like r^(λ-2) which is singular (unbounded) at corner
+            # Compute Cartesian derivatives using chain rule
+            # d/dx = cos * d/dr - (sin/r) * d/d_theta
+            # d/dy = sin * d/dr + (cos/r) * d/d_theta
 
-            # For now, use finite difference approximation far from corner
-            # and zero near corner (where the solver shouldn't evaluate anyway)
-            # TODO: Implement full analytical derivatives
+            # Derivatives of polar velocities w.r.t. r and theta
+            # u_r = r^(lam-1) * f'(theta)
+            # du_r/dr = (lam-1) * r^(lam-2) * f'
+            # du_r/d_theta = r^(lam-1) * f''
+            du_r_dr = (lam - 1) * r_lam_2 * df
+            du_r_dtheta = r_lam_1 * ddf
 
-            # The key insight: near corner, derivatives blow up ~ r^(-0.5)
-            # The subtraction method handles this by computing these analytically
-            # and including them in the modified convection terms
+            # u_theta = -lam * r^(lam-1) * f(theta)
+            # du_theta/dr = -lam * (lam-1) * r^(lam-2) * f
+            # du_theta/d_theta = -lam * r^(lam-1) * f'
+            du_theta_dr = -lam * (lam - 1) * r_lam_2 * f
+            du_theta_dtheta = -lam * r_lam_1 * df
 
-            r_power_deriv = r_safe ** (lam - 2)
+            # Cartesian u = u_r*cos - u_theta*sin
+            # du/dr = du_r/dr * cos - du_theta/dr * sin
+            # du/d_theta = du_r/d_theta * cos + u_r * (-sin) - du_theta/d_theta * sin - u_theta * cos
+            #            = (du_r/d_theta - u_theta) * cos - (du_theta/d_theta + u_r) * sin
+            du_dr = du_r_dr * cos_t - du_theta_dr * sin_t
+            du_dtheta = (du_r_dtheta - u_theta) * cos_t - (du_theta_dtheta + u_r) * sin_t
 
-            # Simplified derivative estimates (proper implementation would use
-            # full chain rule on the polar-to-Cartesian transformation)
-            dus_dx = np.where(at_corner, 0.0, (lam - 1) * r_power_deriv * cos_theta)
-            dus_dy = np.where(at_corner, 0.0, (lam - 1) * r_power_deriv * sin_theta)
-            dvs_dx = np.where(at_corner, 0.0, (lam - 1) * r_power_deriv * (-sin_theta))
-            dvs_dy = np.where(at_corner, 0.0, (lam - 1) * r_power_deriv * cos_theta)
+            # Cartesian v = u_r*sin + u_theta*cos
+            # dv/dr = du_r/dr * sin + du_theta/dr * cos
+            # dv/d_theta = du_r/d_theta * sin + u_r * cos + du_theta/d_theta * cos - u_theta * sin
+            #            = (du_r/d_theta + u_theta) * sin + (du_theta/d_theta + u_r) * cos
+            # Wait, let me recalculate:
+            # dv/d_theta = (du_r/d_theta)*sin + u_r*cos + (du_theta/d_theta)*cos + u_theta*(-sin)
+            #            = (du_r/d_theta - u_theta)*sin + (du_theta/d_theta + u_r)*cos
+            # Hmm, that's different. Let me be more careful.
+            # v = u_r * sin_t + u_theta * cos_t
+            # dv/d_theta = (d/d_theta)[u_r * sin_t + u_theta * cos_t]
+            #            = du_r/d_theta * sin_t + u_r * cos_t + du_theta/d_theta * cos_t - u_theta * sin_t
+            dv_dr = du_r_dr * sin_t + du_theta_dr * cos_t
+            dv_dtheta = du_r_dtheta * sin_t + u_r * cos_t + du_theta_dtheta * cos_t - u_theta * sin_t
 
-            result["dus_dx"] = dus_dx
-            result["dus_dy"] = dus_dy
-            result["dvs_dx"] = dvs_dx
-            result["dvs_dy"] = dvs_dy
+            # Now apply chain rule to get Cartesian derivatives
+            # For left corner: dx/dr = cos_t, dy/dr = sin_t
+            #                  dx/d_theta = -r*sin_t, dy/d_theta = r*cos_t
+            # So: d/dx = cos_t * d/dr - (sin_t/r) * d/d_theta
+            #     d/dy = sin_t * d/dr + (cos_t/r) * d/d_theta
+
+            # Protect against division by zero near corner
+            inv_r = np.where(r > 1e-12, 1.0 / r_safe, 0.0)
+
+            dus_dx_local = cos_t * du_dr - sin_t * inv_r * du_dtheta
+            dus_dy_local = sin_t * du_dr + cos_t * inv_r * du_dtheta
+            dvs_dx_local = cos_t * dv_dr - sin_t * inv_r * dv_dtheta
+            dvs_dy_local = sin_t * dv_dr + cos_t * inv_r * dv_dtheta
+
+            # For right corner, need to handle sign flips
+            # The local cos_t was flipped, so derivatives need adjustment
+            if not is_left:
+                # u was flipped: u_s = -u_s_local
+                # So du_s/dx = -du_s_local/dx, but x is also flipped
+                # Actually: d(-u)/d(-x) = du/dx, so sign cancels for dus_dx
+                # For dus_dy: d(-u)/dy = -du/dy
+                dus_dx = dus_dx_local  # Signs cancel
+                dus_dy = -dus_dy_local
+                dvs_dx = -dvs_dx_local  # dv/d(-x) = -dv/dx
+                dvs_dy = dvs_dy_local
+            else:
+                dus_dx = dus_dx_local
+                dus_dy = dus_dy_local
+                dvs_dx = dvs_dx_local
+                dvs_dy = dvs_dy_local
+
+            # Zero at corner
+            dus_dx = np.where(at_corner, 0.0, dus_dx)
+            dus_dy = np.where(at_corner, 0.0, dus_dy)
+            dvs_dx = np.where(at_corner, 0.0, dvs_dx)
+            dvs_dy = np.where(at_corner, 0.0, dvs_dy)
+
+            result["dus_dx"] = dus_dx.reshape(original_shape)
+            result["dus_dy"] = dus_dy.reshape(original_shape)
+            result["dvs_dx"] = dvs_dx.reshape(original_shape)
+            result["dvs_dy"] = dvs_dy.reshape(original_shape)
 
         return result
 

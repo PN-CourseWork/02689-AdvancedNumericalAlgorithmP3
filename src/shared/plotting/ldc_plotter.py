@@ -20,26 +20,83 @@ Usage (from run_solver.py):
     generate_plots_for_run(run_id, tracking_uri, output_dir, parent_run_id)
 """
 
+# =============================================================================
+# Imports (all at top per PEP 8)
+# =============================================================================
+
 import logging
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 import hydra
+import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import zarr
 from dotenv import load_dotenv
 from omegaconf import DictConfig
+from scipy.interpolate import RectBivariateSpline
+
+from spectral import spectral_interpolate
 from utilities.config.paths import get_repo_root
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_theme()
+
+# =============================================================================
+# Module Setup
+# =============================================================================
 
 load_dotenv()
-
 log = logging.getLogger(__name__)
+
+# Load custom style - use try/except for robustness
+_STYLE_PATH = Path(__file__).parent / "scientific.mplstyle"
+
+
+def _setup_plotting_style():
+    """Configure matplotlib with scientific style and LaTeX support."""
+    # Try to use custom style file
+    if _STYLE_PATH.exists():
+        try:
+            plt.style.use(str(_STYLE_PATH))
+            log.debug(f"Loaded custom style: {_STYLE_PATH}")
+            return
+        except Exception as e:
+            log.warning(f"Could not load custom style: {e}")
+
+    # Fallback: configure manually
+    plt.rcParams.update(
+        {
+            # LaTeX
+            "text.usetex": True,
+            "text.latex.preamble": r"\usepackage{amsmath}\usepackage{amssymb}",
+            "font.family": "serif",
+            "font.serif": ["Computer Modern Roman"],
+            # Sizes
+            "font.size": 10,
+            "axes.labelsize": 11,
+            "axes.titlesize": 12,
+            "legend.fontsize": 9,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            # Figure
+            "figure.figsize": (6, 4),
+            "figure.dpi": 150,
+            "savefig.dpi": 300,
+            "savefig.bbox": "tight",
+            # Axes
+            "axes.linewidth": 0.8,
+            "axes.titleweight": "bold",
+            # Lines
+            "lines.linewidth": 1.5,
+            "lines.markersize": 5,
+        }
+    )
+
+
+# Initialize style on import
+_setup_plotting_style()
 
 
 # =============================================================================
@@ -325,9 +382,6 @@ def plot_fields(
     fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
 ) -> Path:
     """Generate field contour plots (p, u, v)."""
-    import matplotlib.pyplot as plt
-    from scipy.interpolate import RectBivariateSpline
-
     x_unique = np.sort(fields_df["x"].unique())
     y_unique = np.sort(fields_df["y"].unique())
     nx, ny = len(x_unique), len(y_unique)
@@ -346,38 +400,36 @@ def plot_fields(
     U_interp = RectBivariateSpline(y_unique, x_unique, U)(y_fine, x_fine)
     V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
 
-    cf_p = axes[0].contourf(X_fine, Y_fine, P_interp, levels=25)
-    axes[0].set_xlabel("x")
-    axes[0].set_ylabel("y")
-    axes[0].set_title("Pressure", fontweight="bold")
+    cf_p = axes[0].contourf(X_fine, Y_fine, P_interp, levels=25, cmap="viridis")
+    axes[0].set_xlabel(r"$x$")
+    axes[0].set_ylabel(r"$y$")
+    axes[0].set_title(r"\textbf{Pressure}")
     axes[0].set_aspect("equal")
-    plt.colorbar(cf_p, ax=axes[0], label="p")
+    plt.colorbar(cf_p, ax=axes[0], label=r"$p$")
 
-    cf_u = axes[1].contourf(X_fine, Y_fine, U_interp, levels=25)
-    axes[1].set_xlabel("x")
-    axes[1].set_ylabel("y")
-    axes[1].set_title("U velocity", fontweight="bold")
+    cf_u = axes[1].contourf(X_fine, Y_fine, U_interp, levels=25, cmap="RdBu_r")
+    axes[1].set_xlabel(r"$x$")
+    axes[1].set_ylabel(r"$y$")
+    axes[1].set_title(r"\textbf{$u$-velocity}")
     axes[1].set_aspect("equal")
-    plt.colorbar(cf_u, ax=axes[1], label="u")
+    plt.colorbar(cf_u, ax=axes[1], label=r"$u$")
 
-    cf_v = axes[2].contourf(X_fine, Y_fine, V_interp, levels=25)
-    axes[2].set_xlabel("x")
-    axes[2].set_ylabel("y")
-    axes[2].set_title("V velocity", fontweight="bold")
+    cf_v = axes[2].contourf(X_fine, Y_fine, V_interp, levels=25, cmap="RdBu_r")
+    axes[2].set_xlabel(r"$x$")
+    axes[2].set_ylabel(r"$y$")
+    axes[2].set_title(r"\textbf{$v$-velocity}")
     axes[2].set_aspect("equal")
-    plt.colorbar(cf_v, ax=axes[2], label="v")
+    plt.colorbar(cf_v, ax=axes[2], label=r"$v$")
 
+    solver_label = solver.upper().replace("_", r"\_")
     fig.suptitle(
-        f"Solution Fields — {solver.upper()} N={N}, Re={Re:.0f}",
-        fontweight="bold",
-        fontsize=14,
+        rf"\textbf{{Solution Fields}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
     )
-    plt.tight_layout()
 
     output_path = output_dir / "fields.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path)
     plt.close(fig)
 
     return output_path
@@ -387,9 +439,6 @@ def plot_streamlines(
     fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
 ) -> Path:
     """Generate streamline plot with velocity magnitude."""
-    import matplotlib.pyplot as plt
-    from scipy.interpolate import RectBivariateSpline
-
     x_unique = np.sort(fields_df["x"].unique())
     y_unique = np.sort(fields_df["y"].unique())
     nx, ny = len(x_unique), len(y_unique)
@@ -406,25 +455,25 @@ def plot_streamlines(
     V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
     vel_mag = np.sqrt(U_interp**2 + V_interp**2)
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    fig, ax = plt.subplots(figsize=(6, 5))
 
     X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
-    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=25)
+    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=25, cmap="viridis")
     ax.streamplot(
         x_fine, y_fine, U_interp, V_interp, density=1.5, arrowsize=1.0, arrowstyle="->"
     )
 
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    ax.set_xlabel(r"$x$")
+    ax.set_ylabel(r"$y$")
+    solver_label = solver.upper().replace("_", r"\_")
     ax.set_title(
-        f"Streamlines — {solver.upper()} N={N}, Re={Re:.0f}", fontweight="bold"
+        rf"\textbf{{Streamlines}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
     )
     ax.set_aspect("equal")
-    plt.colorbar(cf, ax=ax, label="Velocity magnitude")
-    plt.tight_layout()
+    plt.colorbar(cf, ax=ax, label=r"$|\mathbf{u}|$")
 
     output_path = output_dir / "streamlines.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path)
     plt.close(fig)
 
     return output_path
@@ -434,9 +483,6 @@ def plot_vorticity(
     fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
 ) -> Path:
     """Generate vorticity contour plot."""
-    import matplotlib.pyplot as plt
-    from scipy.interpolate import RectBivariateSpline
-
     x_unique = np.sort(fields_df["x"].unique())
     y_unique = np.sort(fields_df["y"].unique())
     nx, ny = len(x_unique), len(y_unique)
@@ -457,20 +503,24 @@ def plot_vorticity(
     dudy = U_spline(y_fine, x_fine, dy=1)
     vorticity = dvdx - dudy
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    fig, ax = plt.subplots(figsize=(6, 5))
 
     vmax = np.max(np.abs(vorticity))
-    cf = ax.contourf(X_fine, Y_fine, vorticity, levels=25, vmin=-vmax, vmax=vmax)
+    cf = ax.contourf(
+        X_fine, Y_fine, vorticity, levels=25, vmin=-vmax, vmax=vmax, cmap="RdBu_r"
+    )
 
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_title(f"Vorticity — {solver.upper()} N={N}, Re={Re:.0f}", fontweight="bold")
+    ax.set_xlabel(r"$x$")
+    ax.set_ylabel(r"$y$")
+    solver_label = solver.upper().replace("_", r"\_")
+    ax.set_title(
+        rf"\textbf{{Vorticity}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
+    )
     ax.set_aspect("equal")
-    plt.colorbar(cf, ax=ax, label=r"$\omega$")
-    plt.tight_layout()
+    plt.colorbar(cf, ax=ax, label=r"$\omega = \partial v/\partial x - \partial u/\partial y$")
 
     output_path = output_dir / "vorticity.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path)
     plt.close(fig)
 
     return output_path
@@ -480,9 +530,6 @@ def plot_centerlines(
     fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
 ) -> Path:
     """Plot velocity profiles along centerlines."""
-    import matplotlib.pyplot as plt
-    from scipy.interpolate import RectBivariateSpline
-
     x_unique = np.sort(fields_df["x"].unique())
     y_unique = np.sort(fields_df["y"].unique())
     nx, ny = len(x_unique), len(y_unique)
@@ -504,31 +551,29 @@ def plot_centerlines(
     u_vertical = U_spline(y_line, x_center).ravel()
     v_horizontal = V_spline(y_center, x_line).ravel()
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    axes[0].plot(u_vertical, y_line, "b-", linewidth=2)
-    axes[0].set_xlabel("u")
-    axes[0].set_ylabel("y")
-    axes[0].set_title("U velocity (vertical centerline)", fontweight="bold")
+    axes[0].plot(u_vertical, y_line, "b-", linewidth=1.5)
+    axes[0].set_xlabel(r"$u$")
+    axes[0].set_ylabel(r"$y$")
+    axes[0].set_title(r"\textbf{$u$-velocity along vertical centerline}")
     axes[0].grid(True, alpha=0.3)
     axes[0].axvline(x=0, color="gray", linestyle="--", alpha=0.5)
 
-    axes[1].plot(x_line, v_horizontal, "r-", linewidth=2)
-    axes[1].set_xlabel("x")
-    axes[1].set_ylabel("v")
-    axes[1].set_title("V velocity (horizontal centerline)", fontweight="bold")
+    axes[1].plot(x_line, v_horizontal, "r-", linewidth=1.5)
+    axes[1].set_xlabel(r"$x$")
+    axes[1].set_ylabel(r"$v$")
+    axes[1].set_title(r"\textbf{$v$-velocity along horizontal centerline}")
     axes[1].grid(True, alpha=0.3)
     axes[1].axhline(y=0, color="gray", linestyle="--", alpha=0.5)
 
+    solver_label = solver.upper().replace("_", r"\_")
     fig.suptitle(
-        f"Centerline Profiles — {solver.upper()} N={N}, Re={Re:.0f}",
-        fontweight="bold",
-        fontsize=14,
+        rf"\textbf{{Centerline Profiles}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
     )
-    plt.tight_layout()
 
     output_path = output_dir / "centerlines.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path)
     plt.close(fig)
 
     return output_path
@@ -538,15 +583,13 @@ def plot_convergence(
     timeseries_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
 ) -> Path:
     """Plot convergence history (residuals over iterations)."""
-    import matplotlib.pyplot as plt
-
     if timeseries_df.empty:
         log.warning("No timeseries data available for convergence plot")
         return None
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
-    # Plot available metrics (use default color cycle)
+    # Plot available metrics
     for col in timeseries_df.columns:
         if col != "iteration":
             data = timeseries_df[col].dropna()
@@ -558,17 +601,17 @@ def plot_convergence(
                     linewidth=1.5,
                 )
 
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Value")
+    ax.set_xlabel(r"Iteration")
+    ax.set_ylabel(r"Value")
+    solver_label = solver.upper().replace("_", r"\_")
     ax.set_title(
-        f"Convergence History — {solver.upper()} N={N}, Re={Re:.0f}", fontweight="bold"
+        rf"\textbf{{Convergence History}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
     )
     ax.legend(frameon=True)
     ax.grid(True, alpha=0.3)
-    plt.tight_layout()
 
     output_path = output_dir / "convergence.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path)
     plt.close(fig)
 
     return output_path
@@ -683,14 +726,16 @@ def plot_ghia_comparison(
             fields = load_fields_from_zarr(artifact_dir)
             x_unique, y_unique, U_2d, V_2d, _ = restructure_fields(fields)
 
-            from spectral import spectral_interpolate
-
             n_points = 200
             y_line = np.linspace(y_unique.min(), y_unique.max(), n_points)
             x_line = np.linspace(x_unique.min(), x_unique.max(), n_points)
 
-            x_center_idx = len(x_unique) // 2
-            y_center_idx = len(y_unique) // 2
+            # Find physical center (x=0.5, y=0.5), not middle index!
+            # For non-uniform grids (Chebyshev), middle index != physical center
+            x_center = 0.5 * (x_unique.min() + x_unique.max())
+            y_center = 0.5 * (y_unique.min() + y_unique.max())
+            x_center_idx = np.argmin(np.abs(x_unique - x_center))
+            y_center_idx = np.argmin(np.abs(y_unique - y_center))
 
             u_sim = spectral_interpolate(
                 y_unique, U_2d[:, x_center_idx], y_line, basis="legendre"
@@ -730,8 +775,11 @@ def plot_ghia_comparison(
     u_df = pd.DataFrame(u_records).sort_values(["N", "Method", "y"])
     v_df = pd.DataFrame(v_records).sort_values(["N", "Method", "x"])
 
-    # Create figure
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    # Create figure with seaborn styling
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+    # Use seaborn colorblind palette for accessibility
+    palette = sns.color_palette("colorblind", n_colors=len(u_df["N"].unique()))
 
     # Plot with seaborn: hue=N (color by grid), style=Method/Solver (dashes), markers
     sns.lineplot(
@@ -740,6 +788,7 @@ def plot_ghia_comparison(
         y="y",
         hue="N",
         style="Method",
+        palette=palette,
         markers=True,
         markersize=4,
         markevery=20,
@@ -759,7 +808,7 @@ def plot_ghia_comparison(
     )
     axes[0].set_xlabel(r"$u$")
     axes[0].set_ylabel(r"$y$")
-    axes[0].set_title(r"$u$-velocity (vertical centerline)")
+    axes[0].set_title(r"\textbf{$u$-velocity (vertical centerline)}")
     axes[0].legend(loc="best", fontsize=8)
     axes[0].set_xlim(-0.4, 1.05)
     axes[0].set_ylim(0, 1)
@@ -770,6 +819,7 @@ def plot_ghia_comparison(
         y="v",
         hue="N",
         style="Method",
+        palette=palette,
         markers=True,
         markersize=4,
         markevery=20,
@@ -789,15 +839,14 @@ def plot_ghia_comparison(
     )
     axes[1].set_xlabel(r"$x$")
     axes[1].set_ylabel(r"$v$")
-    axes[1].set_title(r"$v$-velocity (horizontal centerline)")
+    axes[1].set_title(r"\textbf{$v$-velocity (horizontal centerline)}")
     axes[1].legend(loc="best", fontsize=8)
     axes[1].set_xlim(0, 1)
 
-    fig.suptitle(rf"Ghia Benchmark Comparison --- $\mathrm{{Re}}={int(Re)}$")
-    plt.tight_layout()
+    fig.suptitle(rf"\textbf{{Ghia Benchmark Comparison}} --- $\mathrm{{Re}}={int(Re)}$")
 
     output_path = output_dir / "ghia_comparison.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path)
     plt.close(fig)
 
     log.info(f"Saved comparison plot: {output_path.name}")
@@ -946,8 +995,6 @@ def generate_comparison_plots_for_sweep(
     dict[str, Path]
         Mapping of parent_run_id to comparison plot path
     """
-    import mlflow
-
     mlflow.set_tracking_uri(tracking_uri)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

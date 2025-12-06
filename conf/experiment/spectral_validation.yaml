@@ -19,4 +19,4 @@ max_iterations: 30000
 hydra:
   sweeper:
     params:
-      N: 15,19
+      N: 15

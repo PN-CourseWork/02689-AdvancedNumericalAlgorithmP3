@@ -366,9 +366,54 @@ class MultigridSmoother:
         self.beta_squared = beta_squared
         self.lid_velocity = lid_velocity
         self.CFL = CFL
-        self.corner_treatment = corner_treatment
         self.Lx = Lx
         self.Ly = Ly
+
+        # Use subtraction method on all levels with corner exclusion for stability
+        self.corner_treatment = corner_treatment
+        self._uses_modified_convection = corner_treatment.uses_modified_convection()
+
+        if self._uses_modified_convection:
+            # Cache singular velocity and derivatives at this level's grid points
+            X_flat = level.X.ravel()
+            Y_flat = level.Y.ravel()
+
+            u_s, v_s = corner_treatment.get_singular_velocity(X_flat, Y_flat, Lx, Ly)
+            self._u_s = u_s.ravel()
+            self._v_s = v_s.ravel()
+
+            dus_dx, dus_dy, dvs_dx, dvs_dy = (
+                corner_treatment.get_singular_velocity_derivatives(
+                    X_flat, Y_flat, Lx, Ly
+                )
+            )
+
+            # Create corner exclusion mask: don't apply modified convection very close to corners
+            # The singular derivatives go like r^(λ-2) ≈ r^(-0.45) which blows up at corners
+            # Using a cutoff radius based on grid spacing ensures numerical stability
+            corner_radius = 2.5 * level.dx_min  # Exclude points within ~2.5 grid spacings
+
+            # Distance from each corner
+            r_left = np.sqrt(X_flat**2 + (Y_flat - Ly)**2)  # Distance from (0, Ly)
+            r_right = np.sqrt((X_flat - Lx)**2 + (Y_flat - Ly)**2)  # Distance from (Lx, Ly)
+
+            # Mask: 1.0 where we apply full terms, 0.0 near corners
+            corner_mask = np.ones_like(X_flat)
+            corner_mask = np.where(r_left < corner_radius, 0.0, corner_mask)
+            corner_mask = np.where(r_right < corner_radius, 0.0, corner_mask)
+            self._corner_mask = corner_mask.ravel()
+
+            # Apply mask to singular velocities and derivatives
+            self._u_s = self._u_s * self._corner_mask
+            self._v_s = self._v_s * self._corner_mask
+            self._dus_dx = dus_dx.ravel() * self._corner_mask
+            self._dus_dy = dus_dy.ravel() * self._corner_mask
+            self._dvs_dx = dvs_dx.ravel() * self._corner_mask
+            self._dvs_dy = dvs_dy.ravel() * self._corner_mask
+
+            # Precompute constant term: u_s·∇u_s (singular self-advection)
+            self._conv_us_us = self._u_s * self._dus_dx + self._v_s * self._dus_dy
+            self._conv_vs_vs = self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
 
     def _apply_lid_boundary(self, u_2d: np.ndarray, v_2d: np.ndarray):
         """Apply lid boundary condition using corner treatment."""
@@ -442,9 +487,25 @@ class MultigridSmoother:
         self._interpolate_pressure_gradient()
         lvl.p[:] = old_p
 
-        # Momentum residuals
+        # Momentum residuals - convection terms
+        # Term 1: u_c·∇u_c (computational velocity advecting computational gradient)
         conv_u = u * lvl.du_dx + v * lvl.du_dy
         conv_v = u * lvl.dv_dx + v * lvl.dv_dy
+
+        if self._uses_modified_convection:
+            # Additional terms for subtraction method (Botella & Peyret 1998)
+            # Term 2: u_s·∇u_c (singular velocity advecting computational gradient)
+            conv_u = conv_u + self._u_s * lvl.du_dx + self._v_s * lvl.du_dy
+            conv_v = conv_v + self._u_s * lvl.dv_dx + self._v_s * lvl.dv_dy
+
+            # Term 3: u_c·∇u_s (computational velocity advecting singular gradient)
+            conv_u = conv_u + u * self._dus_dx + v * self._dus_dy
+            conv_v = conv_v + u * self._dvs_dx + v * self._dvs_dy
+
+            # Term 4: u_s·∇u_s (precomputed constant)
+            conv_u = conv_u + self._conv_us_us
+            conv_v = conv_v + self._conv_vs_vs
+
         nu = 1.0 / self.Re
 
         lvl.R_u[:] = -conv_u - lvl.dp_dx + nu * lvl.lap_u
@@ -599,6 +660,10 @@ def solve_fsg(
     Per Zhang & Xi (2010): Each level converges to the SAME global tolerance
     before prolongating to the next finer level.
 
+    For subtraction corner treatment: Uses smoothing on coarse levels (N<8) for
+    stability, then transitions to full subtraction on finer levels. This hybrid
+    approach avoids overflow from extreme singular derivatives on coarse grids.
+
     Parameters
     ----------
     levels : List[SpectralLevel]
@@ -632,6 +697,14 @@ def solve_fsg(
     if corner_treatment is None:
         corner_treatment = create_corner_treatment(method="smoothing")
 
+    # For subtraction method, also create smoothing treatment for coarse levels
+    # This avoids numerical instability from extreme singular derivatives on coarse grids
+    uses_subtraction = corner_treatment.uses_modified_convection()
+    if uses_subtraction:
+        smoothing_treatment = create_corner_treatment(method="smoothing")
+        # Minimum N for subtraction method (below this, use smoothing)
+        min_n_for_subtraction = 8
+
     total_iterations = 0
     n_levels = len(levels)
 
@@ -656,6 +729,14 @@ def solve_fsg(
             # Prolongate from previous (coarser) level
             prolongate_solution(levels[level_idx - 1], level, transfer_ops)
 
+        # Select corner treatment for this level
+        # For subtraction: use smoothing on coarse levels for stability
+        if uses_subtraction and level.n < min_n_for_subtraction:
+            level_corner_treatment = smoothing_treatment
+            log.debug(f"  Level {level_idx} (N={level.n}): using smoothing (N < {min_n_for_subtraction})")
+        else:
+            level_corner_treatment = corner_treatment
+
         # Create smoother for this level
         smoother = MultigridSmoother(
             level=level,
@@ -663,7 +744,7 @@ def solve_fsg(
             beta_squared=beta_squared,
             lid_velocity=lid_velocity,
             CFL=CFL,
-            corner_treatment=corner_treatment,
+            corner_treatment=level_corner_treatment,
             Lx=Lx,
             Ly=Ly,
         )
