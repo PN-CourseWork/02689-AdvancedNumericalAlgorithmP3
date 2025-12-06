@@ -1,0 +1,20 @@
+# @package _global_
+# Ghia validation - Spectral solvers
+# Sweeps over SG, FSG, VMG, FMG solvers at N=15
+
+defaults:
+  - override /solver: spectral/sg
+
+# MLflow experiment
+experiment_name: LDC-Validation
+sweep_name: ghia-Re${Re}
+
+# Validation parameters
+
+hydra:
+  sweeper:
+    params:
+      # Sweep over spectral solver types
+      solver: spectral/sg,spectral/fsg
+      Re: 100
+      N: 15

@@ -1,0 +1,26 @@
+# @package _global_
+# Benchmarking: Spectral Multigrid Methods Comparison
+# Compares different multigrid acceleration strategies for spectral solver
+#
+# Usage: uv run python run_solver.py -m +experiment=benchmarking/multigrid_comparison
+
+defaults:
+  - override /solver: spectral/sg
+
+# MLflow experiment
+experiment_name: LDC-Benchmarking
+sweep_name: multigrid-comparison-Re${Re}
+
+# Benchmarking parameters
+Re: 100
+N: 15
+
+hydra:
+  sweeper:
+    params:
+      # Sweep over spectral solver variants
+      # sg: Single Grid (no multigrid)
+      # fsg: Full Single Grid
+      # vmg: V-cycle MultiGrid
+      # fmg: Full MultiGrid
+      solver: spectral/sg,spectral/fsg,spectral/vmg,spectral/fmg

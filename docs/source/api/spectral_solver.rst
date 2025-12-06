@@ -1,9 +1,9 @@
-Spectral Solver (``ldc.spectral_solver``)
-=========================================
+Spectral Solver (``solvers.spectral.solver``)
+=============================================
 
-Spectral solver using Chebyshev/Legendre collocation with artificial compressibility.
+Spectral solver using Chebyshev collocation with artificial compressibility.
 
-.. currentmodule:: ldc.spectral_solver
+.. currentmodule:: solvers.spectral.solver
 
 .. autosummary::
    :toctree: ../generated

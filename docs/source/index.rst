@@ -15,10 +15,12 @@ Contents
 
 :doc:`example_gallery/index`
    Gallery of computational experiments and visualizations for lid-driven cavity flow.
+:doc:`configuration`
+   Experiment configuration structure and customization guide.
+:doc:`usage`
+   Running solvers locally and on HPC clusters.
 :doc:`api_reference`
-   Complete API reference for finite volume, spectral methods, and utility modules.
-:doc:`hpc_guide`
-   Guide for running parameter sweeps on the DTU HPC cluster.
+   Complete API reference for solver modules.
 
 .. toctree::
    :maxdepth: 2
@@ -31,10 +33,18 @@ Contents
    :maxdepth: 2
    :hidden:
    :titlesonly:
+   :caption: User Guide
+
+   configuration
+   usage
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :titlesonly:
    :caption: Reference
 
    api_reference
-   hpc_guide
 
 Installation
 ------------

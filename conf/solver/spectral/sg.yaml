@@ -1,0 +1,21 @@
+# @package solver
+# Single Grid Spectral Solver (no multigrid acceleration)
+_target_: solvers.spectral.sg.SGSolver
+name: spectral
+
+# Solver control
+tolerance: 1.0e-6
+max_iterations: 30000  # Spectral methods converge slowly for high Re
+
+# Spectral-specific parameters
+basis_type: chebyshev    # "chebyshev" or "legendre"
+CFL: 0.5
+beta_squared: 5.0        # artificial compressibility parameter
+
+# Corner singularity treatment
+# Options: "smoothing" (simple cosine smoothing) or "subtraction" (Botella & Peyret 1998)
+corner_treatment: smoothing
+corner_smoothing: 0.15   # smoothing width (fraction of domain) for smoothing method
+
+# No multigrid for single grid solver
+multigrid: none

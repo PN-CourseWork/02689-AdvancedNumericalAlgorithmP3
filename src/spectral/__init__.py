@@ -1,6 +1,6 @@
-"""Spectral methods for Navier-Stokes solver."""
+"""Compatibility layer for spectral utilities (forwarded to new locations)."""
 
-from .spectral import (
+from solvers.spectral.basis.spectral import (
     ChebyshevLobattoBasis,
     FourierEquispacedBasis,
     LegendreLobattoBasis,
@@ -12,7 +12,21 @@ from .spectral import (
     legendre_diff_matrix,
     legendre_mass_matrix,
 )
-from .utils.plotting import get_repo_root
+from solvers.spectral.basis.polynomial import spectral_interpolate
+from solvers.spectral.operators.transfer_operators import (
+    FFTProlongation,
+    FFTRestriction,
+    InjectionRestriction,
+    PolynomialProlongation,
+    TransferOperators,
+    create_transfer_operators,
+)
+from solvers.spectral.operators.corner import (
+    CornerTreatment,
+    SmoothingTreatment,
+    SubtractionTreatment,
+    create_corner_treatment,
+)
 
 __all__ = [
     # Spectral bases
@@ -27,6 +41,18 @@ __all__ = [
     "fourier_diff_matrix_cotangent",
     "fourier_diff_matrix_complex",
     "fourier_diff_matrix_on_interval",
-    # Utilities
-    "get_repo_root",
+    # Interpolation
+    "spectral_interpolate",
+    # Transfer operators (multigrid)
+    "TransferOperators",
+    "create_transfer_operators",
+    "FFTProlongation",
+    "FFTRestriction",
+    "PolynomialProlongation",
+    "InjectionRestriction",
+    # Corner singularity treatment
+    "CornerTreatment",
+    "SmoothingTreatment",
+    "SubtractionTreatment",
+    "create_corner_treatment",
 ]

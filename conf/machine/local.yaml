@@ -1,0 +1,9 @@
+# @package _global_
+# Local machine configuration - run up to 4 jobs in parallel
+
+defaults:
+  - override /hydra/launcher: joblib
+
+hydra:
+  launcher:
+    n_jobs: 4  # Run 4 jobs in parallel on local machine

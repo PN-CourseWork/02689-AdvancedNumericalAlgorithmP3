@@ -1,0 +1,14 @@
+# @package solver
+_target_: solvers.fv.solver.FVSolver
+name: fv
+
+# Solver control
+tolerance: 1.0e-6
+max_iterations: 10000  # FV typically needs more iterations than spectral
+
+# FV-specific parameters
+convection_scheme: Upwind
+limiter: MUSCL
+alpha_uv: 0.6        # velocity under-relaxation
+alpha_p: 0.4         # pressure under-relaxation
+linear_solver_tol: 1.0e-6  # SciPy linear solver tolerance

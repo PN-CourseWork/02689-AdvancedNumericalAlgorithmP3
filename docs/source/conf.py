@@ -78,20 +78,14 @@ sphinx_gallery_conf = {
     # Cross-referencing: Create "Examples using X" in API docs
     "backreferences_dir": "gen_modules/backreferences",
     "doc_module": (
-        "fv",
+        "solvers",
         "utils",
-        "spectral",
-        "meshing",
-        "ldc",
     ),  # Generate backreferences for our packages
     "inspect_global_variables": True,  # Detect classes/functions used in examples
     # Make code clickable: Link to API docs when code mentions package functions
     "reference_url": {
-        "fv": None,  # None = use local docs (not external URL)
+        "solvers": None,  # None = use local docs (not external URL)
         "utils": None,
-        "spectral": None,
-        "meshing": None,
-        "ldc": None,
     },
 }
 

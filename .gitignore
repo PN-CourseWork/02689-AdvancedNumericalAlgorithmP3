@@ -2,12 +2,18 @@
 # Generated figures
 figures/
 # Report 
+docs/reports/TexReport
 
 # Generated data (keep README.md)
 data/*
 !data/README.md
 !data/.gitkeep
 !data/validation/
+hydra_outputs/
+outputs/
+TEMPLATE/
+mlruns/
+mlflow_ui.log
 
 # Uv stuff 
 uv.lock

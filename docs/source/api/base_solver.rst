@@ -1,9 +1,9 @@
-Base Solver (``ldc.base_solver``)
-=================================
+Base Solver (``solvers.base``)
+==============================
 
 Abstract base class for lid-driven cavity solvers.
 
-.. currentmodule:: ldc.base_solver
+.. currentmodule:: solvers.base
 
 .. autosummary::
    :toctree: ../generated
