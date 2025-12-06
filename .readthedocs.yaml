@@ -14,6 +14,6 @@ build:
     - pip install uv
     - uv sync
     # Fetch data from MLflow (uses DATABRICKS_TOKEN secret)
-    - uv run python main.py --fetch
+    #- uv run python main.py --fetch
     # Build Sphinx documentation
     - uv run sphinx-build -b html docs/source $READTHEDOCS_OUTPUT/html

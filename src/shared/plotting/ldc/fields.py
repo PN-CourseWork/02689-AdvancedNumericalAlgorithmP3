@@ -92,7 +92,7 @@ def plot_streamlines(
     U = sorted_df["u"].values.reshape(ny, nx)
     V = sorted_df["v"].values.reshape(ny, nx)
 
-    n_fine = 200
+    n_fine = 250
     x_fine = np.linspace(x_unique[0], x_unique[-1], n_fine)
     y_fine = np.linspace(y_unique[0], y_unique[-1], n_fine)
 
@@ -100,32 +100,46 @@ def plot_streamlines(
     V_interp = RectBivariateSpline(y_unique, x_unique, V)(y_fine, x_fine)
     vel_mag = np.sqrt(U_interp**2 + V_interp**2)
 
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(8, 7))
 
     X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
-    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=30, cmap="RdYlBu_r")
+
+    # Smooth contours with coolwarm colormap
+    cf = ax.contourf(X_fine, Y_fine, vel_mag, levels=40, cmap="coolwarm")
+
+    # Semi-transparent white streamlines to show velocity magnitude through them
     ax.streamplot(
         x_fine,
         y_fine,
         U_interp,
         V_interp,
-        density=1.8,
-        linewidth=1.0,
-        arrowsize=1.2,
+        density=2.0,
+        linewidth=1.5,
+        arrowsize=1.3,
         arrowstyle="->",
         color="white",
+        alpha=0.7,
         zorder=2,
     )
 
-    ax.set_xlabel(r"$x$", fontsize=11)
-    ax.set_ylabel(r"$y$", fontsize=11)
-    solver_label = solver.upper().replace("_", r"\_")
+    ax.set_xlabel(r"$x$", fontsize=12)
+    ax.set_ylabel(r"$y$", fontsize=12)
+    solver_label = solver.upper().replace("_", r" ")
     ax.set_title(
-        rf"\textbf{{Streamlines}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
-        fontsize=12,
+        rf"Streamlines: {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
+        fontsize=13,
     )
     ax.set_aspect("equal")
-    cbar = plt.colorbar(cf, ax=ax, label=r"$|\mathbf{u}|$")
+
+    # Horizontal colorbar at bottom
+    cbar = plt.colorbar(
+        cf,
+        ax=ax,
+        orientation="horizontal",
+        pad=0.08,
+        aspect=30,
+        label=r"Velocity Magnitude $|\mathbf{u}|$",
+    )
     cbar.ax.tick_params(labelsize=10)
 
     plt.tight_layout()
