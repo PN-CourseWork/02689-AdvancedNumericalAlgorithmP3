@@ -242,10 +242,10 @@ def plot_ghia_comparison(
     u_df = pd.DataFrame(u_records).sort_values(["N", "Method", "y"])
     v_df = pd.DataFrame(v_records).sort_values(["N", "Method", "x"])
 
-    # Create figure with seaborn styling
-    fig, axes = plt.subplots(1, 2)
+    # Create figure with 4:3 aspect ratio per subplot
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 
-    # Plot with seaborn: hue=N (color by grid), style=Method/Solver (dashes), markers
+    # Plot u-velocity with seaborn (sort=False to preserve y-ordering)
     sns.lineplot(
         data=u_df,
         x="u",
@@ -253,27 +253,32 @@ def plot_ghia_comparison(
         hue="N",
         style="Method",
         markers=True,
+        dashes=True,
         sort=False,
         ax=axes[0],
     )
     # Set markevery on all lines
     for line in axes[0].get_lines():
         line.set_markevery(20)
-    axes[0].scatter(
+    # Plot Ghia data with hollow circles
+    axes[0].plot(
         ghia_u["u"],
         ghia_u["y"],
-        c="black",
-        marker="x",
-        label=r"Ghia et al.\ (1982)",
+        "o",
+        color="#333333",
+        label="Ghia et al. (1982)",
+        markersize=7,
+        markerfacecolor="none",
+        markeredgewidth=1.2,
         zorder=10,
     )
-    axes[0].set_xlabel(r"$u$")
-    axes[0].set_ylabel(r"$y$")
-    axes[0].set_title(r"\textbf{$u$-velocity (vertical centerline)}")
-    axes[0].legend(loc="best", fontsize=8)
+    axes[0].set_xlabel(r"$u$-velocity")
+    axes[0].set_ylabel(r"$y$-coordinate")
+    axes[0].set_title(r"$u$-velocity (vertical centerline)")
     axes[0].set_xlim(-0.4, 1.05)
     axes[0].set_ylim(0, 1)
 
+    # Plot v-velocity with seaborn (sort=False to preserve x-ordering)
     sns.lineplot(
         data=v_df,
         x="x",
@@ -281,27 +286,35 @@ def plot_ghia_comparison(
         hue="N",
         style="Method",
         markers=True,
+        dashes=True,
         sort=False,
         ax=axes[1],
+        legend=False,
     )
     # Set markevery on all lines
     for line in axes[1].get_lines():
         line.set_markevery(20)
-    axes[1].scatter(
+    # Plot Ghia data with hollow circles
+    axes[1].plot(
         ghia_v["x"],
         ghia_v["v"],
-        c="black",
-        marker="x",
-        label=r"Ghia et al.\ (1982)",
+        "o",
+        color="#333333",
+        label="Ghia et al. (1982)",
+        markersize=7,
+        markerfacecolor="none",
+        markeredgewidth=1.2,
         zorder=10,
     )
-    axes[1].set_xlabel(r"$x$")
-    axes[1].set_ylabel(r"$v$")
-    axes[1].set_title(r"\textbf{$v$-velocity (horizontal centerline)}")
-    axes[1].legend(loc="best", fontsize=8)
+    axes[1].set_xlabel(r"$x$-coordinate")
+    axes[1].set_ylabel(r"$v$-velocity")
+    axes[1].set_title(r"$v$-velocity (horizontal centerline)")
     axes[1].set_xlim(0, 1)
+    axes[1].set_ylim(-0.6, 0.4)
 
-    fig.suptitle(rf"\textbf{{Ghia Benchmark Comparison}} --- $\mathrm{{Re}}={int(Re)}$")
+    # Set overall title
+    fig.suptitle(rf"Ghia Benchmark Comparison (Re = {int(Re)})", fontsize=12)
+    #fig.tight_layout()
 
     output_path = output_dir / "ghia_comparison.pdf"
     fig.savefig(output_path)

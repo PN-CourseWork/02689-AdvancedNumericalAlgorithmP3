@@ -1,0 +1,22 @@
+# @package _global_
+# Quick test experiment - sweeps over FV and Spectral solvers
+# Usage: uv run python run_solver.py -m +experiment=quick_test
+
+defaults:
+  - override /solver: fv
+
+# MLflow experiment
+experiment_name: LDC-QuickTest
+sweep_name: quick-test-Re${Re}
+
+# Quick test parameters
+N: 16              # grid size (16 cells for FV, polynomial order 16 for spectral)
+Re: 100            # Reynolds number
+tolerance: 1.0e-5  # slightly relaxed for speed
+max_iterations: 5000
+
+hydra:
+  sweeper:
+    params:
+      # Sweep over both solver types
+      solver: fv,spectral

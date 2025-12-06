@@ -205,30 +205,38 @@ class MLflowSweepCallback(Callback):
         for name, run_id in self._parent_runs.items():
             log.info(f"  - {name}: {run_id}")
 
-        # Generate comparison plots for all parent runs
+        # Generate plots for all parent runs and their children
         if self._parent_runs and config.get("generate_plots", True):
             try:
-                from shared.plotting.ldc import (
-                    generate_comparison_plots_for_sweep,
-                )
+                import sys
                 from pathlib import Path
+
+                # Add repo root to path for plot_runs import
+                repo_root = Path(__file__).parent.parent.parent.parent
+                if str(repo_root) not in sys.path:
+                    sys.path.insert(0, str(repo_root))
+
+                from plot_runs import plot_experiment
 
                 # Use stored sweep directory (HydraConfig may not be available here)
                 if self._sweep_dir:
-                    output_dir = Path(self._sweep_dir) / "comparison_plots"
+                    output_dir = Path(self._sweep_dir) / "plots"
                 else:
-                    output_dir = Path("outputs") / "comparison_plots"
+                    output_dir = Path("outputs") / "plots"
 
                 parent_run_ids = list(self._parent_runs.values())
                 log.info(
-                    f"Generating comparison plots for {len(parent_run_ids)} parent run(s)..."
+                    f"Generating plots for {len(parent_run_ids)} parent run(s) "
+                    "and all their children..."
                 )
 
-                generate_comparison_plots_for_sweep(
-                    parent_run_ids=parent_run_ids,
+                # Plot all runs (individual + comparison) for each parent
+                plot_experiment(
+                    experiment_name=self._full_experiment_name,
                     tracking_uri=self._tracking_uri,
                     output_dir=output_dir,
+                    parent_run_ids=parent_run_ids,
                     upload_to_mlflow=True,
                 )
             except Exception as e:
-                log.warning(f"Failed to generate comparison plots: {e}")
+                log.warning(f"Failed to generate plots: {e}")

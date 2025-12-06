@@ -16,63 +16,19 @@ uv sync
 
 The project uses [Hydra](https://hydra.cc/) for configuration management. Run solvers via `run_solver.py`:
 
-### Basic Usage
-
-```bash
-# Finite Volume solver (32x32 cells, Re=100)
-uv run python run_solver.py solver=fv N=32 Re=100
-
-# Spectral solver (N=15 gives 16x16 nodes, Re=100)
-uv run python run_solver.py solver=spectral N=15 Re=100
-```
-
 ### Using Experiment Configs
 
 Pre-defined experiment configurations are in `conf/experiment/`:
 
 ```bash
-# Quick test (small grid, few iterations)
-uv run python run_solver.py +experiment=quick_test solver=fv
-
-# FV validation (default settings for benchmarking)
-uv run python run_solver.py +experiment=fv_validation
-
-# Spectral validation
-uv run python run_solver.py +experiment=spectral_validation
-```
-
-### Parameter Sweeps
-
-Run multiple configurations with Hydra's multirun:
-
-```bash
-# Sweep over grid sizes (sequential)
-uv run python run_solver.py -m solver=fv N=16,32,64 Re=100
-
-# Sweep over Reynolds numbers
-uv run python run_solver.py -m solver=spectral N=31 Re=100,400,1000
-
-# Full validation sweep
 uv run python run_solver.py -m +experiment=fv_validation
 ```
 
-### Parallel Sweeps (Joblib)
+for only plots: pass  plot_only=true
 
-Run sweeps in parallel using all CPU cores:
+Overwriting at runtime: 
+uv run python run_solver.py -m +experiment=fv_validation N=16,32,64 Re=100
 
-```bash
-# Parallel sweep over grid sizes
-uv run python run_solver.py -m hydra/launcher=joblib solver=fv N=16,32,64 Re=100
-
-# Parallel sweep over solvers
-uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=32 Re=100
-
-# Parallel multi-dimensional sweep (solver x N x Re = 12 jobs)
-uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=16,32,64 Re=100,400
-
-# Control parallelism (e.g., 4 concurrent jobs)
-uv run python run_solver.py -m hydra/launcher=joblib hydra.launcher.n_jobs=4 solver=fv N=16,32,64
-```
 
 ### Configuration Structure
 
@@ -93,29 +49,6 @@ conf/
     └── launcher/
         └── joblib.yaml      # Parallel launcher (all cores)
 ```
-
-### Nested Runs for Sweeps
-
-Parameter sweeps automatically create a parent-child run hierarchy in MLflow:
-- **Parent run**: Created before sweep, logs sweep config
-- **Child runs**: Each parameter combination nested under parent
-
-This makes it easy to view all sweep runs together in the MLflow UI.
-
-### Output Structure
-
-Each run creates a timestamped Hydra output directory:
-
-```
-hydra_outputs/{experiment_name}/Re{Re}/{solver}/{DD-MM-YY}/{HH:MM:SS}/
-├── run_solver.log           # Execution log
-└── .hydra/
-    ├── config.yaml          # Resolved configuration
-    ├── hydra.yaml           # Hydra settings
-    └── overrides.yaml       # CLI overrides
-```
-
-Solution fields (u, v, p) and metrics are stored as MLflow artifacts (zarr format).
 
 ## MLflow
 

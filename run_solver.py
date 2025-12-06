@@ -1,21 +1,36 @@
 """
 LDC Solver Runner - Hydra + MLflow integration for FV and Spectral solvers.
 
-Usage:
-    # FV solver (32 cells)
-    uv run python run_solver.py solver=fv N=32 Re=100 max_iterations=100
+RECOMMENDED USAGE - Parameter sweeps (multirun mode):
+    # Use experiment configs for validation sweeps
+    uv run python run_solver.py -m +experiment=fv_validation
+    uv run python run_solver.py -m +experiment=spectral_validation
 
-    # Spectral solver (N=15 gives 16 nodes)
-    uv run python run_solver.py solver=spectral N=15 Re=100 max_iterations=100
-
-    # MLflow modes:
-    #   local-files  - file-based ./mlruns (default)
-    #   coolify      - remote server (requires .env with credentials)
-    uv run python run_solver.py solver=fv mlflow=local-files
-    uv run python run_solver.py solver=fv mlflow=coolify
-
-    # Parameter sweep
+    # Custom sweeps
     uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400
+
+    Multirun mode automatically:
+    - Creates parent runs for organizing results
+    - Generates all plots (individual + comparisons) at the end
+    - Uploads everything to MLflow
+
+Single runs (for testing):
+    # FV solver
+    uv run python run_solver.py solver=fv N=32 Re=100
+
+    # Spectral solver
+    uv run python run_solver.py solver=spectral N=15 Re=100
+
+Plot generation:
+    # Regenerate plots for existing experiment (no solver execution)
+    uv run python plot_runs.py +experiment=fv_validation
+
+    # Regenerate plots for specific parent run
+    uv run python plot_runs.py parent_run_id=abc123
+
+MLflow modes:
+    local-files  - file-based ./mlruns (default)
+    coolify      - remote server (requires .env with credentials)
 
 Setup for remote MLflow:
     cp .env.template .env
@@ -153,30 +168,37 @@ def main(cfg: DictConfig) -> None:
     experiment_name = setup_mlflow(cfg)
     log.info(f"MLflow experiment: {experiment_name}")
 
-    # Plot-only mode: find existing run and regenerate plots
+    # Plot-only mode: regenerate plots without running solver
+    # NOTE: For multirun plot regeneration, use plot_runs.py instead!
     if cfg.get("plot_only", False):
-        log.info("Plot-only mode: finding existing run to regenerate plots")
-        from shared.plotting.ldc import generate_plots_for_run, find_matching_run
+        log.warning(
+            "plot_only mode is deprecated for run_solver.py. "
+            "Use plot_runs.py instead:\n"
+            "  uv run python plot_runs.py +experiment=fv_validation"
+        )
+        log.info("Redirecting to plot_runs.py...")
+
+        # Import and call plot_experiment directly
+        sys.path.insert(0, str(Path(__file__).parent))
+        from plot_runs import plot_experiment
 
         tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
-        run_id, parent_run_id = find_matching_run(cfg, tracking_uri)
 
-        if run_id is None:
-            log.error(f"No matching run found for solver={cfg.solver.name}, N={cfg.N}, Re={cfg.Re}")
-            return
+        # Build experiment name
+        experiment_name = cfg.experiment_name
+        project_prefix = cfg.mlflow.get("project_prefix", "")
+        if project_prefix and not experiment_name.startswith("/"):
+            experiment_name = f"{project_prefix}/{experiment_name}"
 
-        log.info(f"Found existing run: {run_id}")
         output_dir = Path(
             hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
         )
-        generate_plots_for_run(
-            run_id=run_id,
+
+        plot_experiment(
+            experiment_name=experiment_name,
             tracking_uri=tracking_uri,
-            output_dir=output_dir / "plots",
-            solver_name=cfg.solver.name,
-            N=cfg.N,
-            Re=cfg.Re,
-            parent_run_id=parent_run_id,
+            output_dir=output_dir,
+            upload_to_mlflow=cfg.get("upload_to_mlflow", True),
         )
         log.info("Plot regeneration complete!")
         return
@@ -232,24 +254,10 @@ def main(cfg: DictConfig) -> None:
             f"time={solver.metrics.wall_time_seconds:.2f}s"
         )
 
-        # Generate plots
-        if cfg.get("generate_plots", True):
-            from shared.plotting.ldc import generate_plots_for_run
-
-            output_dir = Path(
-                hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-            )
-            tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
-            generate_plots_for_run(
-                run_id=run.info.run_id,
-                tracking_uri=tracking_uri,
-                output_dir=output_dir / "plots",
-                solver_name=solver_name,
-                N=cfg.N,
-                Re=cfg.Re,
-                parent_run_id=parent_run_id,
-                upload_to_mlflow=True,
-            )
+        # Plot generation is handled centrally by plot_runs.py
+        # - For multirun: plots generated automatically at end via MLflowSweepCallback
+        # - For single runs: use `uv run python plot_runs.py +experiment=...`
+        # - Or manually: `uv run python plot_runs.py parent_run_id=...`
 
 
 if __name__ == "__main__":
