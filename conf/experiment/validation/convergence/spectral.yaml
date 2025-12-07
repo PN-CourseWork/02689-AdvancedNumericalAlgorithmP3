@@ -7,7 +7,7 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Validation
-sweep_name: convergence-rate
+sweep_name: convergence-rate-2
 
 # Validation parameters
 
