@@ -7,7 +7,7 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Validation
-sweep_name: ghia-Re${Re}
+sweep_name: convergence-rate
 
 # Validation parameters
 
