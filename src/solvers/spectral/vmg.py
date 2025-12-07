@@ -358,10 +358,11 @@ class VMGSolver(SGSolver):
         # Get coarsest_n from params (default 12)
         coarsest_n = getattr(self.params, 'coarsest_n', 12)
 
-        # Build grid hierarchy (n_levels is max, limited by coarsest_n)
+        # Build grid hierarchy dynamically from nx down to coarsest_n
+        # n_levels=100 is just a large upper bound; actual levels determined by coarsest_n
         self._levels = build_hierarchy(
             n_fine=self.params.nx,
-            n_levels=self.params.n_levels,
+            n_levels=100,
             coarsest_n=coarsest_n,
             basis_x=self.basis_x,
             basis_y=self.basis_y,
@@ -375,7 +376,7 @@ class VMGSolver(SGSolver):
         self._damping = getattr(self.params, 'damping', 0.5)
 
         log.info(
-            f"VMG initialized: {self.params.n_levels} levels, "
+            f"VMG initialized: {len(self._levels)} levels {[l.n for l in self._levels]}, "
             f"pre={self._pre_smooth}, post={self._post_smooth}, "
             f"damping={self._damping}"
         )
