@@ -13,5 +13,5 @@ hydra:
   sweeper:
     params:
       # Sweep over FV grid sizes
-      N: 17
+      N: 32
       Re: 100

@@ -146,7 +146,8 @@ def _compute_geometric_factors(
 
 
 def create_structured_mesh_2d(
-    nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0, lid_velocity: float = 1.0
+    nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0, lid_velocity: float = 1.0,
+    corner_smoothing: float = 0.0
 ) -> MeshData2D:
     """Create structured Cartesian quad mesh using pure numpy.
 
@@ -164,6 +165,9 @@ def create_structured_mesh_2d(
         Domain size in x and y directions
     lid_velocity : float
         Velocity of the top lid
+    corner_smoothing : float
+        Fraction of domain width to smooth lid velocity at corners (0 = no smoothing).
+        Uses cosine smoothing matching the spectral solver's corner treatment.
 
     Returns
     -------
@@ -240,7 +244,18 @@ def create_structured_mesh_2d(
         # Determine which boundary this face belongs to and set velocity values
         if abs(fc[1] - Ly) < eps:
             # Top boundary (moving lid with Dirichlet BC)
-            boundary_values[f] = [lid_velocity, 0.0, 0.0]
+            # Apply corner smoothing if enabled
+            u_lid = lid_velocity
+            if corner_smoothing > 0:
+                x_face = fc[0]
+                smooth_dist = corner_smoothing * Lx
+                if x_face < smooth_dist:
+                    # Near left corner
+                    u_lid = 0.5 * (1 - np.cos(np.pi * x_face / smooth_dist)) * lid_velocity
+                elif x_face > (Lx - smooth_dist):
+                    # Near right corner
+                    u_lid = 0.5 * (1 - np.cos(np.pi * (Lx - x_face) / smooth_dist)) * lid_velocity
+            boundary_values[f] = [u_lid, 0.0, 0.0]
         elif abs(fc[1] - 0.0) < eps:
             # Bottom boundary (stationary wall with Dirichlet BC)
             boundary_values[f] = [0.0, 0.0, 0.0]

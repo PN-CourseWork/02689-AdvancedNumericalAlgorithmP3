@@ -648,3 +648,185 @@ class LidDrivenCavitySolver(ABC):
             Path to the file to log as artifact.
         """
         mlflow.log_artifact(filepath)
+
+    # =========================================================================
+    # Validation against reference FV solutions
+    # =========================================================================
+
+    def compute_validation_errors(
+        self, reference_dir: str = "data/validation/fv", save_plots: bool = True
+    ) -> dict:
+        """Compute L2 errors against reference FV solution.
+
+        Loads the reference solution for the current Re, evaluates computed
+        solution at reference grid coordinates, and computes relative L2 errors.
+
+        Parameters
+        ----------
+        reference_dir : str
+            Directory containing reference solutions (Re100/, Re400/, Re1000/)
+        save_plots : bool
+            If True, save error distribution plots as MLflow artifacts
+
+        Returns
+        -------
+        dict
+            {'u_L2_error': float, 'v_L2_error': float} or empty dict if no reference
+        """
+        ref_path = Path(reference_dir) / f"Re{int(self.params.Re)}" / "solution.vts"
+
+        if not ref_path.exists():
+            log.warning(f"No reference solution found at {ref_path}")
+            return {}
+
+        # Load reference solution
+        ref_mesh = pv.read(str(ref_path))
+        ref_u = ref_mesh.point_data["u"]
+        ref_v = ref_mesh.point_data["v"]
+
+        # Get reference grid coordinates
+        ref_points = ref_mesh.points
+        ref_x = ref_points[:, 0]
+        ref_y = ref_points[:, 1]
+
+        # Evaluate computed solution at reference grid points
+        # Subclasses can override _evaluate_at_points for native interpolation (e.g., spectral)
+        curr_u_at_ref, curr_v_at_ref = self._evaluate_at_points(ref_x, ref_y)
+
+        # Only compute norm on interior points (exclude boundaries where BCs differ)
+        # Use small margin to exclude boundary points
+        margin = 0.02
+        interior = (
+            (ref_x > margin) & (ref_x < self.params.Lx - margin) &
+            (ref_y > margin) & (ref_y < self.params.Ly - margin)
+        )
+        valid = interior & ~(np.isnan(curr_u_at_ref) | np.isnan(curr_v_at_ref))
+        n_valid = np.sum(valid)
+        n_total = len(ref_u)
+
+        if n_valid < n_total * 0.5:
+            log.warning(f"Only {n_valid}/{n_total} valid points for validation")
+
+        # Compute relative L2 errors on valid interior points
+        u_error = np.linalg.norm(curr_u_at_ref[valid] - ref_u[valid]) / (
+            np.linalg.norm(ref_u[valid]) + 1e-12
+        )
+        v_error = np.linalg.norm(curr_v_at_ref[valid] - ref_v[valid]) / (
+            np.linalg.norm(ref_v[valid]) + 1e-12
+        )
+
+        log.info(f"Validation errors vs FV reference ({n_valid}/{n_total} pts): u_L2={u_error:.6e}, v_L2={v_error:.6e}")
+
+        # Save error distribution plots
+        if save_plots:
+            self._save_validation_error_plots(
+                ref_x, ref_y, ref_u, ref_v, curr_u_at_ref, curr_v_at_ref, valid
+            )
+
+        return {"u_L2_error": float(u_error), "v_L2_error": float(v_error)}
+
+    def _save_validation_error_plots(
+        self, ref_x, ref_y, ref_u, ref_v, curr_u, curr_v, valid_mask
+    ):
+        """Save error distribution plots as artifacts."""
+        import matplotlib.pyplot as plt
+
+        # Compute error fields
+        u_diff = curr_u - ref_u
+        v_diff = curr_v - ref_v
+
+        # Get grid dimensions from reference mesh
+        n_unique_x = len(np.unique(ref_x))
+        n_unique_y = len(np.unique(ref_y))
+
+        # Reshape for plotting (assumes structured grid)
+        try:
+            X = ref_x.reshape(n_unique_x, n_unique_y)
+            Y = ref_y.reshape(n_unique_x, n_unique_y)
+            U_diff = u_diff.reshape(n_unique_x, n_unique_y)
+            V_diff = v_diff.reshape(n_unique_x, n_unique_y)
+        except ValueError:
+            log.warning("Could not reshape error field for plotting - skipping plots")
+            return
+
+        # Determine output directory
+        output_dir = Path("outputs/validation_errors")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        method_name = getattr(self.params, 'method', 'solver')
+        Re = int(self.params.Re)
+
+        # Create figure for u error
+        fig, ax = plt.subplots(figsize=(8, 6))
+        vmax = max(abs(U_diff).max(), 1e-10)
+        im = ax.pcolormesh(X, Y, U_diff, cmap='RdBu_r', vmin=-vmax, vmax=vmax, shading='auto')
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_title(f'u error (computed - reference), Re={Re}')
+        ax.set_aspect('equal')
+        plt.colorbar(im, ax=ax, label='u error')
+        plt.tight_layout()
+
+        u_path = output_dir / f"{method_name}_Re{Re}_u_error.png"
+        fig.savefig(u_path, dpi=150)
+        if mlflow.active_run():
+            mlflow.log_artifact(str(u_path))
+        log.info(f"Saved u error plot to {u_path}")
+        plt.close(fig)
+
+        # Create figure for v error
+        fig, ax = plt.subplots(figsize=(8, 6))
+        vmax = max(abs(V_diff).max(), 1e-10)
+        im = ax.pcolormesh(X, Y, V_diff, cmap='RdBu_r', vmin=-vmax, vmax=vmax, shading='auto')
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_title(f'v error (computed - reference), Re={Re}')
+        ax.set_aspect('equal')
+        plt.colorbar(im, ax=ax, label='v error')
+        plt.tight_layout()
+
+        v_path = output_dir / f"{method_name}_Re{Re}_v_error.png"
+        fig.savefig(v_path, dpi=150)
+        if mlflow.active_run():
+            mlflow.log_artifact(str(v_path))
+        log.info(f"Saved v error plot to {v_path}")
+        plt.close(fig)
+
+    def _evaluate_at_points(self, x: np.ndarray, y: np.ndarray) -> tuple:
+        """Evaluate solution at arbitrary points.
+
+        Default uses bilinear interpolation from stored fields.
+        Spectral solver overrides with native spectral interpolation.
+
+        Parameters
+        ----------
+        x, y : np.ndarray
+            Coordinates to evaluate at
+
+        Returns
+        -------
+        u, v : np.ndarray
+            Velocity components at requested points
+        """
+        from scipy.interpolate import RegularGridInterpolator
+
+        # Get unique sorted coordinates from stored fields
+        x_unique = np.sort(np.unique(self.fields.x))
+        y_unique = np.sort(np.unique(self.fields.y))
+        nx, ny = len(x_unique), len(y_unique)
+
+        # Reshape fields to 2D
+        indices = np.lexsort((self.fields.x, self.fields.y))
+        u_2d = self.fields.u[indices].reshape(ny, nx)
+        v_2d = self.fields.v[indices].reshape(ny, nx)
+
+        # Create interpolators (NaN for out-of-bounds, filtered later)
+        u_interp = RegularGridInterpolator(
+            (y_unique, x_unique), u_2d, method="linear", bounds_error=False, fill_value=np.nan
+        )
+        v_interp = RegularGridInterpolator(
+            (y_unique, x_unique), v_2d, method="linear", bounds_error=False, fill_value=np.nan
+        )
+
+        # Evaluate at requested points
+        points = np.column_stack([y, x])  # (y, x) order for interpolator
+        return u_interp(points), v_interp(points)

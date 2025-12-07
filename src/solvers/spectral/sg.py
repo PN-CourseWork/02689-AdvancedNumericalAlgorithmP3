@@ -557,3 +557,79 @@ class SGSolver(LidDrivenCavitySolver):
         domega_dx, domega_dy = self._compute_gradient(omega)
         W = self._compute_quadrature_weights()
         return 0.5 * float(np.sum(W * (domega_dx**2 + domega_dy**2)))
+
+    def _evaluate_at_points(self, x: np.ndarray, y: np.ndarray) -> tuple:
+        """Evaluate solution at arbitrary points using spectral polynomial evaluation.
+
+        Uses tensor product spectral interpolation to evaluate the polynomial
+        representation of the solution at any physical coordinates.
+
+        Parameters
+        ----------
+        x, y : np.ndarray
+            Physical coordinates to evaluate at (must be same length)
+
+        Returns
+        -------
+        u, v : np.ndarray
+            Velocity components at requested points
+        """
+        from solvers.spectral.basis.polynomial import spectral_interpolate
+
+        # Get spectral nodes
+        x_nodes = self.basis_x.nodes(self.params.nx + 1)
+        y_nodes = self.basis_y.nodes(self.params.ny + 1)
+
+        # Reshape fields to 2D: u_2d[i, j] = u at (x_nodes[i], y_nodes[j])
+        u_2d = self.fields.u.reshape(self.shape_full)
+        v_2d = self.fields.v.reshape(self.shape_full)
+
+        basis = self.params.basis_type.lower()
+        n_points = len(x)
+
+        # Precompute interpolation matrices (Vandermonde approach)
+        # This avoids recomputing V^{-1} for every point
+        from solvers.spectral.basis.polynomial import vandermonde
+
+        alpha, beta = (0.0, 0.0) if basis == "legendre" else (-0.5, -0.5)
+
+        # Map to reference domain [-1, 1]
+        x_min, x_max = x_nodes.min(), x_nodes.max()
+        y_min, y_max = y_nodes.min(), y_nodes.max()
+        x_ref = 2.0 * (x - x_min) / (x_max - x_min) - 1.0
+        y_ref = 2.0 * (y - y_min) / (y_max - y_min) - 1.0
+        x_nodes_ref = 2.0 * (x_nodes - x_min) / (x_max - x_min) - 1.0
+        y_nodes_ref = 2.0 * (y_nodes - y_min) / (y_max - y_min) - 1.0
+
+        # Compute Vandermonde matrices and their inverses ONCE
+        Vx = vandermonde(x_nodes_ref, alpha, beta)
+        Vy = vandermonde(y_nodes_ref, alpha, beta)
+        Vx_inv = np.linalg.inv(Vx)
+        Vy_inv = np.linalg.inv(Vy)
+
+        # Get modal coefficients for u and v (transform nodal -> modal)
+        # u_modal[i,j] = modal coefficient for mode (i,j)
+        u_modal = Vx_inv @ u_2d @ Vy_inv.T
+        v_modal = Vx_inv @ v_2d @ Vy_inv.T
+
+        # Evaluate at all points using vectorized Vandermonde evaluation
+        from scipy.special import eval_jacobi
+
+        nx_modes = len(x_nodes)
+        ny_modes = len(y_nodes)
+
+        # Build evaluation Vandermonde matrices for all query points
+        Vx_eval = np.zeros((n_points, nx_modes))
+        Vy_eval = np.zeros((n_points, ny_modes))
+        for n in range(nx_modes):
+            Vx_eval[:, n] = eval_jacobi(n, alpha, beta, x_ref)
+        for n in range(ny_modes):
+            Vy_eval[:, n] = eval_jacobi(n, alpha, beta, y_ref)
+
+        # Evaluate: for each point k, u[k] = sum_{i,j} Vx_eval[k,i] * u_modal[i,j] * Vy_eval[k,j]
+        # This is equivalent to: u[k] = Vx_eval[k,:] @ u_modal @ Vy_eval[k,:].T
+        # Vectorized: element-wise multiply and sum
+        u_out = np.einsum('ki,ij,kj->k', Vx_eval, u_modal, Vy_eval)
+        v_out = np.einsum('ki,ij,kj->k', Vx_eval, v_modal, Vy_eval)
+
+        return u_out, v_out

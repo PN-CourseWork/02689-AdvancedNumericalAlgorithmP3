@@ -154,6 +154,7 @@ class FVParameters(Parameters):
     alpha_p: float = 0.4
     linear_solver_tol: float = 1e-6
     method: str = "FV-SIMPLE"
+    corner_smoothing: float = 0.0  # Fraction of domain to smooth lid velocity at corners
 
 
 @dataclass
