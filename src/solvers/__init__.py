@@ -8,8 +8,7 @@ LidDrivenCavitySolver (abstract base - defines problem)
 ├── FVSolver (finite volume with SIMPLE algorithm)
 └── SGSolver (spectral single grid base)
     ├── FSGSolver (Full Single Grid multigrid)
-    ├── VMGSolver (V-cycle Multigrid)
-    └── FMGSolver (Full MultiGrid)
+    └── VMGSolver (V-cycle Multigrid)
 """
 
 from .base import LidDrivenCavitySolver
@@ -30,7 +29,6 @@ from solvers.fv.solver import FVSolver
 from solvers.spectral.sg import SGSolver
 from solvers.spectral.fsg import FSGSolver
 from solvers.spectral.vmg import VMGSolver
-from solvers.spectral.fmg import FMGSolver
 
 
 __all__ = [
@@ -49,7 +47,6 @@ __all__ = [
     "SGSolver",
     "FSGSolver",
     "VMGSolver",
-    "FMGSolver",
     "SpectralParameters",
     "SpectralSolverFields",
 ]

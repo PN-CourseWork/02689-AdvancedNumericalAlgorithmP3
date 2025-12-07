@@ -5,7 +5,7 @@ name: spectral
 
 # Solver control
 tolerance: 1.0e-6
-max_iterations: 100000  # Spectral methods converge slowly for high Re
+max_iterations: 150000  # Spectral methods converge slowly for high Re
 
 # Spectral-specific parameters
 basis_type: chebyshev    # "chebyshev" or "legendre"

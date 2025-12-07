@@ -91,7 +91,6 @@ def _build_method_label(sibling: dict) -> str:
         "fv": "FV",
         "spectral": "Spectral",
         "spectral_fsg": "Spectral-FSG",
-        "spectral_fmg": "Spectral-FMG",
         "spectral_vmg": "Spectral-VMG",
     }
 
