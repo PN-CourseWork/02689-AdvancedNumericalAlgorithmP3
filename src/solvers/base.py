@@ -4,8 +4,10 @@ from abc import ABC, abstractmethod
 import logging
 import os
 import time
+from pathlib import Path
 
 import numpy as np
+import pyvista as pv
 import mlflow
 
 from dataclasses import asdict
@@ -371,6 +373,127 @@ class LidDrivenCavitySolver(ABC):
         # Fallback: assume unit domain
         n = len(self.arrays.u)
         return 1.0 / n
+
+    # =========================================================================
+    # VTK Export - to_vtk() creates StructuredGrid with all fields
+    # =========================================================================
+
+    def to_vtk(self) -> pv.StructuredGrid:
+        """Export solution to VTK StructuredGrid with all fields and metadata.
+
+        Creates a structured grid with:
+        - Primary fields: u, v, p
+        - Derived fields: velocity_magnitude, vorticity, velocity (vector)
+        - Metadata: Re, N, solver name
+
+        Subclasses may override to use native differentiation for derived fields.
+
+        Returns
+        -------
+        pv.StructuredGrid
+            Solution on structured grid, ready for VTS export
+        """
+        # Get unique sorted coordinates
+        x_unique = np.sort(np.unique(self.fields.x))
+        y_unique = np.sort(np.unique(self.fields.y))
+        nx, ny = len(x_unique), len(y_unique)
+
+        # Reshape fields to 2D grid: U_2d[j, i] = u at (x_unique[i], y_unique[j])
+        indices = np.lexsort((self.fields.x, self.fields.y))
+        u_sorted = self.fields.u[indices]
+        v_sorted = self.fields.v[indices]
+        p_sorted = self.fields.p[indices]
+
+        U_2d = u_sorted.reshape(ny, nx)
+        V_2d = v_sorted.reshape(ny, nx)
+        P_2d = p_sorted.reshape(ny, nx)
+
+        # Create 3D grid (z=0 plane)
+        X, Y = np.meshgrid(x_unique, y_unique)
+        Z = np.zeros_like(X)
+        grid = pv.StructuredGrid(X, Y, Z)
+
+        # Add primary fields - use Fortran order to match VTK's column-major point ordering
+        grid["u"] = U_2d.ravel("F")
+        grid["v"] = V_2d.ravel("F")
+        grid["pressure"] = P_2d.ravel("F")
+
+        # Add derived fields
+        grid["velocity_magnitude"] = np.sqrt(U_2d**2 + V_2d**2).ravel("F")
+
+        # Compute vorticity using native differentiation
+        vorticity = self._compute_vorticity_for_export(U_2d, V_2d, x_unique, y_unique)
+        grid["vorticity"] = vorticity.ravel("F")
+
+        # Add velocity vector field
+        vectors = np.zeros((nx * ny, 3))
+        vectors[:, 0] = U_2d.ravel("F")
+        vectors[:, 1] = V_2d.ravel("F")
+        grid["velocity"] = vectors
+
+        # Add metadata
+        grid.field_data["Re"] = np.array([self.params.Re])
+        grid.field_data["N"] = np.array([self.params.nx])
+        grid.field_data["solver"] = np.array([self.params.name])
+
+        return grid
+
+    def _compute_vorticity_for_export(
+        self, U_2d: np.ndarray, V_2d: np.ndarray, x: np.ndarray, y: np.ndarray
+    ) -> np.ndarray:
+        """Compute vorticity for VTK export. Override for native differentiation.
+
+        Default uses scipy RectBivariateSpline for smooth derivatives.
+
+        Parameters
+        ----------
+        U_2d, V_2d : np.ndarray
+            2D velocity arrays (ny, nx)
+        x, y : np.ndarray
+            1D coordinate arrays
+
+        Returns
+        -------
+        np.ndarray
+            Vorticity field (ny, nx)
+        """
+        from scipy.interpolate import RectBivariateSpline
+
+        U_spline = RectBivariateSpline(y, x, U_2d)
+        V_spline = RectBivariateSpline(y, x, V_2d)
+        dvdx = V_spline(y, x, dx=1)
+        dudy = U_spline(y, x, dy=1)
+        return dvdx - dudy
+
+    def compute_global_quantities(self) -> dict:
+        """Compute global quantities E, Z, P for the current solution.
+
+        Returns
+        -------
+        dict
+            {'E': kinetic_energy, 'Z': enstrophy, 'P': palinstrophy}
+        """
+        return {
+            "E": self._compute_energy(),
+            "Z": self._compute_enstrophy(),
+            "P": self._compute_palinstrophy(),
+        }
+
+    def save_vtk(self, filepath: Path):
+        """Save solution to VTS file.
+
+        Parameters
+        ----------
+        filepath : Path
+            Output file path (should have .vts extension)
+        """
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+
+        grid = self.to_vtk()
+        grid.save(str(filepath))
+
+        log.info(f"Saved VTS to {filepath}")
 
     # ========================================================================
     # MLflow Integration

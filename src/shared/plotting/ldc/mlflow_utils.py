@@ -193,10 +193,8 @@ def load_timeseries_from_mlflow(run_id: str, tracking_uri: str) -> pd.DataFrame:
     return df
 
 
-def upload_plots_to_mlflow(
-    run_id: str, plot_paths: list, tracking_uri: str, artifact_subdir: str = "plots"
-):
-    """Upload generated plots to MLflow run as artifacts."""
+def upload_plots_to_mlflow(run_id: str, plot_paths: list, tracking_uri: str):
+    """Upload generated plots to MLflow run as artifacts (flat, no subdirectory)."""
     mlflow.set_tracking_uri(tracking_uri)
 
     valid_paths = [p for p in plot_paths if p and p.exists()]
@@ -204,13 +202,11 @@ def upload_plots_to_mlflow(
     # Check if we're already in an active run
     active_run = mlflow.active_run()
     if active_run and active_run.info.run_id == run_id:
-        # Already in the correct run, just log artifacts
         for path in valid_paths:
-            mlflow.log_artifact(str(path), artifact_path=artifact_subdir)
-            log.info(f"Uploaded: {artifact_subdir}/{path.name}")
+            mlflow.log_artifact(str(path))
+            log.info(f"Uploaded: {path.name}")
     else:
-        # Start/resume run to upload artifacts
         with mlflow.start_run(run_id=run_id, nested=True):
             for path in valid_paths:
-                mlflow.log_artifact(str(path), artifact_path=artifact_subdir)
-                log.info(f"Uploaded: {artifact_subdir}/{path.name}")
+                mlflow.log_artifact(str(path))
+                log.info(f"Uploaded: {path.name}")

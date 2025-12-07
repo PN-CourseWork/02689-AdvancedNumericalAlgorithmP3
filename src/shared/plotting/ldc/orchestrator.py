@@ -16,7 +16,12 @@ from omegaconf import DictConfig
 
 from .convergence import plot_convergence
 from .data_loading import fields_to_dataframe, load_fields_from_zarr
-from .fields import plot_fields, plot_streamlines, plot_vorticity
+from .fields import (
+    plot_fields,
+    plot_streamlines,
+    plot_streamlines_pyvista,
+    plot_vorticity,
+)
 from .mlflow_utils import (
     download_mlflow_artifacts,
     find_matching_run,
@@ -24,7 +29,7 @@ from .mlflow_utils import (
     load_timeseries_from_mlflow,
     upload_plots_to_mlflow,
 )
-from .validation import plot_centerlines, plot_ghia_comparison
+from .validation import plot_ghia_comparison
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -83,8 +88,8 @@ def generate_plots_for_run(
     plot_paths = []
     plot_paths.append(plot_fields(fields_df, Re, solver_name, N, output_dir))
     plot_paths.append(plot_streamlines(fields_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_streamlines_pyvista(fields_df, Re, solver_name, N, output_dir))
     plot_paths.append(plot_vorticity(fields_df, Re, solver_name, N, output_dir))
-    plot_paths.append(plot_centerlines(fields_df, Re, solver_name, N, output_dir))
     plot_paths.append(plot_convergence(timeseries_df, Re, solver_name, N, output_dir))
     ghia_path = plot_ghia_comparison(
         [
@@ -177,9 +182,7 @@ def generate_comparison_plots_for_sweep(
             log.info(f"  Created comparison plot: {comparison_path.name}")
 
             if upload_to_mlflow:
-                upload_plots_to_mlflow(
-                    parent_run_id, [comparison_path], tracking_uri, "plots"
-                )
+                upload_plots_to_mlflow(parent_run_id, [comparison_path], tracking_uri)
                 log.info("  Uploaded to parent run")
 
     log.info(f"Generated {len(results)} comparison plot(s)")
@@ -217,8 +220,8 @@ def main(cfg: DictConfig) -> None:
 
     plot_paths.append(plot_fields(fields_df, Re, solver_name, N, output_dir))
     plot_paths.append(plot_streamlines(fields_df, Re, solver_name, N, output_dir))
+    plot_paths.append(plot_streamlines_pyvista(fields_df, Re, solver_name, N, output_dir))
     plot_paths.append(plot_vorticity(fields_df, Re, solver_name, N, output_dir))
-    plot_paths.append(plot_centerlines(fields_df, Re, solver_name, N, output_dir))
     plot_paths.append(plot_convergence(timeseries_df, Re, solver_name, N, output_dir))
 
     plot_paths = [p for p in plot_paths if p is not None]
@@ -245,9 +248,7 @@ def main(cfg: DictConfig) -> None:
             )
 
             if comparison_path and cfg.get("upload_to_mlflow", True):
-                upload_plots_to_mlflow(
-                    parent_run_id, [comparison_path], tracking_uri, "plots"
-                )
+                upload_plots_to_mlflow(parent_run_id, [comparison_path], tracking_uri)
                 log.info("Comparison plot uploaded to parent run")
 
     log.info("Done!")

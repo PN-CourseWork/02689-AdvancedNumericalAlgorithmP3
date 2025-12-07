@@ -186,9 +186,7 @@ def plot_all_runs_for_parent(
             )
 
             if comparison_plot and upload_to_mlflow:
-                upload_plots_to_mlflow(
-                    parent_run_id, [comparison_plot], tracking_uri, "plots"
-                )
+                upload_plots_to_mlflow(parent_run_id, [comparison_plot], tracking_uri)
                 log.info(f"    Uploaded comparison plot to parent run")
         except Exception as e:
             log.error(f"    Failed to generate comparison plot: {e}")

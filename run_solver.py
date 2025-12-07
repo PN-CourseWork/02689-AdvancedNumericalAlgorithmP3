@@ -131,22 +131,14 @@ def log_metrics_and_timeseries(solver, run_id: str):
 
 
 def log_fields(solver):
-    """Save solution fields as zarr arrays to MLflow artifacts."""
+    """Save solution fields as VTK to MLflow artifacts."""
     import tempfile
 
-    import zarr
-
-    fields = solver.fields
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Save each field as separate zarr array
-        for name in ["x", "y", "u", "v", "p"]:
-            arr = getattr(fields, name)
-            zarr_path = Path(tmpdir) / f"{name}.zarr"
-            zarr.save(zarr_path, arr)
-            mlflow.log_artifact(str(zarr_path), artifact_path="fields")
-
-        log.info("Logged fields: x, y, u, v, p (zarr)")
+        vtk_path = Path(tmpdir) / "solution.vts"
+        solver.to_vtk().save(str(vtk_path))
+        mlflow.log_artifact(str(vtk_path))
+        log.info("Logged solution.vts to MLflow")
 
 
 # =============================================================================

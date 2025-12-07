@@ -200,14 +200,22 @@ class FVSolver(LidDrivenCavitySolver):
         row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
 
-        # Solve pressure correction with scipy (handles nullspace internally)
         A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
+
+        # Pin pressure at cell 0 to make the system non-singular
+        A_p = A_p.tolil()
+        A_p[0, :] = 0.0
+        A_p[:, 0] = 0.0
+        A_p[0, 0] = 1.0
+        A_p = A_p.tocsr()
+        rhs_p[0] = 0.0
+
+        # Solve pressure correction with PyAMG-preconditioned BiCGSTAB
         p_prime, a.M_p = scipy_solver(
             A_p,
             rhs_p,
             M=a.M_p,
             tolerance=self.params.linear_solver_tol,
-            remove_nullspace=True,
         )
 
         # Velocity and pressure corrections - reuse buffers

@@ -1,7 +1,7 @@
 """
 Validation and Comparison Plots for LDC.
 
-Generates centerline velocity profiles and Ghia benchmark comparisons.
+Generates Ghia benchmark comparisons.
 """
 
 import logging
@@ -11,70 +11,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.interpolate import RectBivariateSpline
 
-from spectral import spectral_interpolate
+from solvers.spectral.basis import spectral_interpolate
 from utilities.config.paths import get_repo_root
 
 from .data_loading import load_fields_from_zarr, restructure_fields
 from .mlflow_utils import download_mlflow_artifacts
 
 log = logging.getLogger(__name__)
-
-
-def plot_centerlines(
-    fields_df: pd.DataFrame, Re: float, solver: str, N: int, output_dir: Path
-) -> Path:
-    """Plot velocity profiles along centerlines."""
-    x_unique = np.sort(fields_df["x"].unique())
-    y_unique = np.sort(fields_df["y"].unique())
-    nx, ny = len(x_unique), len(y_unique)
-
-    sorted_df = fields_df.sort_values(["y", "x"])
-    U = sorted_df["u"].values.reshape(ny, nx)
-    V = sorted_df["v"].values.reshape(ny, nx)
-
-    U_spline = RectBivariateSpline(y_unique, x_unique, U)
-    V_spline = RectBivariateSpline(y_unique, x_unique, V)
-
-    n_points = 200
-    y_line = np.linspace(y_unique[0], y_unique[-1], n_points)
-    x_line = np.linspace(x_unique[0], x_unique[-1], n_points)
-
-    x_center = (x_unique[0] + x_unique[-1]) / 2
-    y_center = (y_unique[0] + y_unique[-1]) / 2
-
-    u_vertical = U_spline(y_line, x_center).ravel()
-    v_horizontal = V_spline(y_center, x_line).ravel()
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    axes[0].plot(u_vertical, y_line, linewidth=2)
-    axes[0].set_xlabel(r"$u$", fontsize=11)
-    axes[0].set_ylabel(r"$y$", fontsize=11)
-    axes[0].set_title(r"\textbf{$u$-velocity along vertical centerline}", fontsize=12)
-    axes[0].axvline(x=0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
-
-    axes[1].plot(x_line, v_horizontal, linewidth=2)
-    axes[1].set_xlabel(r"$x$", fontsize=11)
-    axes[1].set_ylabel(r"$v$", fontsize=11)
-    axes[1].set_title(r"\textbf{$v$-velocity along horizontal centerline}", fontsize=12)
-    axes[1].axhline(y=0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
-
-    solver_label = solver.upper().replace("_", r"\_")
-    fig.suptitle(
-        rf"\textbf{{Centerline Profiles}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$",
-        fontsize=13,
-        y=0.98,
-    )
-
-    plt.tight_layout()
-
-    output_path = output_dir / "centerlines.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
-    return output_path
 
 
 def _build_method_label(sibling: dict) -> str:

@@ -458,3 +458,61 @@ class SGSolver(LidDrivenCavitySolver):
             "v_residual": np.linalg.norm(self.arrays.R_v),
             "continuity_residual": np.linalg.norm(self.arrays.R_p),
         }
+
+    def _compute_vorticity_for_export(
+        self, U_2d: np.ndarray, V_2d: np.ndarray, x: np.ndarray, y: np.ndarray
+    ) -> np.ndarray:
+        """Compute vorticity using spectral differentiation.
+
+        Override base class to use spectral differentiation matrices
+        for higher accuracy.
+
+        Parameters
+        ----------
+        U_2d, V_2d : np.ndarray
+            2D velocity arrays (ny, nx) - note: different from internal (nx+1, ny+1)
+        x, y : np.ndarray
+            1D coordinate arrays
+
+        Returns
+        -------
+        np.ndarray
+            Vorticity field (ny, nx)
+        """
+        # Use internal spectral differentiation on the full grid arrays
+        # The fields are already finalized in self.arrays
+        dv_dx = self.Dx @ self.arrays.v
+        du_dy = self.Dy @ self.arrays.u
+        vorticity = dv_dx - du_dy
+
+        # Reshape to match the expected output (ny, nx) from VTK grid ordering
+        # Internal shape is (Nx+1, Ny+1), but VTK uses (Ny+1, Nx+1) ordering
+        vort_2d = vorticity.reshape(self.shape_full)  # (Nx+1, Ny+1)
+        return vort_2d.T  # Transpose to (Ny+1, Nx+1) for VTK
+
+    def _compute_vorticity(self) -> np.ndarray:
+        """Compute vorticity using spectral differentiation.
+
+        Override base class finite difference implementation.
+        """
+        dv_dx = self.Dx @ self.arrays.v
+        du_dy = self.Dy @ self.arrays.u
+        return dv_dx - du_dy
+
+    def _compute_gradient(self, field: np.ndarray) -> tuple:
+        """Compute gradient using spectral differentiation.
+
+        Override base class finite difference implementation.
+        """
+        df_dx = self.Dx @ field
+        df_dy = self.Dy @ field
+        return df_dx, df_dy
+
+    def _get_cell_area(self) -> float:
+        """Get integration weight for spectral method.
+
+        For Gauss-Lobatto quadrature, we should use the quadrature weights.
+        For now, use simple area approximation.
+        """
+        # TODO: Use proper Gauss-Lobatto quadrature weights
+        return self.dx_min * self.dy_min

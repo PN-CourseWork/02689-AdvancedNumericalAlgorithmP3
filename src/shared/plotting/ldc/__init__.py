@@ -2,7 +2,7 @@
 LDC Plotting Package - Modular structure for lid-driven cavity plots.
 
 This package provides:
-- Individual run plots (fields, streamlines, vorticity, centerlines, convergence)
+- Individual run plots (fields, streamlines, vorticity, convergence)
 - Comparison plots (Ghia benchmark comparisons)
 - MLflow integration for artifact management
 - High-level orchestration functions
@@ -40,7 +40,7 @@ from .orchestrator import (
 # Import style module to trigger sns.set_theme() on package import
 from . import style  # noqa: F401
 
-from .validation import plot_centerlines, plot_ghia_comparison
+from .validation import plot_ghia_comparison
 
 __all__ = [
     # High-level API (most commonly used)
@@ -51,7 +51,6 @@ __all__ = [
     "plot_fields",
     "plot_streamlines",
     "plot_vorticity",
-    "plot_centerlines",
     "plot_convergence",
     "plot_ghia_comparison",
     # MLflow utilities
