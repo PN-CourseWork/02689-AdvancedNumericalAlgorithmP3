@@ -1,0 +1,20 @@
+# @package _global_
+# Convergence test - Spectral solver with Saad regularization at Re=400
+# Sweep over N values with polynomial corner treatment
+
+defaults:
+  - override /solver: spectral/fsg
+
+# MLflow experiment
+experiment_name: LDC-Convergence
+sweep_name: regu-Re400
+
+# Use Saad/polynomial corner treatment for regularized problem
+solver:
+  corner_treatment: saad
+
+hydra:
+  sweeper:
+    params:
+      Re: 400
+      N: 24, 32, 40, 48, 56, 64
