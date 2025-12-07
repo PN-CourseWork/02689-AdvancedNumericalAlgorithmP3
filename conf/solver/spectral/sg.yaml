@@ -5,11 +5,11 @@ name: spectral
 
 # Solver control
 tolerance: 1.0e-6
-max_iterations: 30000  # Spectral methods converge slowly for high Re
+max_iterations: 100000  # Spectral methods converge slowly for high Re
 
 # Spectral-specific parameters
 basis_type: chebyshev    # "chebyshev" or "legendre"
-CFL: 0.5
+CFL: 0.8
 beta_squared: 5.0        # artificial compressibility parameter
 
 # Corner singularity treatment
