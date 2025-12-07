@@ -62,7 +62,7 @@ def get_command_for_index(experiment: str, combinations: list[dict], index: int)
     """Get the command for a specific job index (1-indexed)."""
     combo = combinations[index - 1]  # Convert to 0-indexed
     overrides = " ".join(f"{k}={v}" for k, v in combo.items())
-    return f"uv run python main.py +{experiment} {overrides} mlflow=coolify"
+    return f"uv run python main.py +{experiment} {overrides} mlflow=coolify hydra.mode=RUN"
 
 
 def main():
@@ -126,11 +126,12 @@ def main():
         overrides_parts.append(f'{k}=${{{bash_var}[$I]}}')
     overrides = " ".join(overrides_parts)
 
+    # Use hydra.mode=RUN to disable multirun (HPC job array handles the sweep)
     script = f"""#!/bin/bash
 mkdir -p logs
 {chr(10).join(array_defs)}
 I=$((LSB_JOBINDEX - 1))
-uv run python main.py +{experiment} {overrides} mlflow=coolify
+uv run python main.py +{experiment} {overrides} mlflow=coolify hydra.mode=RUN
 """
 
     bsub_cmd = [
