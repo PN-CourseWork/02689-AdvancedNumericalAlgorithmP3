@@ -343,25 +343,81 @@ class LidDrivenCavitySolver(ABC):
         return 0.5 * float(np.sum(omega * omega) * dA)
 
     def _compute_palinstrophy(self) -> float:
-        """Compute palinstrophy: P = ∫ (∂ω/∂x)² + (∂ω/∂y)² dA."""
+        """Compute palinstrophy: P = 0.5 * ∫ ||∇ω||² dA."""
         omega = self._compute_vorticity()
         domega_dx, domega_dy = self._compute_gradient(omega)
         dA = self._get_cell_area()
-        return float(np.sum(domega_dx**2 + domega_dy**2) * dA)
+        return 0.5 * float(np.sum(domega_dx**2 + domega_dy**2) * dA)
 
-    def _compute_gradient(self, field: np.ndarray) -> tuple:
-        """Compute gradient of scalar field using finite differences."""
+    def _compute_gradient(
+        self, field: np.ndarray, bc_walls: float = 0.0, bc_lid: float = None
+    ) -> tuple:
+        """Compute gradient of scalar field using finite differences.
+
+        Uses proper ghost cell values for Dirichlet BCs:
+        ghost = 2 * wall_value - interior_value
+
+        Parameters
+        ----------
+        field : np.ndarray
+            Scalar field values at cell centers
+        bc_walls : float
+            Dirichlet BC value at walls (bottom, left, right). Default 0.
+        bc_lid : float or None
+            Dirichlet BC value at top lid. If None, uses bc_walls.
+        """
+        if bc_lid is None:
+            bc_lid = bc_walls
+
         dx, dy = self.dx_min, self.dy_min
         shape = getattr(self, "shape_full", (self.params.nx, self.params.ny))
-        field_2d = np.pad(field.reshape(shape), 1, mode="edge")
-        df_dx = (field_2d[1:-1, 2:] - field_2d[1:-1, :-2]) / (2 * dx)
-        df_dy = (field_2d[2:, 1:-1] - field_2d[:-2, 1:-1]) / (2 * dy)
+        field_2d = field.reshape(shape)  # shape = (ny, nx)
+        ny, nx = shape
+
+        # Create padded array with proper ghost cell values for Dirichlet BCs
+        # Ghost value = 2 * BC_value - interior_value
+        field_padded = np.zeros((ny + 2, nx + 2), dtype=field.dtype)
+        field_padded[1:-1, 1:-1] = field_2d
+
+        # Bottom boundary (j=0 in original, row 0 in padded is ghost)
+        field_padded[0, 1:-1] = 2 * bc_walls - field_2d[0, :]
+
+        # Top boundary (j=ny-1 in original, row ny+1 in padded is ghost)
+        field_padded[-1, 1:-1] = 2 * bc_lid - field_2d[-1, :]
+
+        # Left boundary (i=0 in original, col 0 in padded is ghost)
+        field_padded[1:-1, 0] = 2 * bc_walls - field_2d[:, 0]
+
+        # Right boundary (i=nx-1 in original, col nx+1 in padded is ghost)
+        field_padded[1:-1, -1] = 2 * bc_walls - field_2d[:, -1]
+
+        # Corners (average of adjacent ghost values)
+        field_padded[0, 0] = 0.5 * (field_padded[0, 1] + field_padded[1, 0])
+        field_padded[0, -1] = 0.5 * (field_padded[0, -2] + field_padded[1, -1])
+        field_padded[-1, 0] = 0.5 * (field_padded[-1, 1] + field_padded[-2, 0])
+        field_padded[-1, -1] = 0.5 * (field_padded[-1, -2] + field_padded[-2, -1])
+
+        # Central differences
+        df_dx = (field_padded[1:-1, 2:] - field_padded[1:-1, :-2]) / (2 * dx)
+        df_dy = (field_padded[2:, 1:-1] - field_padded[:-2, 1:-1]) / (2 * dy)
         return df_dx.ravel(), df_dy.ravel()
 
     def _compute_vorticity(self) -> np.ndarray:
-        """Compute vorticity ω = ∂v/∂x - ∂u/∂y using finite differences."""
-        dv_dx, _ = self._compute_gradient(self.arrays.v)
-        _, du_dy = self._compute_gradient(self.arrays.u)
+        """Compute vorticity ω = ∂v/∂x - ∂u/∂y using finite differences.
+
+        Uses proper boundary conditions for lid-driven cavity:
+        - u: bc_walls=0, bc_lid=lid_velocity
+        - v: bc_walls=0, bc_lid=0
+        """
+        # Get lid velocity from params (default 1.0 for lid-driven cavity)
+        lid_velocity = getattr(self.params, "lid_velocity", 1.0)
+
+        # v has zero BC on all walls including lid
+        dv_dx, _ = self._compute_gradient(self.arrays.v, bc_walls=0.0, bc_lid=0.0)
+
+        # u has zero BC on walls, lid_velocity on top
+        _, du_dy = self._compute_gradient(self.arrays.u, bc_walls=0.0, bc_lid=lid_velocity)
+
         return dv_dx - du_dy
 
     def _get_cell_area(self) -> float:

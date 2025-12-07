@@ -6,7 +6,7 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Validation
-sweep_name: Hpc-baseline-data
+sweep_name: Hpc-baseline-fv
 
 hydra:
   sweeper:
