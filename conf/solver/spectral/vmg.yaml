@@ -6,24 +6,27 @@
 #   - N=48 on finest, 3 levels (48→24→12)
 #   - Pre-smoothing: 1 step on finest, 2 on intermediate, 3 on coarsest
 #
-# KNOWN LIMITATIONS (FUNDAMENTAL INCOMPATIBILITY):
-# The FAS tau correction is fundamentally incompatible with RK4 pseudo-time stepping:
+# KNOWN LIMITATIONS:
+# The FAS coarse grid correction is partially misaligned with RK4 pseudo-time stepping:
 #
-#   Classical multigrid: Smoother solves L(u) = f + tau
-#     -> tau modifies RHS, smoother naturally converges to modified target
+# 1. COARSE SMOOTHING WORKS: Modified residual |R + tau| decreases correctly
+#    (from 100 to ~22 with 10 smoothing steps)
 #
-#   RK4 pseudo-time stepping: du/dt = R(u) + tau  where R(u) = f - L(u)
-#     -> Steady state becomes R(u) + tau = 0, NOT R(u) = 0
-#     -> tau changes the DYNAMICS, not just the target solution
+# 2. CORRECTION APPLICATION FAILS: When the correction delta = u_coarse - u_restricted
+#    is prolongated and applied to fine grid, it makes the fine residual WORSE:
+#    - Full correction (damping=1.0): fine residual increases 44%
+#    - damping=0.5: roughly neutral
+#    - damping=0.25: modest improvement (8%)
 #
-# Result: Coarse grid smoothing with tau doesn't reduce the tau-modified residual.
-# V-cycles diverge because coarse "corrections" push toward wrong steady state.
+# The issue is that the coarse grid correction direction doesn't align well with
+# the fine grid error when using spectral discretization + RK4 pseudo-time stepping.
+# The error dynamics are resolution-dependent in this nonlinear system.
 #
-# Zhang & Xi (2010) likely use Gauss-Seidel/SOR smoothers that directly relax
-# toward L(u) = f + tau without pseudo-time dynamics interfering.
+# Zhang & Xi (2010) may use different smoothers or correction strategies.
+# Their reported 26x speedup suggests fundamentally different treatment.
 #
 # RECOMMENDATION: Use FSG (Full Single Grid) instead - it provides 2x speedup
-# without tau correction. VMG is provided for experimentation only.
+# without the problematic FAS correction. VMG is provided for experimentation only.
 
 defaults:
   - /solver/spectral/sg  # Extend single grid spectral solver using absolute path

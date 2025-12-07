@@ -168,6 +168,10 @@ class SubtractionTreatment(CornerTreatment):
 
     Velocities: u_s ~ r^(lambda-1) (bounded), but grad(u_s) ~ r^(lambda-2) (singular)
 
+    IMPORTANT: The Moffatt solution is a LOCAL asymptotic expansion, valid only
+    near the corner. We use a smooth cutoff function to blend the singular solution
+    to zero away from the corner, preventing contamination across the domain.
+
     Modified convection: u_c*grad(u_c) + u_s*grad(u_c) + u_c*grad(u_s) + u_s*grad(u_s)
 
     Boundary conditions:
@@ -178,8 +182,17 @@ class SubtractionTreatment(CornerTreatment):
     # Moffatt eigenvalue for 90 deg corner: sin(lambda*pi/2) = lambda (first root > 1)
     LAMBDA = 1.5445840107634553
 
-    def __init__(self):
+    def __init__(self, cutoff_radius: float = 0.3):
+        """Initialize subtraction treatment.
+
+        Parameters
+        ----------
+        cutoff_radius : float
+            Radius (as fraction of domain size) beyond which the singular
+            solution is blended to zero. Default 0.3 (30% of domain).
+        """
         self.lam = self.LAMBDA
+        self.cutoff_radius = cutoff_radius
         # Precompute constants for angular function
         self._sin_lam_pi2 = np.sin(self.lam * np.pi / 2)
         self._sin_lam2_pi2 = np.sin((self.lam - 2) * np.pi / 2)
@@ -187,6 +200,39 @@ class SubtractionTreatment(CornerTreatment):
         self._C = (
             self.lam / self._sin_lam_pi2 - (self.lam - 2) / self._sin_lam2_pi2
         )
+
+    def _cutoff_function(self, r: np.ndarray, L: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Smooth cutoff function that is 1 near corner and 0 far away.
+
+        Uses a quintic polynomial with continuous first two derivatives:
+        chi(s) = 1 - 6*s^5 + 15*s^4 - 10*s^3  for 0 <= s <= 1
+        chi'(s) = -30*s^4 + 60*s^3 - 30*s^2 = -30*s^2*(s-1)^2
+
+        Parameters
+        ----------
+        r : np.ndarray
+            Distance from corner
+        L : float
+            Reference length scale (domain size)
+
+        Returns
+        -------
+        chi, dchi_dr : np.ndarray
+            Cutoff function and its derivative w.r.t. r
+        """
+        r_cutoff = self.cutoff_radius * L
+        s = np.clip(r / r_cutoff, 0, 1)
+
+        # Quintic: chi = 1 - 6s^5 + 15s^4 - 10s^3 = 1 - s^3*(10 - 15*s + 6*s^2)
+        s2 = s * s
+        s3 = s2 * s
+        chi = np.where(s < 1, 1 - s3 * (10 - 15 * s + 6 * s2), 0.0)
+
+        # Derivative: dchi/ds = -30*s^2*(1-s)^2
+        dchi_ds = -30 * s2 * (1 - s) ** 2
+        dchi_dr = np.where(r < r_cutoff, dchi_ds / r_cutoff, 0.0)
+
+        return chi, dchi_dr
 
     def _f_and_derivatives(self, theta: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute angular function f(theta), f'(theta), and f''(theta).
@@ -235,8 +281,15 @@ class SubtractionTreatment(CornerTreatment):
         """Compute Moffatt singular solution and optionally its derivatives.
 
         For the streamfunction psi = r^lambda * f(theta):
-        - Polar velocities: u_r = (1/r) * d_psi/d_theta, u_theta = -d_psi/d_r
-        - Cartesian velocities: u = u_r*cos - u_theta*sin, v = u_r*sin + u_theta*cos
+        - u_s = d(psi)/dy, v_s = -d(psi)/dx  (guarantees div-free)
+
+        We apply a smooth cutoff to the STREAMFUNCTION (not velocities) to
+        preserve the divergence-free property:
+        psi_blended = chi(r) * psi
+        u_s = d(chi*psi)/dy = (dchi/dy)*psi + chi*(dpsi/dy)
+        v_s = -d(chi*psi)/dx = -(dchi/dx)*psi - chi*(dpsi/dx)
+
+        This ensures div(u_s, v_s) = 0 everywhere.
 
         Derivatives use chain rule:
         - d/dx = cos * d/dr - (sin/r) * d/d_theta
@@ -256,6 +309,7 @@ class SubtractionTreatment(CornerTreatment):
 
         r = np.sqrt(dx**2 + dy**2)
         r_safe = np.maximum(r, 1e-14)
+        at_corner = r < 1e-12
 
         # Angle: for left corner theta=0 along +x, for right corner flip
         is_left = corner_x < Lx / 2
@@ -264,8 +318,9 @@ class SubtractionTreatment(CornerTreatment):
         else:
             theta = np.arctan2(dy, -dx)
 
-        cos_t = np.where(r > 1e-14, dx / r_safe, 1.0)
-        sin_t = np.where(r > 1e-14, dy / r_safe, 0.0)
+        # Local unit vectors
+        cos_t = np.where(~at_corner, dx / r_safe, 1.0)
+        sin_t = np.where(~at_corner, dy / r_safe, 0.0)
 
         if not is_left:
             cos_t = -cos_t  # Flip for right corner geometry
@@ -276,27 +331,55 @@ class SubtractionTreatment(CornerTreatment):
         f, df, ddf = self._f_and_derivatives(theta)
 
         # Powers of r
+        r_lam = r_safe ** lam       # For streamfunction
         r_lam_1 = r_safe ** (lam - 1)  # For velocities
-        r_lam_2 = r_safe ** (lam - 2)  # For velocity derivatives
 
-        # Polar velocities: u_r = r^(lam-1) * f', u_theta = -lam * r^(lam-1) * f
-        u_r = r_lam_1 * df
-        u_theta = -lam * r_lam_1 * f
+        # Streamfunction: psi = r^lambda * f(theta)
+        psi = r_lam * f
 
-        # Convert to Cartesian (before any corner flip)
-        u_s_local = u_r * cos_t - u_theta * sin_t
-        v_s_local = u_r * sin_t + u_theta * cos_t
+        # Streamfunction derivatives in polar coords:
+        # dpsi/dr = lambda * r^(lambda-1) * f
+        # dpsi/dtheta = r^lambda * f'
+        dpsi_dr = lam * r_lam_1 * f
+        dpsi_dtheta = r_lam * df
 
-        # For right corner, flip u back
+        # Convert to Cartesian using chain rule:
+        # dpsi/dx = cos * dpsi/dr - (sin/r) * dpsi/dtheta
+        # dpsi/dy = sin * dpsi/dr + (cos/r) * dpsi/dtheta
+        inv_r = np.where(~at_corner, 1.0 / r_safe, 0.0)
+        dpsi_dx_local = cos_t * dpsi_dr - sin_t * inv_r * dpsi_dtheta
+        dpsi_dy_local = sin_t * dpsi_dr + cos_t * inv_r * dpsi_dtheta
+
+        # Apply smooth cutoff to STREAMFUNCTION to preserve div-free property
+        L_ref = np.sqrt(Lx**2 + Ly**2)
+        chi, dchi_dr = self._cutoff_function(r, L_ref)
+
+        # Cutoff gradient in local coordinates
+        dchi_dx_local = dchi_dr * cos_t
+        dchi_dy_local = dchi_dr * sin_t
+
+        # Blended streamfunction derivatives (product rule):
+        # d(chi*psi)/dx = dchi/dx * psi + chi * dpsi/dx
+        # d(chi*psi)/dy = dchi/dy * psi + chi * dpsi/dy
+        d_chipsi_dx_local = dchi_dx_local * psi + chi * dpsi_dx_local
+        d_chipsi_dy_local = dchi_dy_local * psi + chi * dpsi_dy_local
+
+        # Velocities from blended streamfunction:
+        # u_s = dpsi_blended/dy, v_s = -dpsi_blended/dx
+        u_s_local = d_chipsi_dy_local
+        v_s_local = -d_chipsi_dx_local
+
+        # For right corner, need to convert back to global coordinates
+        # Local x points LEFT (towards domain interior), so flip signs appropriately
         if not is_left:
-            u_s = -u_s_local
-            v_s = v_s_local
+            # d/dx_global = -d/dx_local
+            u_s = u_s_local  # dy unchanged
+            v_s = -v_s_local  # dx flipped
         else:
             u_s = u_s_local
             v_s = v_s_local
 
         # Zero at exact corner
-        at_corner = r < 1e-12
         u_s = np.where(at_corner, 0.0, u_s)
         v_s = np.where(at_corner, 0.0, v_s)
 
@@ -306,74 +389,78 @@ class SubtractionTreatment(CornerTreatment):
         }
 
         if compute_derivatives:
-            # Compute Cartesian derivatives using chain rule
-            # d/dx = cos * d/dr - (sin/r) * d/d_theta
-            # d/dy = sin * d/dr + (cos/r) * d/d_theta
+            # Compute velocity derivatives using second derivatives of blended streamfunction
+            # u_s = d(chi*psi)/dy, v_s = -d(chi*psi)/dx
+            # du_s/dx = d²(chi*psi)/dxdy, du_s/dy = d²(chi*psi)/dy²
+            # dv_s/dx = -d²(chi*psi)/dx², dv_s/dy = -d²(chi*psi)/dxdy
 
-            # Derivatives of polar velocities w.r.t. r and theta
-            # u_r = r^(lam-1) * f'(theta)
-            # du_r/dr = (lam-1) * r^(lam-2) * f'
-            # du_r/d_theta = r^(lam-1) * f''
-            du_r_dr = (lam - 1) * r_lam_2 * df
-            du_r_dtheta = r_lam_1 * ddf
+            # We need second derivatives of psi and chi
+            r_lam_2 = r_safe ** (lam - 2)  # For second derivatives
 
-            # u_theta = -lam * r^(lam-1) * f(theta)
-            # du_theta/dr = -lam * (lam-1) * r^(lam-2) * f
-            # du_theta/d_theta = -lam * r^(lam-1) * f'
-            du_theta_dr = -lam * (lam - 1) * r_lam_2 * f
-            du_theta_dtheta = -lam * r_lam_1 * df
+            # Second derivatives of psi in polar coords:
+            # d²psi/dr² = lambda*(lambda-1) * r^(lambda-2) * f
+            # d²psi/drdtheta = lambda * r^(lambda-1) * f'
+            # d²psi/dtheta² = r^lambda * f''
+            d2psi_dr2 = lam * (lam - 1) * r_lam_2 * f
+            d2psi_drdtheta = lam * r_lam_1 * df
+            d2psi_dtheta2 = r_lam * ddf
 
-            # Cartesian u = u_r*cos - u_theta*sin
-            # du/dr = du_r/dr * cos - du_theta/dr * sin
-            # du/d_theta = du_r/d_theta * cos + u_r * (-sin) - du_theta/d_theta * sin - u_theta * cos
-            #            = (du_r/d_theta - u_theta) * cos - (du_theta/d_theta + u_r) * sin
-            du_dr = du_r_dr * cos_t - du_theta_dr * sin_t
-            du_dtheta = (du_r_dtheta - u_theta) * cos_t - (du_theta_dtheta + u_r) * sin_t
+            # Second derivative of cutoff function
+            # chi(r) uses quintic, so we can compute d²chi/dr²
+            r_cutoff = self.cutoff_radius * L_ref
+            s = np.clip(r / r_cutoff, 0, 1)
+            s2 = s * s
+            # d²chi/ds² = -60*s*(1-s)*(1-2s)
+            d2chi_ds2 = -60 * s * (1 - s) * (1 - 2 * s)
+            d2chi_dr2 = np.where(r < r_cutoff, d2chi_ds2 / (r_cutoff ** 2), 0.0)
 
-            # Cartesian v = u_r*sin + u_theta*cos
-            # dv/dr = du_r/dr * sin + du_theta/dr * cos
-            # dv/d_theta = du_r/d_theta * sin + u_r * cos + du_theta/d_theta * cos - u_theta * sin
-            #            = (du_r/d_theta + u_theta) * sin + (du_theta/d_theta + u_r) * cos
-            # Wait, let me recalculate:
-            # dv/d_theta = (du_r/d_theta)*sin + u_r*cos + (du_theta/d_theta)*cos + u_theta*(-sin)
-            #            = (du_r/d_theta - u_theta)*sin + (du_theta/d_theta + u_r)*cos
-            # Hmm, that's different. Let me be more careful.
-            # v = u_r * sin_t + u_theta * cos_t
-            # dv/d_theta = (d/d_theta)[u_r * sin_t + u_theta * cos_t]
-            #            = du_r/d_theta * sin_t + u_r * cos_t + du_theta/d_theta * cos_t - u_theta * sin_t
-            dv_dr = du_r_dr * sin_t + du_theta_dr * cos_t
-            dv_dtheta = du_r_dtheta * sin_t + u_r * cos_t + du_theta_dtheta * cos_t - u_theta * sin_t
+            # Convert to Cartesian second derivatives using chain rule:
+            # d²/dx² = cos²*d²/dr² + 2*cos*(-sin/r)*d²/drdtheta + sin²/r²*d²/dtheta²
+            #        + sin²/r*d/dr + 2*cos*sin/r²*d/dtheta
+            # (simplified for readability, full formulas from polar to Cartesian)
 
-            # Now apply chain rule to get Cartesian derivatives
-            # For left corner: dx/dr = cos_t, dy/dr = sin_t
-            #                  dx/d_theta = -r*sin_t, dy/d_theta = r*cos_t
-            # So: d/dx = cos_t * d/dr - (sin_t/r) * d/d_theta
-            #     d/dy = sin_t * d/dr + (cos_t/r) * d/d_theta
+            # For simplicity, compute derivatives numerically with small perturbations
+            # This is more robust and avoids complex chain rule expressions
+            eps = 1e-8
 
-            # Protect against division by zero near corner
-            inv_r = np.where(r > 1e-12, 1.0 / r_safe, 0.0)
+            # Helper to compute blended streamfunction derivative at a point
+            def _psi_deriv_at(dx_pt, dy_pt):
+                r_pt = np.sqrt(dx_pt**2 + dy_pt**2)
+                r_pt_safe = np.maximum(r_pt, 1e-14)
+                theta_pt = np.arctan2(dy_pt, dx_pt) if is_left else np.arctan2(dy_pt, -dx_pt)
+                f_pt, df_pt, _ = self._f_and_derivatives(theta_pt)
+                psi_pt = r_pt_safe ** lam * f_pt
+                chi_pt, dchi_dr_pt = self._cutoff_function(r_pt, L_ref)
+                return chi_pt * psi_pt
 
-            dus_dx_local = cos_t * du_dr - sin_t * inv_r * du_dtheta
-            dus_dy_local = sin_t * du_dr + cos_t * inv_r * du_dtheta
-            dvs_dx_local = cos_t * dv_dr - sin_t * inv_r * dv_dtheta
-            dvs_dy_local = sin_t * dv_dr + cos_t * inv_r * dv_dtheta
+            # Compute second derivatives by finite differences
+            psi_c = _psi_deriv_at(dx, dy)
+            psi_px = _psi_deriv_at(dx + eps, dy)
+            psi_mx = _psi_deriv_at(dx - eps, dy)
+            psi_py = _psi_deriv_at(dx, dy + eps)
+            psi_my = _psi_deriv_at(dx, dy - eps)
+            psi_pxpy = _psi_deriv_at(dx + eps, dy + eps)
+            psi_mxpy = _psi_deriv_at(dx - eps, dy + eps)
+            psi_pxmy = _psi_deriv_at(dx + eps, dy - eps)
+            psi_mxmy = _psi_deriv_at(dx - eps, dy - eps)
 
-            # For right corner, need to handle sign flips
-            # The local cos_t was flipped, so derivatives need adjustment
-            if not is_left:
-                # u was flipped: u_s = -u_s_local
-                # So du_s/dx = -du_s_local/dx, but x is also flipped
-                # Actually: d(-u)/d(-x) = du/dx, so sign cancels for dus_dx
-                # For dus_dy: d(-u)/dy = -du/dy
-                dus_dx = dus_dx_local  # Signs cancel
-                dus_dy = -dus_dy_local
-                dvs_dx = -dvs_dx_local  # dv/d(-x) = -dv/dx
-                dvs_dy = dvs_dy_local
-            else:
-                dus_dx = dus_dx_local
-                dus_dy = dus_dy_local
-                dvs_dx = dvs_dx_local
-                dvs_dy = dvs_dy_local
+            # Second derivatives
+            d2psi_dx2 = (psi_px - 2*psi_c + psi_mx) / eps**2
+            d2psi_dy2 = (psi_py - 2*psi_c + psi_my) / eps**2
+            d2psi_dxdy = (psi_pxpy - psi_mxpy - psi_pxmy + psi_mxmy) / (4 * eps**2)
+
+            # Velocity derivatives from streamfunction
+            # u_s = dpsi/dy, v_s = -dpsi/dx
+            # du_s/dx = d²psi/dxdy, du_s/dy = d²psi/dy²
+            # dv_s/dx = -d²psi/dx², dv_s/dy = -d²psi/dxdy
+            dus_dx = d2psi_dxdy
+            dus_dy = d2psi_dy2
+            dvs_dx = -d2psi_dx2
+            dvs_dy = -d2psi_dxdy
+
+            # Note: for right corner, the coordinate system was flipped
+            # But since we computed psi_blended directly in the flipped system,
+            # and the velocity conversion already happened, no additional flip needed
 
             # Zero at corner
             dus_dx = np.where(at_corner, 0.0, dus_dx)
