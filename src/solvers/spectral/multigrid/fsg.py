@@ -447,6 +447,11 @@ def restrict_residual(
 
     Uses FFT-based restriction for residuals (spectral truncation).
 
+    Per Zhang & Xi (2010), Section 3.3:
+    "In the PN − PN−2 method, the boundary values are already known for
+    velocities and unnecessary for pressure, so the residuals and corrections
+    on the boundary points are all set to zero."
+
     Parameters
     ----------
     level_fine : SpectralLevel
@@ -457,8 +462,24 @@ def restrict_residual(
         Configured transfer operators
     """
     # Restrict momentum residuals (full grid)
-    R_u_fine_2d = level_fine.R_u.reshape(level_fine.shape_full)
-    R_v_fine_2d = level_fine.R_v.reshape(level_fine.shape_full)
+    # Per paper Section 3.3: Use FFT-based restriction with high-frequency truncation
+    #
+    # IMPORTANT: Zero FINE grid boundaries BEFORE restriction!
+    # The residuals at boundary nodes are garbage (BCs are enforced separately).
+    # If we don't zero them before FFT restriction, they pollute interior values
+    # through spectral truncation.
+    R_u_fine_2d = level_fine.R_u.reshape(level_fine.shape_full).copy()
+    R_v_fine_2d = level_fine.R_v.reshape(level_fine.shape_full).copy()
+
+    # Zero fine grid boundaries BEFORE restriction
+    R_u_fine_2d[0, :] = 0.0
+    R_u_fine_2d[-1, :] = 0.0
+    R_u_fine_2d[:, 0] = 0.0
+    R_u_fine_2d[:, -1] = 0.0
+    R_v_fine_2d[0, :] = 0.0
+    R_v_fine_2d[-1, :] = 0.0
+    R_v_fine_2d[:, 0] = 0.0
+    R_v_fine_2d[:, -1] = 0.0
 
     R_u_coarse_2d = transfer_ops.restriction.restrict_2d(
         R_u_fine_2d, level_coarse.shape_full
@@ -467,10 +488,21 @@ def restrict_residual(
         R_v_fine_2d, level_coarse.shape_full
     )
 
+    # Also zero coarse grid boundaries after restriction (belt and suspenders)
+    # "residuals and corrections on the boundary points are all set to zero"
+    R_u_coarse_2d[0, :] = 0.0
+    R_u_coarse_2d[-1, :] = 0.0
+    R_u_coarse_2d[:, 0] = 0.0
+    R_u_coarse_2d[:, -1] = 0.0
+    R_v_coarse_2d[0, :] = 0.0
+    R_v_coarse_2d[-1, :] = 0.0
+    R_v_coarse_2d[:, 0] = 0.0
+    R_v_coarse_2d[:, -1] = 0.0
+
     level_coarse.R_u[:] = R_u_coarse_2d.ravel()
     level_coarse.R_v[:] = R_v_coarse_2d.ravel()
 
-    # Restrict continuity residual (inner grid)
+    # Restrict continuity residual (inner grid - already excludes boundaries)
     R_p_fine_2d = level_fine.R_p.reshape(level_fine.shape_inner)
     R_p_coarse_2d = transfer_ops.restriction.restrict_2d(
         R_p_fine_2d, level_coarse.shape_inner
@@ -1001,7 +1033,8 @@ def solve_vmg(
     Ly: float = 1.0,
     pre_smoothing: List[int] = None,
     post_smoothing: List[int] = None,
-    correction_damping: float = 0.2,
+    correction_damping: float = 0.5,
+    cfl_per_level: List[float] = None,
 ) -> Tuple[SpectralLevel, int, bool]:
     """Solve using V-cycle Multigrid (VMG) with FAS scheme.
 
@@ -1022,7 +1055,7 @@ def solve_vmg(
     levels : List[SpectralLevel]
         Grid hierarchy (index 0 = coarsest, index -1 = finest)
     Re, beta_squared, lid_velocity, CFL : float
-        Solver parameters
+        Solver parameters. CFL is used for finest level if cfl_per_level not provided.
     tolerance : float
         Convergence tolerance on finest level
     max_iterations : int
@@ -1038,6 +1071,13 @@ def solve_vmg(
         Default: [3, 2, 1] for 3 levels
     post_smoothing : List[int], optional
         Postsmoothing iterations per level. Default: [0, 0, 0] (none)
+    correction_damping : float, optional
+        Damping factor for coarse grid correction (0-1). Default: 0.5
+        Higher values give faster convergence but may cause instability.
+    cfl_per_level : List[float], optional
+        CFL number per level (coarse to fine order). If not provided,
+        uses CFL on finest and reduces by factor of 2 for each coarser level.
+        This improves stability on coarse grids.
 
     Returns
     -------
@@ -1064,7 +1104,19 @@ def solve_vmg(
     if post_smoothing is None:
         post_smoothing = [0] * n_levels  # No postsmoothing by default
 
-    log.info(f"VMG: {n_levels} levels, pre_smoothing={pre_smoothing}, post_smoothing={post_smoothing}")
+    # Level-specific CFL: use provided values or scale down for coarser levels
+    # This improves stability on coarse grids (paper says CFL=2.5 for N>=12,
+    # but we found the FAS tau correction can cause instability on coarse grids)
+    if cfl_per_level is None:
+        # Default: CFL on finest, halve for each coarser level
+        cfl_per_level = []
+        cfl_value = CFL
+        for _ in range(n_levels):
+            cfl_per_level.insert(0, cfl_value)
+            cfl_value = max(cfl_value * 0.5, 0.25)  # Don't go below 0.25
+
+    log.info(f"VMG: {n_levels} levels, pre_smoothing={pre_smoothing}, "
+             f"post_smoothing={post_smoothing}, cfl_per_level={cfl_per_level}")
 
     # Handle subtraction method on coarse levels
     uses_subtraction = corner_treatment.uses_modified_convection()
@@ -1075,7 +1127,7 @@ def solve_vmg(
         smoothing_treatment = None
         min_n_for_subtraction = 0
 
-    # Create smoothers for each level
+    # Create smoothers for each level with level-specific CFL
     smoothers = []
     for level_idx, level in enumerate(levels):
         # Select corner treatment for this level
@@ -1084,12 +1136,15 @@ def solve_vmg(
         else:
             level_corner_treatment = corner_treatment
 
+        # Use level-specific CFL
+        level_cfl = cfl_per_level[level_idx]
+
         smoother = MultigridSmoother(
             level=level,
             Re=Re,
             beta_squared=beta_squared,
             lid_velocity=lid_velocity,
-            CFL=CFL,
+            CFL=level_cfl,
             corner_treatment=level_corner_treatment,
             Lx=Lx,
             Ly=Ly,
@@ -1181,6 +1236,19 @@ def solve_vmg(
             tau_v = I_R_v - coarse_level.R_v
             tau_p = I_R_p - coarse_level.R_p
 
+            # Per paper: "residuals and corrections on the boundary points are all set to zero"
+            # Zero out tau at boundaries for momentum equations
+            tau_u_2d = tau_u.reshape(coarse_level.shape_full)
+            tau_v_2d = tau_v.reshape(coarse_level.shape_full)
+            tau_u_2d[0, :] = 0.0
+            tau_u_2d[-1, :] = 0.0
+            tau_u_2d[:, 0] = 0.0
+            tau_u_2d[:, -1] = 0.0
+            tau_v_2d[0, :] = 0.0
+            tau_v_2d[-1, :] = 0.0
+            tau_v_2d[:, 0] = 0.0
+            tau_v_2d[:, -1] = 0.0
+
             # Set tau correction on coarse smoother
             coarse_smoother.set_tau_correction(tau_u, tau_v, tau_p)
 
@@ -1206,19 +1274,44 @@ def solve_vmg(
                 )
 
             # Prolongate correction to fine level
-            delta_u_2d = delta_u.reshape(coarse_level.shape_full)
-            delta_v_2d = delta_v.reshape(coarse_level.shape_full)
+            # Per paper: "corrections on the boundary points are all set to zero"
+            # Zero out boundary corrections on coarse grid before prolongation
+            delta_u_2d = delta_u.reshape(coarse_level.shape_full).copy()
+            delta_v_2d = delta_v.reshape(coarse_level.shape_full).copy()
             delta_p_2d = delta_p.reshape(coarse_level.shape_inner)
 
-            delta_u_fine = transfer_ops.prolongation.prolongate_2d(
+            # Zero out boundary corrections before prolongation
+            delta_u_2d[0, :] = 0.0
+            delta_u_2d[-1, :] = 0.0
+            delta_u_2d[:, 0] = 0.0
+            delta_u_2d[:, -1] = 0.0
+            delta_v_2d[0, :] = 0.0
+            delta_v_2d[-1, :] = 0.0
+            delta_v_2d[:, 0] = 0.0
+            delta_v_2d[:, -1] = 0.0
+
+            delta_u_fine_2d = transfer_ops.prolongation.prolongate_2d(
                 delta_u_2d, level.shape_full
-            ).ravel()
-            delta_v_fine = transfer_ops.prolongation.prolongate_2d(
+            )
+            delta_v_fine_2d = transfer_ops.prolongation.prolongate_2d(
                 delta_v_2d, level.shape_full
-            ).ravel()
+            )
             delta_p_fine = transfer_ops.prolongation.prolongate_2d(
                 delta_p_2d, level.shape_inner
             ).ravel()
+
+            # Zero out boundary corrections on fine grid after prolongation
+            delta_u_fine_2d[0, :] = 0.0
+            delta_u_fine_2d[-1, :] = 0.0
+            delta_u_fine_2d[:, 0] = 0.0
+            delta_u_fine_2d[:, -1] = 0.0
+            delta_v_fine_2d[0, :] = 0.0
+            delta_v_fine_2d[-1, :] = 0.0
+            delta_v_fine_2d[:, 0] = 0.0
+            delta_v_fine_2d[:, -1] = 0.0
+
+            delta_u_fine = delta_u_fine_2d.ravel()
+            delta_v_fine = delta_v_fine_2d.ravel()
 
             # Damping from parameter (0 = no correction, 1 = full correction)
             # With proper FAS tau correction, use full correction (1.0)

@@ -241,12 +241,13 @@ class FFTProlongation(Prolongation):
 class FFTRestriction(Restriction):
     """FFT/DCT-based restriction operator.
 
-    From Zhang & Xi (2010):
+    From Zhang & Xi (2010), Section 3.3:
     1. Compute discrete Chebyshev coefficients via DCT-I
-    2. Truncate high-frequency coefficients
-    3. Evaluate on coarse grid
+    2. **Truncate high-frequency coefficients** (set to zero)
+    3. Evaluate on coarse grid using only low-frequency coefficients
 
     This is used for restricting residuals in V-cycle multigrid.
+    The truncation prevents aliasing and maintains stability.
 
     The key relationship is:
         c_k = DCT-I(f) / N
@@ -257,6 +258,10 @@ class FFTRestriction(Restriction):
 
     def restrict_1d(self, u_fine: np.ndarray, n_coarse: int) -> np.ndarray:
         """Restrict using DCT-based spectral truncation.
+
+        From the paper: "Afterwards we set the coefficients belonging to
+        the high frequencies to zero and compute the residuals on the
+        coarse grid collocation points."
 
         Parameters
         ----------
@@ -285,10 +290,11 @@ class FFTRestriction(Restriction):
         N_f = n_fine - 1
         coeffs = dct(u_fine, type=1) / N_f
 
-        # Step 2: Evaluate polynomial at coarse grid points using ALL coefficients
+        # Step 2: Evaluate polynomial at coarse grid points using TRUNCATED coefficients
+        # Per Zhang & Xi (2010): "set the coefficients belonging to the high
+        # frequencies to zero" - only use first N_c + 1 coefficients
         # The Chebyshev series uses primed notation:
-        #   f(x) = c_0/2 + sum_{k=1}^{N-1} c_k * T_k(x) + c_N/2 * T_N(x)
-        # where N is the fine grid polynomial degree (n_fine - 1)
+        #   f(x) = c_0/2 + sum_{k=1}^{N_c-1} c_k * T_k(x) + c_{N_c}/2 * T_{N_c}(x)
         N_c = n_coarse - 1
         u_coarse = np.zeros(n_coarse)
 
@@ -296,11 +302,11 @@ class FFTRestriction(Restriction):
             theta = np.pi * i / N_c
             # First coefficient halved
             u_coarse[i] = coeffs[0] / 2
-            # Interior coefficients (all of them)
-            for k in range(1, N_f):
+            # Interior coefficients (only up to N_c - 1, TRUNCATING high frequencies)
+            for k in range(1, N_c):
                 u_coarse[i] += coeffs[k] * np.cos(k * theta)
-            # Last coefficient of ORIGINAL series halved
-            u_coarse[i] += coeffs[N_f] / 2 * np.cos(N_f * theta)
+            # Last TRUNCATED coefficient halved
+            u_coarse[i] += coeffs[N_c] / 2 * np.cos(N_c * theta)
 
         return u_coarse
 

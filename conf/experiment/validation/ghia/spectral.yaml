@@ -17,6 +17,6 @@ hydra:
   sweeper:
     params:
       # Sweep over spectral solver types
-      solver: spectral/sg, spectral/fsg
+      solver: spectral/sg, spectral/fsg #, spectral/vmg
       Re: 100
       N: 17

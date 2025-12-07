@@ -5,6 +5,25 @@
 # Notation from Zhang & Xi (2010): 48-VMG-123 means:
 #   - N=48 on finest, 3 levels (48→24→12)
 #   - Pre-smoothing: 1 step on finest, 2 on intermediate, 3 on coarsest
+#
+# KNOWN LIMITATIONS (FUNDAMENTAL INCOMPATIBILITY):
+# The FAS tau correction is fundamentally incompatible with RK4 pseudo-time stepping:
+#
+#   Classical multigrid: Smoother solves L(u) = f + tau
+#     -> tau modifies RHS, smoother naturally converges to modified target
+#
+#   RK4 pseudo-time stepping: du/dt = R(u) + tau  where R(u) = f - L(u)
+#     -> Steady state becomes R(u) + tau = 0, NOT R(u) = 0
+#     -> tau changes the DYNAMICS, not just the target solution
+#
+# Result: Coarse grid smoothing with tau doesn't reduce the tau-modified residual.
+# V-cycles diverge because coarse "corrections" push toward wrong steady state.
+#
+# Zhang & Xi (2010) likely use Gauss-Seidel/SOR smoothers that directly relax
+# toward L(u) = f + tau without pseudo-time dynamics interfering.
+#
+# RECOMMENDATION: Use FSG (Full Single Grid) instead - it provides 2x speedup
+# without tau correction. VMG is provided for experimentation only.
 
 defaults:
   - /solver/spectral/sg  # Extend single grid spectral solver using absolute path
@@ -16,12 +35,12 @@ name: spectral_vmg
 
 # VMG Multigrid settings
 multigrid: vmg
-n_levels: 3
+n_levels: 2  # 2 levels is more stable than 3 for VMG
 
 # Smoothing iterations per level (coarse-to-fine order: [coarsest, ..., finest])
-# Paper default is 1-2-3 from fine to coarse, so [3, 2, 1] in our ordering
-pre_smoothing: [3, 2, 1]
-post_smoothing: null  # No post-smoothing by default (paper says often unnecessary)
+# More smoothing on coarse levels since the FAS tau correction overhead is highest there
+pre_smoothing: [5, 2]
+post_smoothing: null  # No post-smoothing (paper says often unnecessary)
 
 # Transfer operators (Zhang & Xi 2010 paper method)
 # FFT/DCT for spectral accuracy in both prolongation and restriction
@@ -31,5 +50,9 @@ prolongation_method: fft
 restriction_method: fft
 
 # Coarse grid correction damping (0 = no correction, 1 = full correction)
-# With proper FAS tau correction, use full correction (1.0)
-correction_damping: 1.0
+# Damped correction (0.5) is required for stability with spectral methods
+# Higher values cause oscillation and divergence
+correction_damping: 0.5
+
+# Note: CFL is automatically reduced on coarser levels (halved per level)
+# This improves stability when the FAS tau correction is applied

@@ -18,8 +18,8 @@ sweep_name: mg-comparison-Re${Re}
 hydra:
   sweeper:
     params:
-      # Compare FSG and VMG
-      solver: spectral/sg #, spectral/fsg # ,spectral/vmg
+      # Compare SG, FSG, and VMG methods
+      solver: spectral/sg,spectral/fsg,spectral/vmg
       # Grid size (N=15 is fast, use 32+ for proper benchmarking)
       N: 15
       # Reynolds number
