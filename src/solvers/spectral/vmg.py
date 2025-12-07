@@ -330,7 +330,9 @@ class VMGSolver(SGSolver):
     ----------
     All parameters inherited from SGSolver, plus:
         n_levels : int
-            Number of multigrid levels (default 3)
+            Maximum number of multigrid levels (default 10, limited by coarsest_n)
+        coarsest_n : int
+            Minimum N for coarsest grid (default 12). Coarse grids must resolve physics.
         pre_smooth : int
             Pre-smoothing steps per level (default 2)
         post_smooth : int
@@ -353,10 +355,14 @@ class VMGSolver(SGSolver):
             restriction_method=self.params.restriction_method,
         )
 
-        # Build grid hierarchy
+        # Get coarsest_n from params (default 12)
+        coarsest_n = getattr(self.params, 'coarsest_n', 12)
+
+        # Build grid hierarchy (n_levels is max, limited by coarsest_n)
         self._levels = build_hierarchy(
             n_fine=self.params.nx,
             n_levels=self.params.n_levels,
+            coarsest_n=coarsest_n,
             basis_x=self.basis_x,
             basis_y=self.basis_y,
             Lx=self.params.Lx,

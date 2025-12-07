@@ -16,13 +16,14 @@ name: spectral_vmg
 
 # VMG Multigrid settings
 multigrid: vmg
-n_levels: 3
+n_levels: 10           # Max levels (actual levels limited by coarsest_n)
+coarsest_n: 12         # Minimum N for coarsest grid (must resolve physics)
 
 # Transfer operators
 prolongation_method: fft
 restriction_method: fft
 
 # V-cycle parameters (tested optimal values)
-pre_smooth: 2    # Pre-smoothing steps per level
-post_smooth: 2   # Post-smoothing steps per level
-damping: 0.5     # Damping factor for coarse grid correction
+pre_smooth: 5    # Pre-smoothing steps per level
+post_smooth: 5   # Post-smoothing steps per level
+damping: 0.5    # Damping factor for coarse grid correction

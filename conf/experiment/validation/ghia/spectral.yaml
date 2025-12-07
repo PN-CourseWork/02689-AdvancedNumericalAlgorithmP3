@@ -17,8 +17,8 @@ hydra:
   sweeper:
     params:
       # Sweep over spectral solver types
-      solver: spectral/sg, spectral/fsg, spectral/vmg
+      solver: spectral/vmg ,spectral/fsg #, #spectral/sg
       Re: 100
-      N: 19
+      N: 21
       # Sweep over corner treatments
       solver.corner_treatment: smoothing #regularized #smoothing, regularized

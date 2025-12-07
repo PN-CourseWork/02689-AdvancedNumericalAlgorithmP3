@@ -261,6 +261,7 @@ class SpectralParameters(Parameters):
     pre_smooth: int = 2      # Pre-smoothing steps per level
     post_smooth: int = 2     # Post-smoothing steps per level
     damping: float = 0.5     # Damping factor for coarse grid correction
+    coarsest_n: int = 12     # Minimum N for coarsest grid (must resolve physics)
 
 
 @dataclass

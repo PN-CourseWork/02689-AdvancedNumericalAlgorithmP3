@@ -295,6 +295,7 @@ def build_hierarchy(
     basis_y,
     Lx: float = 1.0,
     Ly: float = 1.0,
+    coarsest_n: int = 12,
 ) -> List[SpectralLevel]:
     """Build multigrid hierarchy from fine to coarse.
 
@@ -303,9 +304,14 @@ def build_hierarchy(
     n_fine : int
         Polynomial order on finest grid
     n_levels : int
-        Number of multigrid levels
+        Maximum number of multigrid levels (may use fewer if coarsest_n limit reached)
     basis_x, basis_y : Basis objects
         Spectral basis objects
+    Lx, Ly : float
+        Domain dimensions
+    coarsest_n : int
+        Minimum polynomial order for coarsest grid (default 12).
+        Coarse grids need sufficient resolution to capture physics.
 
     Returns
     -------
@@ -313,13 +319,15 @@ def build_hierarchy(
         List of levels, index 0 = coarsest, index -1 = finest
     """
     # Compute polynomial orders for each level (full coarsening: N/2)
+    # Stop when next coarsening would go below coarsest_n
     orders = []
     n = n_fine
     for _ in range(n_levels):
         orders.append(n)
-        n = n // 2
-        if n < 3:  # Minimum usable grid
+        n_next = n // 2
+        if n_next < coarsest_n:
             break
+        n = n_next
 
     # Reverse so coarsest is first
     orders = orders[::-1]
