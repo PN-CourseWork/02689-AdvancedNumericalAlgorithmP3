@@ -12,14 +12,14 @@ defaults:
   - machine: local
   - _self_
 
-# Grid size (must be set by experiment or command line)
+# Grid size
 N: 32
 
-# Solver control (taken from solver config)
-tolerance: ${solver.tolerance}
-max_iterations: ${solver.max_iterations}
+# Solver control
+tolerance: 1.0e-6
+max_iterations: 10000
 
-# Default experiment name (typically overridden by experiment config)
+# Experiment naming
 experiment_name: LDC-Dev
 sweep_name: dev-run
 
@@ -30,7 +30,6 @@ plot_only: false
 # Hydra output paths and callbacks
 # =============================================================================
 hydra:
-  # Always use multirun mode by default
   mode: MULTIRUN
   run:
     dir: hydra_outputs/runs/${now:%d-%m-%y}/${now:%H:%M:%S}

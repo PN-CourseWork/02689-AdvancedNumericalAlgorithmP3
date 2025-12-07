@@ -1,107 +1,127 @@
-Experiment Configuration
-========================
+Configuration
+=============
 
 This guide explains the Hydra configuration system used for experiment management.
 
-Configuration Hierarchy
+Configuration Structure
 -----------------------
-
-The configuration system uses a hierarchical structure where settings can be
-defined at multiple levels and overridden as needed:
 
 .. code-block:: text
 
    conf/
-   ├── config.yaml          # Base configuration (defaults)
+   ├── config.yaml              # Main config (defaults, grid size, tolerance)
+   ├── problem/
+   │   └── ldc.yaml             # Physics (Re, lid velocity, domain size)
    ├── solver/
-   │   ├── fv.yaml          # Finite Volume solver settings
-   │   └── spectral.yaml    # Spectral solver settings
+   │   ├── fv.yaml              # Finite Volume solver
+   │   └── spectral/            # Spectral solver variants
+   │       ├── sg.yaml          # Single Grid
+   │       ├── fsg.yaml         # Full Single Grid MG
+   │       ├── vmg.yaml         # V-cycle MultiGrid
+   │       └── fmg.yaml         # Full MultiGrid
    ├── experiment/
-   │   ├── quick_test.yaml      # Fast debugging
-   │   ├── sweep_test.yaml      # Sweep testing
-   │   ├── fv_validation.yaml   # FV benchmark
-   │   └── spectral_validation.yaml
-   ├── mlflow/
-   │   ├── local.yaml       # Local file tracking
-   │   └── coolify.yaml     # Remote server
-   └── hydra/
-       └── launcher/
-           └── joblib.yaml  # Parallel execution
+   │   ├── validation/ghia/     # Ghia benchmark validation
+   │   │   ├── fv.yaml
+   │   │   └── spectral.yaml
+   │   └── benchmarking/
+   │       └── timings.yaml
+   ├── machine/
+   │   ├── local.yaml           # Local machine settings
+   │   └── hpc.yaml             # DTU HPC cluster
+   └── mlflow/
+       ├── local.yaml           # File-based tracking (default)
+       └── coolify.yaml         # Remote server
 
 Base Configuration
 ------------------
 
-The main ``config.yaml`` defines default values for all parameters:
+The main ``config.yaml`` defines defaults and grid parameters:
 
 .. code-block:: yaml
 
    # conf/config.yaml
    defaults:
+     - problem: ldc
      - solver: fv
      - mlflow: local
+     - machine: local
      - _self_
 
-   # Grid and physics
-   N: 32                    # Grid size (cells for FV, polynomial order for spectral)
-   Re: 100                  # Reynolds number
-   lid_velocity: 1.0        # Lid velocity
-   Lx: 1.0                  # Domain width
-   Ly: 1.0                  # Domain height
-
-   # Solver control
+   N: 32                    # Grid size
    tolerance: 1.0e-6        # Convergence tolerance
-   max_iterations: 500      # Maximum iterations
+   max_iterations: 10000    # Maximum iterations
 
-   # Experiment tracking
-   experiment_name: LDC-Solver
-   sweep_name: sweep        # Parent run name for multirun sweeps
+   experiment_name: LDC-Dev
+   sweep_name: dev-run
+   plot_only: false         # Set true to regenerate plots without solving
+
+Problem Configuration
+---------------------
+
+Physics parameters are defined in ``conf/problem/ldc.yaml``:
+
+.. code-block:: yaml
+
+   # @package _global_
+   Re: 100              # Reynolds number
+   lid_velocity: 1.0    # Velocity of moving lid
+   Lx: 1.0              # Domain width
+   Ly: 1.0              # Domain height
 
 Solver Configurations
 ---------------------
 
-Each solver has its own configuration file with solver-specific parameters.
+Solvers use Hydra interpolation (``${...}``) to inherit parameters from the root config.
 
 **Finite Volume** (``conf/solver/fv.yaml``):
 
 .. code-block:: yaml
 
+   # @package solver
+   _target_: solvers.fv.solver.FVSolver
    name: fv
-   convection_scheme: upwind    # upwind, central, quick
-   limiter: none                # none, minmod, vanLeer
-   alpha_uv: 0.7                # Velocity under-relaxation
-   alpha_p: 0.3                 # Pressure under-relaxation
-   linear_solver_tol: 1.0e-6    # PETSc solver tolerance
 
-**Spectral** (``conf/solver/spectral.yaml``):
+   # Interpolated from root config
+   Re: ${Re}
+   nx: ${N}
+   ny: ${N}
+   tolerance: ${tolerance}
+
+   # FV-specific parameters
+   convection_scheme: TVD    # TVD or upwind
+   limiter: MUSCL            # MUSCL, minmod, vanLeer
+   alpha_uv: 0.6             # Velocity under-relaxation
+   alpha_p: 0.4              # Pressure under-relaxation
+
+**Spectral Single Grid** (``conf/solver/spectral/sg.yaml``):
 
 .. code-block:: yaml
 
+   # @package solver
+   _target_: solvers.spectral.sg.SGSolver
    name: spectral
-   basis_type: chebyshev-gauss-lobatto  # Basis functions
-   CFL: 0.5                             # CFL number for time stepping
-   beta_squared: 1.0                    # Artificial compressibility
-   corner_smoothing: true               # Smooth corner singularities
+
+   Re: ${Re}
+   nx: ${N}
+   ny: ${N}
+
+   # Spectral-specific parameters
+   basis_type: chebyshev     # chebyshev or legendre
+   CFL: 0.5
+   beta_squared: 5.0         # Artificial compressibility
+
+   # Corner singularity treatment
+   corner_treatment: smoothing   # smoothing or subtraction
+   corner_smoothing: 0.15
+
+Other spectral variants (``fsg.yaml``, ``vmg.yaml``, ``fmg.yaml``) add multigrid acceleration.
 
 Experiment Configurations
 -------------------------
 
-Experiment configs override base settings for specific use cases. They use
-``# @package _global_`` to merge into the root config.
+Experiments override base settings and define parameter sweeps.
 
-**Quick Test** (``conf/experiment/quick_test.yaml``):
-
-.. code-block:: yaml
-
-   # @package _global_
-   experiment_name: Quick-Test
-   sweep_name: quick-test-sweep
-
-   N: 16
-   Re: 100
-   tolerance: 1.0e-4
-   max_iterations: 100
-
-**Validation Sweep** (``conf/experiment/fv_validation.yaml``):
+**Ghia Validation** (``conf/experiment/validation/ghia/fv.yaml``):
 
 .. code-block:: yaml
 
@@ -109,151 +129,83 @@ Experiment configs override base settings for specific use cases. They use
    defaults:
      - override /solver: fv
 
-   experiment_name: FV-Validation
-   sweep_name: fv-validation-sweep
+   experiment_name: LDC-Validation
+   sweep_name: ghia-Re${Re}
 
-   N: 64
-   Re: 100
-   tolerance: 1.0e-7
-   max_iterations: 50000
-
-   # Define sweep parameters for multirun
    hydra:
      sweeper:
        params:
-         N: 32,64,128
-         Re: 100,400,1000
-
-Creating Custom Experiments
----------------------------
-
-To create a new experiment configuration:
-
-1. Create a new YAML file in ``conf/experiment/``:
-
-.. code-block:: yaml
-
-   # conf/experiment/my_experiment.yaml
-   # @package _global_
-
-   experiment_name: My-Experiment
-   sweep_name: my-sweep
-
-   # Override any parameters
-   N: 48
-   Re: 400
-   tolerance: 1.0e-8
-   max_iterations: 10000
-
-   # Optionally define sweep parameters
-   hydra:
-     sweeper:
-       params:
-         N: 32,48,64
-         Re: 100,400
-
-2. Run with your experiment:
-
-.. code-block:: bash
-
-   # Single run
-   uv run python run_solver.py +experiment=my_experiment solver=fv
-
-   # Sweep (uses hydra.sweeper.params if defined)
-   uv run python run_solver.py -m +experiment=my_experiment
-
-MLflow Integration
-------------------
-
-Experiment Name
-^^^^^^^^^^^^^^^
-
-The ``experiment_name`` field determines the MLflow experiment where runs are logged:
-
-.. code-block:: yaml
-
-   experiment_name: FV-Validation  # Creates/uses this MLflow experiment
-
-Sweep Name (Parent Runs)
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-When running parameter sweeps (``-m`` flag), a parent run is automatically created
-to group all child runs. The ``sweep_name`` field controls the parent run's name:
-
-.. code-block:: yaml
-
-   sweep_name: fv-validation-sweep
-
-This creates a hierarchy in MLflow:
-
-.. code-block:: text
-
-   fv-validation-sweep (parent)
-   ├── fv_N32_Re100 (child)
-   ├── fv_N32_Re400 (child)
-   ├── fv_N64_Re100 (child)
-   └── ...
-
-You can also override the sweep name from the command line:
-
-.. code-block:: bash
-
-   uv run python run_solver.py -m sweep_name=custom-sweep solver=fv N=16,32,64
+         N: 32, 64
+         Re: 100
 
 Command Line Usage
 ------------------
 
-Basic Overrides
-^^^^^^^^^^^^^^^
-
-Override any parameter from the command line:
+Single Runs
+^^^^^^^^^^^
 
 .. code-block:: bash
 
-   # Override single parameters
-   uv run python run_solver.py solver=spectral N=31 Re=1000
+   # Default FV solver
+   uv run python main.py solver=fv N=32 Re=100
 
-   # Override multiple parameters
-   uv run python run_solver.py solver=fv N=64 Re=400 tolerance=1e-8
+   # Spectral solver (single grid)
+   uv run python main.py solver=spectral/sg N=31 Re=100
 
-Using Experiments
-^^^^^^^^^^^^^^^^^
-
-Load an experiment configuration with ``+experiment=``:
-
-.. code-block:: bash
-
-   # Load experiment config
-   uv run python run_solver.py +experiment=fv_validation
-
-   # Load experiment and override parameters
-   uv run python run_solver.py +experiment=fv_validation N=128 Re=1000
+   # Spectral with V-cycle multigrid
+   uv run python main.py solver=spectral/vmg N=31 Re=1000
 
 Parameter Sweeps
 ^^^^^^^^^^^^^^^^
 
-Use ``-m`` (multirun) to sweep over parameters:
+Use ``-m`` (multirun) flag:
 
 .. code-block:: bash
 
-   # Sweep from command line
-   uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400
+   # Command-line sweep
+   uv run python main.py -m solver=fv N=16,32,64 Re=100,400
 
-   # Use experiment's predefined sweep
-   uv run python run_solver.py -m +experiment=fv_validation
+   # Use experiment config
+   uv run python main.py -m +experiment/validation/ghia=fv
 
-   # Parallel sweep with joblib
-   uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=16,32,64
+   # Override experiment parameters
+   uv run python main.py -m +experiment/validation/ghia=fv Re=400,1000
+
+Plot-Only Mode
+^^^^^^^^^^^^^^
+
+Regenerate plots from existing MLflow runs without re-solving:
+
+.. code-block:: bash
+
+   uv run python main.py -m +experiment/validation/ghia=fv plot_only=true
 
 Viewing Configuration
 ^^^^^^^^^^^^^^^^^^^^^
 
-Print the resolved configuration without running:
+Print resolved config without running:
 
 .. code-block:: bash
 
-   # Show resolved config
-   uv run python run_solver.py --cfg job
+   uv run python main.py --cfg job
+   uv run python main.py +experiment/validation/ghia=fv --cfg job
 
-   # Show config with experiment
-   uv run python run_solver.py +experiment=fv_validation --cfg job
+MLflow Integration
+------------------
+
+Runs are automatically tracked in MLflow. The ``experiment_name`` determines the
+MLflow experiment, and ``sweep_name`` creates parent runs for grouping sweeps:
+
+.. code-block:: text
+
+   LDC-Validation (experiment)
+   └── ghia-Re100 (parent run)
+       ├── fv_N32 (child)
+       └── fv_N64 (child)
+
+View results:
+
+.. code-block:: bash
+
+   uv run mlflow ui
+   # Open http://localhost:5000

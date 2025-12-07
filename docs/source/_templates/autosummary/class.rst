@@ -31,7 +31,3 @@
    {% endif %}
    {% endblock %}
 
-   {% block examples %}
-   .. include:: ../gen_modules/backreferences/{{ fullname }}.examples
-      :start-line: 1
-   {% endblock %}

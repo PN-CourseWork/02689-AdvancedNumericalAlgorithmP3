@@ -8,52 +8,34 @@ Lid-Driven Cavity Flow: Finite Volume and Spectral Methods
 This documentation provides computational experiments, API reference, and implementation
 details for solving the lid-driven cavity problem using finite volume and spectral methods.
 
-For the full codebase, please visit the `GitHub repository <https://github.com/PN-CourseWork/02689-AdvancedNumericalAlgorithmP3>`_.
+For the full codebase, visit the `GitHub repository <https://github.com/PN-CourseWork/02689-AdvancedNumericalAlgorithmP3>`_.
+
+Quick Start
+-----------
+
+.. code-block:: bash
+
+   # Install
+   uv sync
+
+   # Run FV validation
+   uv run python main.py -m +experiment/validation/ghia=fv
+
+   # View results
+   uv run mlflow ui
 
 Contents
 --------
 
-:doc:`example_gallery/index`
-   Gallery of computational experiments and visualizations for lid-driven cavity flow.
-:doc:`configuration`
-   Experiment configuration structure and customization guide.
-:doc:`usage`
-   Running solvers locally and on HPC clusters.
-:doc:`api_reference`
-   Complete API reference for solver modules.
-
 .. toctree::
    :maxdepth: 2
-   :hidden:
-   :caption: Examples
-
-   example_gallery/index
-
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   :titlesonly:
    :caption: User Guide
 
-   configuration
    usage
+   configuration
 
 .. toctree::
    :maxdepth: 2
-   :hidden:
-   :titlesonly:
    :caption: Reference
 
    api_reference
-
-Installation
-------------
-
-The package requires Python 3.12 and uses ``uv`` for dependency management.
-
-Run the setup script from the project root::
-
-    bash setup.sh
-
-This will create a virtual environment and install all dependencies including PETSc and petsc4py.
-

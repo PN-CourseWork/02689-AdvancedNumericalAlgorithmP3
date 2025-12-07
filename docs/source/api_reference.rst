@@ -4,9 +4,36 @@
 API Reference
 =============
 
-This page provides an overview of the solver modules.
+Solvers
+-------
 
-.. toctree::
-   :maxdepth: 2
+.. currentmodule:: solvers
 
-   api/solvers
+.. autosummary::
+   :toctree: generated
+   :template: autosummary/class.rst
+   :nosignatures:
+
+   LidDrivenCavitySolver
+   FVSolver
+   SGSolver
+   FSGSolver
+   VMGSolver
+   FMGSolver
+
+Data Structures
+---------------
+
+.. autosummary::
+   :toctree: generated
+   :template: autosummary/class.rst
+   :nosignatures:
+
+   Parameters
+   Metrics
+   Fields
+   TimeSeries
+   FVParameters
+   FVSolverFields
+   SpectralParameters
+   SpectralSolverFields

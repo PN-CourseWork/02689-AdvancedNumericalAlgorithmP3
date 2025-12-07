@@ -34,6 +34,34 @@ class MLflowSweepCallback(Callback):
             None  # Store sweep dir while HydraConfig available
         )
 
+    def _find_recent_parent_runs(self) -> list[str]:
+        """Find parent runs from this sweep based on sweep_name pattern."""
+        import mlflow
+
+        if not self._full_experiment_name or not self._base_sweep_name:
+            return []
+
+        try:
+            # Search for parent runs matching the sweep_name pattern
+            # If sweep_name contains ${Re}, search for all Re variants
+            sweep_pattern = self._base_sweep_name.replace("${Re}", "%").replace("{Re}", "%")
+
+            runs = mlflow.search_runs(
+                experiment_names=[self._full_experiment_name],
+                filter_string=f"tags.sweep = 'parent' AND tags.`mlflow.runName` LIKE '{sweep_pattern}'",
+                order_by=["start_time DESC"],
+                max_results=10,
+            )
+
+            if runs.empty:
+                return []
+
+            return runs["run_id"].tolist()
+
+        except Exception as e:
+            log.warning(f"Error finding parent runs: {e}")
+            return []
+
     def _find_existing_parent(
         self, experiment_name: str, sweep_name: str
     ) -> Optional[str]:
@@ -206,7 +234,13 @@ class MLflowSweepCallback(Callback):
             output_dir = Path(self._sweep_dir) / "plots" if self._sweep_dir else Path("outputs") / "plots"
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            # Find parent runs - _parent_runs may be empty due to joblib multiprocessing
+            # So we search MLflow directly for parent runs in this experiment
             parent_run_ids = list(self._parent_runs.values())
+            if not parent_run_ids:
+                parent_run_ids = self._find_recent_parent_runs()
+
+            log.info(f"Parent runs for comparison plots: {parent_run_ids}")
             if parent_run_ids:
                 generate_comparison_plots_for_sweep(
                     parent_run_ids=parent_run_ids,
@@ -214,5 +248,9 @@ class MLflowSweepCallback(Callback):
                     output_dir=output_dir,
                     upload_to_mlflow=True,
                 )
+            else:
+                log.warning("No parent runs found for comparison plots")
         except Exception as e:
             log.warning(f"Failed to generate comparison plots: {e}")
+            import traceback
+            log.warning(traceback.format_exc())
