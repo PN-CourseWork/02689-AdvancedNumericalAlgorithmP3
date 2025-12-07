@@ -63,7 +63,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "vmg: marks VMG solver tests (deselect with '-m \"not vmg\"')",
 ]
 testpaths = ["tests"]
 pythonpath = ["src"]

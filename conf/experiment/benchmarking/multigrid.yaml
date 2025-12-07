@@ -1,7 +1,8 @@
 # @package _global_
-# Multigrid Method Comparison: FSG vs VMG
+# Multigrid Method Comparison: SG vs FSG vs VMG
 #
-# Compares Full Single Grid (FSG) and V-cycle Multigrid (VMG) methods.
+# Compares Single Grid (SG), Full Single Grid (FSG),
+# and V-cycle Multigrid (VMG) methods.
 #
 # Run with:
 #   uv run python run_solver.py -m +experiment=benchmarking/multigrid

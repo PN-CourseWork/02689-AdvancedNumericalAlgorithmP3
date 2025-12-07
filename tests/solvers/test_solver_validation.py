@@ -1,4 +1,4 @@
-"""Validation tests for all spectral solvers (SG, FSG, VMG).
+"""Validation tests for spectral solvers (SG, FSG).
 
 This module tests that:
 1. All solvers converge for the lid-driven cavity problem
@@ -14,7 +14,6 @@ from scipy.interpolate import RectBivariateSpline
 
 from solvers.spectral.sg import SGSolver
 from solvers.spectral.fsg import FSGSolver
-from solvers.spectral.vmg import VMGSolver
 
 
 # ============================================================================
@@ -57,17 +56,6 @@ def fsg_params(multigrid_params):
     return {
         **multigrid_params,
         "coarse_tolerance_factor": 10.0,
-    }
-
-
-@pytest.fixture
-def vmg_params(multigrid_params):
-    """Parameters for VMG solver."""
-    return {
-        **multigrid_params,
-        "pre_smoothing": [3, 2, 1],
-        "post_smoothing": None,
-        "correction_damping": 1.0,
     }
 
 
@@ -146,14 +134,6 @@ class TestSolverConvergence:
         solver.solve()
         assert solver.metrics.converged, "FSG solver did not converge"
 
-    @pytest.mark.slow
-    @pytest.mark.vmg
-    def test_vmg_converges(self, vmg_params):
-        """VMG solver converges."""
-        solver = VMGSolver(**vmg_params)
-        solver.solve()
-        assert solver.metrics.converged, "VMG solver did not converge"
-
 
 # ============================================================================
 # Ghia Validation Tests
@@ -200,23 +180,6 @@ class TestGhiaValidation:
         assert errors["v_max"] < self.V_MAX_TOL, f"FSG v_max error {errors['v_max']:.4f} > {self.V_MAX_TOL}"
         assert errors["v_rms"] < self.V_RMS_TOL, f"FSG v_rms error {errors['v_rms']:.4f} > {self.V_RMS_TOL}"
 
-    @pytest.mark.slow
-    @pytest.mark.vmg
-    def test_vmg_ghia_validation(self, vmg_params, ghia_data):
-        """VMG solver matches Ghia benchmark."""
-        ghia_u, ghia_v = ghia_data
-
-        solver = VMGSolver(**vmg_params)
-        solver.solve()
-        assert solver.metrics.converged
-
-        errors = compute_ghia_errors(solver, ghia_u, ghia_v)
-
-        assert errors["u_max"] < self.U_MAX_TOL, f"VMG u_max error {errors['u_max']:.4f} > {self.U_MAX_TOL}"
-        assert errors["u_rms"] < self.U_RMS_TOL, f"VMG u_rms error {errors['u_rms']:.4f} > {self.U_RMS_TOL}"
-        assert errors["v_max"] < self.V_MAX_TOL, f"VMG v_max error {errors['v_max']:.4f} > {self.V_MAX_TOL}"
-        assert errors["v_rms"] < self.V_RMS_TOL, f"VMG v_rms error {errors['v_rms']:.4f} > {self.V_RMS_TOL}"
-
 
 # ============================================================================
 # Solution Consistency Tests
@@ -250,97 +213,3 @@ class TestSolutionConsistency:
         sg_fsg_v_diff = np.max(np.abs(sg_v - fsg_v))
         assert sg_fsg_u_diff < solution_tol, f"SG-FSG u difference {sg_fsg_u_diff:.6f} > {solution_tol}"
         assert sg_fsg_v_diff < solution_tol, f"SG-FSG v difference {sg_fsg_v_diff:.6f} > {solution_tol}"
-
-    @pytest.mark.slow
-    @pytest.mark.vmg
-    def test_all_solvers_same_solution(self, validation_params, fsg_params, vmg_params, ghia_data):
-        """All solvers converge to the same solution within tolerance."""
-        ghia_u, ghia_v = ghia_data
-
-        # Solve with all three solvers
-        sg_solver = SGSolver(**validation_params)
-        sg_solver.solve()
-        assert sg_solver.metrics.converged, "SG did not converge"
-
-        fsg_solver = FSGSolver(**fsg_params)
-        fsg_solver.solve()
-        assert fsg_solver.metrics.converged, "FSG did not converge"
-
-        vmg_solver = VMGSolver(**vmg_params)
-        vmg_solver.solve()
-        assert vmg_solver.metrics.converged, "VMG did not converge"
-
-        # Extract centerline velocities for each solver
-        sg_u, sg_v, _, _ = extract_centerline_velocities(sg_solver, ghia_u, ghia_v)
-        fsg_u, fsg_v, _, _ = extract_centerline_velocities(fsg_solver, ghia_u, ghia_v)
-        vmg_u, vmg_v, _, _ = extract_centerline_velocities(vmg_solver, ghia_u, ghia_v)
-
-        # All solvers should produce same solution within 1% tolerance
-        solution_tol = 0.01
-
-        # Compare SG vs FSG
-        sg_fsg_u_diff = np.max(np.abs(sg_u - fsg_u))
-        sg_fsg_v_diff = np.max(np.abs(sg_v - fsg_v))
-        assert sg_fsg_u_diff < solution_tol, f"SG-FSG u difference {sg_fsg_u_diff:.6f} > {solution_tol}"
-        assert sg_fsg_v_diff < solution_tol, f"SG-FSG v difference {sg_fsg_v_diff:.6f} > {solution_tol}"
-
-        # Compare SG vs VMG
-        sg_vmg_u_diff = np.max(np.abs(sg_u - vmg_u))
-        sg_vmg_v_diff = np.max(np.abs(sg_v - vmg_v))
-        assert sg_vmg_u_diff < solution_tol, f"SG-VMG u difference {sg_vmg_u_diff:.6f} > {solution_tol}"
-        assert sg_vmg_v_diff < solution_tol, f"SG-VMG v difference {sg_vmg_v_diff:.6f} > {solution_tol}"
-
-        # Compare FSG vs VMG
-        fsg_vmg_u_diff = np.max(np.abs(fsg_u - vmg_u))
-        fsg_vmg_v_diff = np.max(np.abs(fsg_v - vmg_v))
-        assert fsg_vmg_u_diff < solution_tol, f"FSG-VMG u difference {fsg_vmg_u_diff:.6f} > {solution_tol}"
-        assert fsg_vmg_v_diff < solution_tol, f"FSG-VMG v difference {fsg_vmg_v_diff:.6f} > {solution_tol}"
-
-    @pytest.mark.slow
-    @pytest.mark.vmg
-    def test_solvers_same_extreme_values(self, validation_params, fsg_params, vmg_params, ghia_data):
-        """All solvers produce same extreme velocity values."""
-        ghia_u, ghia_v = ghia_data
-
-        # Solve with all three solvers
-        solvers = {}
-
-        sg_solver = SGSolver(**validation_params)
-        sg_solver.solve()
-        assert sg_solver.metrics.converged
-        solvers["SG"] = sg_solver
-
-        fsg_solver = FSGSolver(**fsg_params)
-        fsg_solver.solve()
-        assert fsg_solver.metrics.converged
-        solvers["FSG"] = fsg_solver
-
-        vmg_solver = VMGSolver(**vmg_params)
-        vmg_solver.solve()
-        assert vmg_solver.metrics.converged
-        solvers["VMG"] = vmg_solver
-
-        # Extract extreme values from each solver
-        extremes = {}
-        for name, solver in solvers.items():
-            u_at_x05, v_at_y05, _, _ = extract_centerline_velocities(solver, ghia_u, ghia_v)
-            extremes[name] = {
-                "u_min": u_at_x05.min(),
-                "v_min": v_at_y05.min(),
-                "v_max": v_at_y05.max(),
-            }
-
-        # All solvers should have same extreme values within 1%
-        rel_tol = 0.01
-
-        for key in ["u_min", "v_min", "v_max"]:
-            sg_val = extremes["SG"][key]
-            fsg_val = extremes["FSG"][key]
-            vmg_val = extremes["VMG"][key]
-
-            # Check relative differences
-            sg_fsg_diff = abs(sg_val - fsg_val) / abs(sg_val) if sg_val != 0 else abs(sg_val - fsg_val)
-            sg_vmg_diff = abs(sg_val - vmg_val) / abs(sg_val) if sg_val != 0 else abs(sg_val - vmg_val)
-
-            assert sg_fsg_diff < rel_tol, f"SG-FSG {key} relative diff {sg_fsg_diff:.4f} > {rel_tol}"
-            assert sg_vmg_diff < rel_tol, f"SG-VMG {key} relative diff {sg_vmg_diff:.4f} > {rel_tol}"

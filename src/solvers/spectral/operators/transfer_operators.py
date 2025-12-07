@@ -11,7 +11,7 @@ Two methods are supported:
 - Polynomial-based: Uses Chebyshev polynomial fitting/evaluation
 
 For FSG (Full Single Grid), only prolongation is needed.
-For VMG/FMG, both prolongation and restriction are required.
+For FMG, both prolongation and restriction are required.
 """
 
 from abc import ABC, abstractmethod

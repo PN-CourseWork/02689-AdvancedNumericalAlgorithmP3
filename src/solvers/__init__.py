@@ -8,7 +8,7 @@ LidDrivenCavitySolver (abstract base - defines problem)
 ├── FVSolver (finite volume with SIMPLE algorithm)
 └── SGSolver (spectral single grid base)
     ├── FSGSolver (Full Single Grid multigrid)
-    ├── VMGSolver (V-cycle MultiGrid)
+    ├── VMGSolver (V-cycle Multigrid)
     └── FMGSolver (Full MultiGrid)
 """
 

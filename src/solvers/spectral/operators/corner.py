@@ -151,6 +151,55 @@ class SmoothingTreatment(CornerTreatment):
 
 
 # =============================================================================
+# Method 1b: Regularized Lid (Saad's approach - u = 16x²(1-x)²)
+# =============================================================================
+
+
+class RegularizedLidTreatment(CornerTreatment):
+    """Corner treatment via regularized lid velocity profile.
+
+    Uses u = 16x²(1-x)² on the lid, which:
+    - Equals 0 at corners (x=0 and x=1)
+    - Has zero derivatives at corners
+    - Maximum value of 1 at x=0.5
+
+    This completely removes the corner singularity by making the
+    boundary conditions compatible (continuous and smooth).
+
+    Reference: Saad's regularized lid-driven cavity problem.
+    """
+
+    def get_lid_velocity(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        lid_velocity: float,
+        Lx: float,
+        Ly: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Regularized lid velocity: u = 16x²(1-x)² * lid_velocity."""
+        x_flat = np.asarray(x).ravel()
+        x_norm = x_flat / Lx  # Normalize to [0, 1]
+
+        # Regularized profile: 16x²(1-x)² has max=1 at x=0.5
+        u_lid = 16 * x_norm**2 * (1 - x_norm) ** 2 * lid_velocity
+        v_lid = np.zeros_like(x_flat, dtype=float)
+
+        return u_lid.reshape(x.shape), v_lid.reshape(x.shape)
+
+    def get_wall_velocity(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        Lx: float,
+        Ly: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Stationary walls have zero velocity."""
+        shape = np.asarray(x).shape
+        return np.zeros(shape), np.zeros(shape)
+
+
+# =============================================================================
 # Method 2: Subtraction (Zhang & Xi / Botella & Peyret method)
 # =============================================================================
 
@@ -577,10 +626,12 @@ def create_corner_treatment(
 
     if method_lower == "smoothing":
         return SmoothingTreatment(smoothing_width=smoothing_width)
+    elif method_lower == "regularized":
+        return RegularizedLidTreatment()
     elif method_lower == "subtraction":
         return SubtractionTreatment()
     else:
         raise ValueError(
             f"Unknown corner treatment method: {method}. "
-            f"Use 'smoothing' or 'subtraction'."
+            f"Use 'smoothing', 'regularized', or 'subtraction'."
         )

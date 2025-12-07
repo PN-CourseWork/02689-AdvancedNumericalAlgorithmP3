@@ -83,7 +83,6 @@ def _build_method_label(sibling: dict) -> str:
     - 'fv' -> 'FV'
     - 'spectral' -> 'Spectral'
     - 'spectral_fsg' -> 'Spectral-FSG'
-    - 'spectral_vmg' -> 'Spectral-VMG'
     """
     solver = sibling.get("solver", "unknown")
 
@@ -92,8 +91,8 @@ def _build_method_label(sibling: dict) -> str:
         "fv": "FV",
         "spectral": "Spectral",
         "spectral_fsg": "Spectral-FSG",
-        "spectral_vmg": "Spectral-VMG",
         "spectral_fmg": "Spectral-FMG",
+        "spectral_vmg": "Spectral-VMG",
     }
 
     return label_map.get(solver, solver.replace("_", "-").title())

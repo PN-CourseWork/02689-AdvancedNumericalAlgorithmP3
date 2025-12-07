@@ -1,5 +1,5 @@
 """Spectral multigrid variants."""
 
-from solvers.spectral.multigrid.fsg import build_hierarchy, solve_fsg, solve_vmg
+from solvers.spectral.multigrid.fsg import build_hierarchy, solve_fsg
 
-__all__ = ["build_hierarchy", "solve_fsg", "solve_vmg"]
+__all__ = ["build_hierarchy", "solve_fsg"]

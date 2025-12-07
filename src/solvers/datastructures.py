@@ -240,7 +240,7 @@ class SpectralParameters(Parameters):
     corner_smoothing: float = 0.15  # smoothing width for smoothing method
 
     # Multigrid settings
-    multigrid: str = "none"  # "none", "fsg", "vmg", "fmg"
+    multigrid: str = "none"  # "none", "fsg", "fmg"
     n_levels: int = 3
     coarse_tolerance_factor: float = 10.0
 
@@ -249,14 +249,18 @@ class SpectralParameters(Parameters):
     prolongation_method: str = "fft"
     restriction_method: str = "fft"
 
-    # VMG-specific: smoothing iterations per level (coarse-to-fine order)
+    # Multigrid smoothing iterations per level (coarse-to-fine order)
     # Default is None, which uses [n_levels, n_levels-1, ..., 1]
     pre_smoothing: list = None
     post_smoothing: list = None
 
-    # VMG coarse correction damping (0 = no correction, 1 = full correction)
-    # With proper FAS tau correction, use full correction (1.0)
+    # Coarse correction damping (0 = no correction, 1 = full correction)
     correction_damping: float = 1.0
+
+    # VMG: V-cycle parameters
+    pre_smooth: int = 2      # Pre-smoothing steps per level
+    post_smooth: int = 2     # Post-smoothing steps per level
+    damping: float = 0.5     # Damping factor for coarse grid correction
 
 
 @dataclass

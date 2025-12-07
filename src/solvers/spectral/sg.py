@@ -33,7 +33,7 @@ class SGSolver(LidDrivenCavitySolver):
     the incompressible Navier-Stokes equations on a Legendre-Gauss-Lobatto grid.
 
     This is the base spectral solver without multigrid acceleration.
-    For multigrid variants, see FSGSolver, VMGSolver, FMGSolver.
+    For multigrid variants, see FSGSolver and FMGSolver.
 
     Parameters
     ----------

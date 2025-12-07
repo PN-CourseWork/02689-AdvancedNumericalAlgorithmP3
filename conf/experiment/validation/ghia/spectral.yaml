@@ -1,6 +1,6 @@
 # @package _global_
 # Ghia validation - Spectral solvers
-# Sweeps over SG, FSG, VMG, FMG solvers at N=15
+# Sweeps over SG, FSG, VMG solvers
 
 defaults:
   - override /solver: spectral/sg
@@ -17,6 +17,8 @@ hydra:
   sweeper:
     params:
       # Sweep over spectral solver types
-      solver: spectral/sg, spectral/fsg #, spectral/vmg
+      solver: spectral/sg, spectral/fsg, spectral/vmg
       Re: 100
-      N: 17
+      N: 19
+      # Sweep over corner treatments
+      solver.corner_treatment: smoothing #regularized #smoothing, regularized
