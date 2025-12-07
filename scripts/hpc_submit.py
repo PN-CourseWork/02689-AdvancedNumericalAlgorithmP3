@@ -118,7 +118,7 @@ def main():
     parser = argparse.ArgumentParser(description="Submit HPC job array")
     parser.add_argument("experiment", help="Experiment (e.g., +experiment/validation/ghia=fv)")
     parser.add_argument("--queue", "-q", default="hpc", help="LSF queue (default: hpc)")
-    parser.add_argument("--time", "-W", default="2:00", help="Wall time (default: 2:00)")
+    parser.add_argument("--time", "-W", default="1:00", help="Wall time (default: 1:00)")
     parser.add_argument("--cores", "-n", type=int, default=4, help="Cores per job (default: 4)")
     parser.add_argument("--mem", default="6GB", help="Memory per core (default: 4GB)")
     parser.add_argument("--dry-run", action="store_true", help="Show commands without submitting")
