@@ -17,4 +17,4 @@ hydra:
       # Sweep over spectral solver types
       solver: spectral/fsg #,spectral/fsg
       Re: 1000
-      N: 80, 90, 100, 110, 120, 130
+      N: 80, 90, 100, 110, 120, 130, 140
