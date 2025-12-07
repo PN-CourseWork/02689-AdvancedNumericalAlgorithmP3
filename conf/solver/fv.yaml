@@ -17,6 +17,6 @@ max_iterations: ${max_iterations}
 # FV-specific parameters
 convection_scheme: TVD
 limiter: MUSCL
-alpha_uv: 0.5        # velocity under-relaxation
+alpha_uv: 0.4        # velocity under-relaxation
 alpha_p: 0.2         # pressure under-relaxation
 linear_solver_tol: 1.0e-9

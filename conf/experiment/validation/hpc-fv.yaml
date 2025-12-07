@@ -6,14 +6,12 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Validation
-sweep_name: Hpc-Relaxation-Sweep
+sweep_name: Hpc-baseline-data
 
 hydra:
   sweeper:
     params:
       N: 128
-      Re: 1000
+      Re: 100, 400, 1000
       # Relaxation parameter sweep
-      solver.alpha_uv: 0.4, 0.5, 0.6
-      solver.alpha_p: 0.1, 0.2, 0.3
 
