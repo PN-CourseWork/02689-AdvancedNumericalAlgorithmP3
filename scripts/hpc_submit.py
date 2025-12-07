@@ -111,13 +111,20 @@ def main():
     n_jobs = len(combinations)
 
     # Build bash arrays for parameter mapping
+    # Replace dots with underscores for valid bash variable names
     param_keys = list(combinations[0].keys())
     array_defs = []
     for key in param_keys:
         vals = " ".join(c[key] for c in combinations)
-        array_defs.append(f'{key.upper()}=({vals})')
+        bash_var = key.upper().replace(".", "_")
+        array_defs.append(f'{bash_var}=({vals})')
 
-    overrides = " ".join(f"{k}=${{{k.upper()}[$I]}}" for k in param_keys)
+    # Build overrides: use bash var name but original key for hydra
+    overrides_parts = []
+    for k in param_keys:
+        bash_var = k.upper().replace(".", "_")
+        overrides_parts.append(f'{k}=${{{bash_var}[$I]}}')
+    overrides = " ".join(overrides_parts)
 
     script = f"""#!/bin/bash
 mkdir -p logs
