@@ -499,20 +499,61 @@ class SGSolver(LidDrivenCavitySolver):
         du_dy = self.Dy @ self.arrays.u
         return dv_dx - du_dy
 
-    def _compute_gradient(self, field: np.ndarray) -> tuple:
+    def _compute_gradient(
+        self, field: np.ndarray, bc_walls: float = 0.0, bc_lid: float = None
+    ) -> tuple:
         """Compute gradient using spectral differentiation.
 
         Override base class finite difference implementation.
+        BC parameters are ignored since spectral methods handle BCs through
+        the differentiation matrices and boundary point values.
         """
         df_dx = self.Dx @ field
         df_dy = self.Dy @ field
         return df_dx, df_dy
 
-    def _get_cell_area(self) -> float:
-        """Get integration weight for spectral method.
+    def _compute_quadrature_weights(self) -> np.ndarray:
+        """Compute 2D quadrature weights for integration on Gauss-Lobatto grid.
 
-        For Gauss-Lobatto quadrature, we should use the quadrature weights.
-        For now, use simple area approximation.
+        Uses trapezoidal rule weights based on non-uniform node spacing.
+        Returns weights as 1D array matching self.arrays.u ordering.
         """
-        # TODO: Use proper Gauss-Lobatto quadrature weights
-        return self.dx_min * self.dy_min
+        # Get 1D nodes
+        x_nodes = self.basis_x.nodes(self.params.nx + 1)
+        y_nodes = self.basis_y.nodes(self.params.ny + 1)
+
+        # Compute 1D trapezoidal weights
+        def trapezoidal_weights(nodes):
+            n = len(nodes)
+            w = np.zeros(n)
+            for i in range(1, n - 1):
+                w[i] = 0.5 * (nodes[i + 1] - nodes[i - 1])
+            w[0] = 0.5 * (nodes[1] - nodes[0])
+            w[-1] = 0.5 * (nodes[-1] - nodes[-2])
+            return w
+
+        wx = trapezoidal_weights(x_nodes)
+        wy = trapezoidal_weights(y_nodes)
+
+        # 2D weights via outer product, then flatten to match array ordering
+        # shape_full = (nx+1, ny+1) with indexing='ij', so W[i,j] = wx[i] * wy[j]
+        W_2d = np.outer(wx, wy)
+        return W_2d.ravel()
+
+    def _compute_energy(self) -> float:
+        """Compute kinetic energy using spectral quadrature: E = 0.5 * ∫(u² + v²) dA."""
+        W = self._compute_quadrature_weights()
+        return 0.5 * float(np.sum(W * (self.arrays.u**2 + self.arrays.v**2)))
+
+    def _compute_enstrophy(self) -> float:
+        """Compute enstrophy using spectral quadrature: Z = 0.5 * ∫ω² dA."""
+        omega = self._compute_vorticity()
+        W = self._compute_quadrature_weights()
+        return 0.5 * float(np.sum(W * omega**2))
+
+    def _compute_palinstrophy(self) -> float:
+        """Compute palinstrophy using spectral quadrature: P = 0.5 * ∫||∇ω||² dA."""
+        omega = self._compute_vorticity()
+        domega_dx, domega_dy = self._compute_gradient(omega)
+        W = self._compute_quadrature_weights()
+        return 0.5 * float(np.sum(W * (domega_dx**2 + domega_dy**2)))
