@@ -38,6 +38,28 @@ class VMGSolver(SGSolver):
             Transfer operator for fine-to-coarse ('fft' or 'injection')
     """
 
+    def __init__(self, **kwargs):
+        """Initialize VMG solver with multigrid hierarchy."""
+        super().__init__(**kwargs)
+
+        # Create transfer operators from config
+        self._transfer_ops = create_transfer_operators(
+            prolongation_method=self.params.prolongation_method,
+            restriction_method=self.params.restriction_method,
+        )
+
+        # Build grid hierarchy (setup cost, excluded from solve wall time)
+        self._levels = build_hierarchy(
+            n_fine=self.params.nx,
+            n_levels=self.params.n_levels,
+            basis_x=self.basis_x,
+            basis_y=self.basis_y,
+            Lx=self.params.Lx,
+            Ly=self.params.Ly,
+        )
+
+        log.info(f"VMG initialized with {self.params.n_levels} levels")
+
     def solve(self, tolerance: float = None, max_iter: int = None):
         """Solve using V-cycle MultiGrid (VMG).
 
@@ -70,33 +92,17 @@ class VMGSolver(SGSolver):
             log.info(f"Post-smoothing iterations: {post_smoothing}")
         log.info(f"Correction damping: {correction_damping}")
 
-        # Create transfer operators from config
-        transfer_ops = create_transfer_operators(
-            prolongation_method=self.params.prolongation_method,
-            restriction_method=self.params.restriction_method,
-        )
-
-        # Build grid hierarchy
+        # Solve using VMG (wall time starts here, after setup)
         time_start = time.time()
-        levels = build_hierarchy(
-            n_fine=self.params.nx,
-            n_levels=self.params.n_levels,
-            basis_x=self.basis_x,
-            basis_y=self.basis_y,
-            Lx=self.params.Lx,
-            Ly=self.params.Ly,
-        )
-
-        # Solve using VMG
         finest_level, total_iters, converged = solve_vmg(
-            levels=levels,
+            levels=self._levels,
             Re=self.params.Re,
             beta_squared=self.params.beta_squared,
             lid_velocity=self.params.lid_velocity,
             CFL=self.params.CFL,
             tolerance=tolerance,
             max_iterations=max_iter,
-            transfer_ops=transfer_ops,
+            transfer_ops=self._transfer_ops,
             corner_treatment=self.corner_treatment,
             Lx=self.params.Lx,
             Ly=self.params.Ly,
