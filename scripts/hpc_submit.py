@@ -11,11 +11,60 @@ Usage:
 
 import argparse
 import itertools
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
+
+
+def create_parent_run(experiment: str, sweep_params: dict) -> str:
+    """Create MLflow parent run before submitting HPC jobs.
+
+    This avoids race conditions when multiple jobs start simultaneously.
+    """
+    import mlflow
+
+    load_dotenv()
+
+    # Load experiment config to get experiment_name and sweep_name
+    if "=" in experiment:
+        group, name = experiment.rsplit("=", 1)
+        yaml_path = Path("conf") / f"{group}/{name}.yaml"
+    else:
+        yaml_path = Path("conf") / f"{experiment}.yaml"
+
+    with open(yaml_path) as f:
+        config = yaml.safe_load(f)
+
+    # Load mlflow coolify config
+    mlflow_config_path = Path("conf/mlflow/coolify.yaml")
+    with open(mlflow_config_path) as f:
+        mlflow_config = yaml.safe_load(f)
+
+    # Setup MLflow
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", mlflow_config.get("tracking_uri"))
+    mlflow.set_tracking_uri(tracking_uri)
+
+    # Build experiment name
+    experiment_name = config.get("experiment_name", "LDC-Validation")
+    project_prefix = mlflow_config.get("project_prefix", "")
+    if project_prefix and not experiment_name.startswith("/"):
+        full_experiment_name = f"{project_prefix}/{experiment_name}"
+    else:
+        full_experiment_name = experiment_name
+
+    mlflow.set_experiment(full_experiment_name)
+
+    # Create parent run
+    sweep_name = config.get("sweep_name", experiment.replace("/", "_"))
+    with mlflow.start_run(run_name=sweep_name) as parent_run:
+        mlflow.set_tag("sweep", "parent")
+        mlflow.log_dict({"sweep_params": sweep_params}, "sweep_config.yaml")
+
+    return parent_run.info.run_id
 
 
 def parse_sweep_params(experiment_path: str) -> dict[str, list]:
@@ -62,7 +111,7 @@ def get_command_for_index(experiment: str, combinations: list[dict], index: int)
     """Get the command for a specific job index (1-indexed)."""
     combo = combinations[index - 1]  # Convert to 0-indexed
     overrides = " ".join(f"{k}={v}" for k, v in combo.items())
-    return f"uv run python main.py +{experiment} {overrides} mlflow=coolify hydra.mode=RUN"
+    return f"uv run python main.py +{experiment} {overrides} mlflow=coolify"
 
 
 def main():
@@ -126,12 +175,16 @@ def main():
         overrides_parts.append(f'{k}=${{{bash_var}[$I]}}')
     overrides = " ".join(overrides_parts)
 
-    # Use hydra.mode=RUN to disable multirun (HPC job array handles the sweep)
+    # Create parent run BEFORE submitting jobs to avoid race condition
+    parent_run_id = create_parent_run(experiment, sweep_params)
+    print(f"Created parent run: {parent_run_id}")
+
     script = f"""#!/bin/bash
 mkdir -p logs
+export MLFLOW_PARENT_RUN_ID={parent_run_id}
 {chr(10).join(array_defs)}
 I=$((LSB_JOBINDEX - 1))
-uv run python main.py +{experiment} {overrides} mlflow=coolify hydra.mode=RUN
+uv run python main.py +{experiment} {overrides} mlflow=coolify
 """
 
     bsub_cmd = [
