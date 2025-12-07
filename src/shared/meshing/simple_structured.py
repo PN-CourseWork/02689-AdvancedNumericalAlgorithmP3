@@ -147,7 +147,7 @@ def _compute_geometric_factors(
 
 def create_structured_mesh_2d(
     nx: int, ny: int, Lx: float = 1.0, Ly: float = 1.0, lid_velocity: float = 1.0,
-    corner_smoothing: float = 0.0
+    corner_treatment: str = "none", corner_smoothing: float = 0.15
 ) -> MeshData2D:
     """Create structured Cartesian quad mesh using pure numpy.
 
@@ -165,9 +165,13 @@ def create_structured_mesh_2d(
         Domain size in x and y directions
     lid_velocity : float
         Velocity of the top lid
+    corner_treatment : str
+        Corner singularity treatment:
+        - "none": No treatment - constant lid velocity
+        - "smoothing": Cosine smoothing near corners
+        - "saad" or "polynomial": u = 16x²(1-x)² regularization
     corner_smoothing : float
-        Fraction of domain width to smooth lid velocity at corners (0 = no smoothing).
-        Uses cosine smoothing matching the spectral solver's corner treatment.
+        Width parameter for smoothing method (fraction of domain)
 
     Returns
     -------
@@ -244,17 +248,23 @@ def create_structured_mesh_2d(
         # Determine which boundary this face belongs to and set velocity values
         if abs(fc[1] - Ly) < eps:
             # Top boundary (moving lid with Dirichlet BC)
-            # Apply corner smoothing if enabled
-            u_lid = lid_velocity
-            if corner_smoothing > 0:
-                x_face = fc[0]
+            x_face = fc[0]
+            xi = x_face / Lx  # Normalized coordinate
+
+            if corner_treatment in ("polynomial", "saad"):
+                # Saad polynomial: 16*xi^2*(1-xi)^2 * lid_velocity
+                u_lid = 16.0 * xi**2 * (1.0 - xi)**2 * lid_velocity
+            elif corner_treatment == "smoothing":
+                # Cosine smoothing near corners
+                u_lid = lid_velocity
                 smooth_dist = corner_smoothing * Lx
                 if x_face < smooth_dist:
-                    # Near left corner
                     u_lid = 0.5 * (1 - np.cos(np.pi * x_face / smooth_dist)) * lid_velocity
                 elif x_face > (Lx - smooth_dist):
-                    # Near right corner
                     u_lid = 0.5 * (1 - np.cos(np.pi * (Lx - x_face) / smooth_dist)) * lid_velocity
+            else:
+                # "none" - constant lid velocity
+                u_lid = lid_velocity
             boundary_values[f] = [u_lid, 0.0, 0.0]
         elif abs(fc[1] - 0.0) < eps:
             # Bottom boundary (stationary wall with Dirichlet BC)

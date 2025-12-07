@@ -17,4 +17,4 @@ hydra:
       # Sweep over spectral solver types
       solver: spectral/fsg #,spectral/fsg
       Re: 100
-      N: 18
+      N: 12, 14, 16, 18, 20

@@ -60,6 +60,7 @@ class FVSolver(LidDrivenCavitySolver):
             Lx=self.params.Lx,
             Ly=self.params.Ly,
             lid_velocity=self.params.lid_velocity,
+            corner_treatment=self.params.corner_treatment,
             corner_smoothing=self.params.corner_smoothing,
         )
 

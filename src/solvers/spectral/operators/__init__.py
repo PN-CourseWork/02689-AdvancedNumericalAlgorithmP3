@@ -3,7 +3,8 @@
 from solvers.spectral.operators.corner import (
     CornerTreatment,
     SmoothingTreatment,
-    SubtractionTreatment,
+    SaadTreatment,
+    PolynomialTreatment,
     create_corner_treatment,
 )
 from solvers.spectral.operators.transfer_operators import (
@@ -18,7 +19,8 @@ from solvers.spectral.operators.transfer_operators import (
 __all__ = [
     "CornerTreatment",
     "SmoothingTreatment",
-    "SubtractionTreatment",
+    "SaadTreatment",
+    "PolynomialTreatment",
     "create_corner_treatment",
     "TransferOperators",
     "create_transfer_operators",
