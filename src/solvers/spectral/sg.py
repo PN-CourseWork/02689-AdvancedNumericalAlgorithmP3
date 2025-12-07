@@ -223,15 +223,48 @@ class SGSolver(LidDrivenCavitySolver):
         self.Dyy = np.kron(Ix, Dyy_1d)
         self.Laplacian = self.Dxx + self.Dyy
 
-        # 1D differentiation matrices on reduced grid (for pressure)
-        Dx_inner_1d = self.basis_x.diff_matrix(self.x_inner)  # (Nx-1) × (Nx-1)
-        Dy_inner_1d = self.basis_y.diff_matrix(self.y_inner)  # (Ny-1) × (Ny-1)
+        # Build 1D interpolation matrices from inner to full grid (for pressure)
+        # These use Chebyshev polynomial interpolation for spectral accuracy
+        self.Interp_x = self._build_interpolation_matrix_1d(self.x_inner, x_nodes_full)
+        self.Interp_y = self._build_interpolation_matrix_1d(self.y_inner, y_nodes_full)
 
-        # 2D differentiation on reduced grid
-        Ix_inner = np.eye(Nx - 1)
-        Iy_inner = np.eye(Ny - 1)
-        self.Dx_inner = np.kron(Dx_inner_1d, Iy_inner)
-        self.Dy_inner = np.kron(Ix_inner, Dy_inner_1d)
+    def _build_interpolation_matrix_1d(self, nodes_inner, nodes_full):
+        """Build interpolation matrix from inner grid to full grid.
+
+        Uses Chebyshev polynomial interpolation for spectral accuracy.
+        Given values f_inner at nodes_inner, computes f_full = Interp @ f_inner.
+
+        Parameters
+        ----------
+        nodes_inner : np.ndarray
+            Inner grid nodes (excludes boundary points)
+        nodes_full : np.ndarray
+            Full grid nodes (includes boundary points)
+
+        Returns
+        -------
+        Interp : np.ndarray
+            Interpolation matrix of shape (n_full, n_inner)
+        """
+        from numpy.polynomial.chebyshev import chebvander
+
+        n_inner = len(nodes_inner)
+        n_full = len(nodes_full)
+
+        # Map physical domain to [-1, 1] for Chebyshev polynomials
+        a, b = nodes_full[0], nodes_full[-1]
+        xi_inner = 2 * (nodes_inner - a) / (b - a) - 1
+        xi_full = 2 * (nodes_full - a) / (b - a) - 1
+
+        # Vandermonde matrices: V[i,k] = T_k(xi[i])
+        V_inner = chebvander(xi_inner, n_inner - 1)  # (n_inner, n_inner)
+        V_full = chebvander(xi_full, n_inner - 1)    # (n_full, n_inner)
+
+        # Interpolation: f_full = V_full @ coeffs, where coeffs = V_inner^{-1} @ f_inner
+        # So: f_full = (V_full @ V_inner^{-1}) @ f_inner = Interp @ f_inner
+        Interp = V_full @ np.linalg.solve(V_inner, np.eye(n_inner))
+
+        return Interp
 
     def _initialize_lid_velocity(self):
         """Initialize lid velocity using corner treatment."""
@@ -239,24 +272,24 @@ class SGSolver(LidDrivenCavitySolver):
         self._apply_lid_boundary(self.u_2d, self.v_2d)
 
     def _interpolate_pressure_gradient(self):
-        """Compute pressure gradient on inner grid and interpolate to full grid.
+        """Compute pressure gradient on full grid from inner-grid pressure.
 
         PN-PN-2 method:
         1. Pressure p exists on (Nx-1) × (Ny-1) inner grid
-        2. Compute ∂p/∂x and ∂p/∂y on inner grid using inner diff matrices
-        3. Extrapolate gradients to boundaries on full grid
+        2. Interpolate p to full (Nx+1) × (Ny+1) grid using spectral interpolation
+        3. Compute ∂p/∂x and ∂p/∂y on full grid using full-grid diff matrices
+
+        Note: We use Chebyshev polynomial interpolation (not linear extrapolation)
+        to maintain spectral accuracy. The interpolation matrices are precomputed.
         """
-        # Compute pressure gradient on inner grid (this is where pressure actually lives!)
-        self.arrays.dp_dx_inner[:] = self.Dx_inner @ self.arrays.p
-        self.arrays.dp_dy_inner[:] = self.Dy_inner @ self.arrays.p
+        # Step 1: Interpolate pressure from inner grid to full grid using spectral interpolation
+        # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
+        p_full_2d = self.Interp_x @ self.p_2d @ self.Interp_y.T
+        p_full = p_full_2d.ravel()
 
-        # Extrapolate to full grid (using 2D views)
-        dp_dx_2d = self._extrapolate_to_full_grid(self.dp_dx_inner_2d)
-        dp_dy_2d = self._extrapolate_to_full_grid(self.dp_dy_inner_2d)
-
-        # Store flattened on full grid
-        self.arrays.dp_dx[:] = dp_dx_2d.ravel()
-        self.arrays.dp_dy[:] = dp_dy_2d.ravel()
+        # Step 2: Compute pressure gradient on full grid using full diff matrices
+        self.arrays.dp_dx[:] = self.Dx @ p_full
+        self.arrays.dp_dy[:] = self.Dy @ p_full
 
     def _compute_residuals(self, u, v, p):
         """Compute RHS residuals for pseudo time-stepping.

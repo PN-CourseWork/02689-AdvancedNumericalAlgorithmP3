@@ -5,7 +5,7 @@ method for incompressible Navier-Stokes equations"
 
 Implements:
 - FSG (Full Single Grid): Sequential solve from coarse to fine
-- VMG (V-cycle Multigrid with FAS): Coming in Phase 2
+- VMG (V-cycle Multigrid with FAS): V-cycle with Full Approximation Storage
 - FMG (Full Multigrid): Coming in Phase 3
 
 Transfer operators (prolongation/restriction) are pluggable via Hydra config.
@@ -21,6 +21,7 @@ import numpy as np
 from solvers.spectral.operators.transfer_operators import (
     TransferOperators,
     create_transfer_operators,
+    InjectionRestriction,
 )
 from solvers.spectral.operators.corner import (
     CornerTreatment,
@@ -28,6 +29,44 @@ from solvers.spectral.operators.corner import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _build_interpolation_matrix_1d(nodes_inner, nodes_full):
+    """Build interpolation matrix from inner grid to full grid.
+
+    Uses Chebyshev polynomial interpolation for spectral accuracy.
+    Given values f_inner at nodes_inner, computes f_full = Interp @ f_inner.
+
+    Parameters
+    ----------
+    nodes_inner : np.ndarray
+        Inner grid nodes (excludes boundary points)
+    nodes_full : np.ndarray
+        Full grid nodes (includes boundary points)
+
+    Returns
+    -------
+    Interp : np.ndarray
+        Interpolation matrix of shape (n_full, n_inner)
+    """
+    from numpy.polynomial.chebyshev import chebvander
+
+    n_inner = len(nodes_inner)
+
+    # Map physical domain to [-1, 1] for Chebyshev polynomials
+    a, b = nodes_full[0], nodes_full[-1]
+    xi_inner = 2 * (nodes_inner - a) / (b - a) - 1
+    xi_full = 2 * (nodes_full - a) / (b - a) - 1
+
+    # Vandermonde matrices: V[i,k] = T_k(xi[i])
+    V_inner = chebvander(xi_inner, n_inner - 1)  # (n_inner, n_inner)
+    V_full = chebvander(xi_full, n_inner - 1)    # (n_full, n_inner)
+
+    # Interpolation: f_full = V_full @ coeffs, where coeffs = V_inner^{-1} @ f_inner
+    # So: f_full = (V_full @ V_inner^{-1}) @ f_inner = Interp @ f_inner
+    Interp = V_full @ np.linalg.solve(V_inner, np.eye(n_inner))
+
+    return Interp
 
 
 # =============================================================================
@@ -77,8 +116,12 @@ class SpectralLevel:
     Dxx: np.ndarray  # d²/dx² on full grid
     Dyy: np.ndarray  # d²/dy² on full grid
     Laplacian: np.ndarray  # ∇² on full grid
-    Dx_inner: np.ndarray  # d/dx on inner grid
-    Dy_inner: np.ndarray  # d/dy on inner grid
+    Dx_inner: np.ndarray  # d/dx on inner grid (deprecated, kept for compatibility)
+    Dy_inner: np.ndarray  # d/dy on inner grid (deprecated, kept for compatibility)
+
+    # Interpolation matrices from inner to full grid (for pressure gradient)
+    Interp_x: np.ndarray  # 1D interpolation in x direction
+    Interp_y: np.ndarray  # 1D interpolation in y direction
 
     # Solution arrays (flattened)
     u: np.ndarray  # velocity u on full grid
@@ -181,13 +224,17 @@ def build_spectral_level(
     Dyy = np.kron(Ix, Dyy_1d)
     Laplacian = Dxx + Dyy
 
-    # Inner grid diff matrices
+    # Inner grid diff matrices (deprecated, but kept for compatibility)
     Dx_inner_1d = basis_x.diff_matrix(x_inner)
     Dy_inner_1d = basis_y.diff_matrix(y_inner)
     Ix_inner = np.eye(n - 1)
     Iy_inner = np.eye(n - 1)
     Dx_inner = np.kron(Dx_inner_1d, Iy_inner)
     Dy_inner = np.kron(Ix_inner, Dy_inner_1d)
+
+    # Build interpolation matrices from inner to full grid (for pressure gradient)
+    Interp_x = _build_interpolation_matrix_1d(x_inner, x_nodes)
+    Interp_y = _build_interpolation_matrix_1d(y_inner, y_nodes)
 
     # Allocate solution and work arrays
     return SpectralLevel(
@@ -210,6 +257,8 @@ def build_spectral_level(
         Laplacian=Laplacian,
         Dx_inner=Dx_inner,
         Dy_inner=Dy_inner,
+        Interp_x=Interp_x,
+        Interp_y=Interp_y,
         # Solution arrays
         u=np.zeros(n_full),
         v=np.zeros(n_full),
@@ -340,6 +389,96 @@ def prolongate_solution(
 
 
 # =============================================================================
+# Restriction (Fine to Coarse)
+# =============================================================================
+
+
+def restrict_solution(
+    level_fine: SpectralLevel,
+    level_coarse: SpectralLevel,
+    transfer_ops: TransferOperators,
+) -> None:
+    """Restrict solution (u, v, p) from fine level to coarse level.
+
+    Uses direct injection for variables (FAS scheme requirement).
+    This is critical: coarse GLL points are subsets of fine GLL points,
+    so injection preserves the exact solution values.
+
+    Parameters
+    ----------
+    level_fine : SpectralLevel
+        Source (fine) level
+    level_coarse : SpectralLevel
+        Target (coarse) level
+    transfer_ops : TransferOperators
+        Configured transfer operators (not used - always uses injection)
+    """
+    # FAS requires direct injection for solution restriction
+    # (coarse GLL points are subsets of fine GLL points)
+    injection = InjectionRestriction()
+
+    # Restrict velocities (full grid)
+    u_fine_2d = level_fine.u.reshape(level_fine.shape_full)
+    v_fine_2d = level_fine.v.reshape(level_fine.shape_full)
+
+    u_coarse_2d = injection.restrict_2d(u_fine_2d, level_coarse.shape_full)
+    v_coarse_2d = injection.restrict_2d(v_fine_2d, level_coarse.shape_full)
+
+    level_coarse.u[:] = u_coarse_2d.ravel()
+    level_coarse.v[:] = v_coarse_2d.ravel()
+
+    # Restrict pressure (inner grid)
+    p_fine_2d = level_fine.p.reshape(level_fine.shape_inner)
+    p_coarse_2d = injection.restrict_2d(p_fine_2d, level_coarse.shape_inner)
+    level_coarse.p[:] = p_coarse_2d.ravel()
+
+    log.debug(
+        f"Restricted solution from level {level_fine.level_idx} "
+        f"(N={level_fine.n}) to level {level_coarse.level_idx} (N={level_coarse.n})"
+    )
+
+
+def restrict_residual(
+    level_fine: SpectralLevel,
+    level_coarse: SpectralLevel,
+    transfer_ops: TransferOperators,
+) -> None:
+    """Restrict residuals (R_u, R_v, R_p) from fine to coarse level.
+
+    Uses FFT-based restriction for residuals (spectral truncation).
+
+    Parameters
+    ----------
+    level_fine : SpectralLevel
+        Source (fine) level with computed residuals
+    level_coarse : SpectralLevel
+        Target (coarse) level to receive restricted residuals
+    transfer_ops : TransferOperators
+        Configured transfer operators
+    """
+    # Restrict momentum residuals (full grid)
+    R_u_fine_2d = level_fine.R_u.reshape(level_fine.shape_full)
+    R_v_fine_2d = level_fine.R_v.reshape(level_fine.shape_full)
+
+    R_u_coarse_2d = transfer_ops.restriction.restrict_2d(
+        R_u_fine_2d, level_coarse.shape_full
+    )
+    R_v_coarse_2d = transfer_ops.restriction.restrict_2d(
+        R_v_fine_2d, level_coarse.shape_full
+    )
+
+    level_coarse.R_u[:] = R_u_coarse_2d.ravel()
+    level_coarse.R_v[:] = R_v_coarse_2d.ravel()
+
+    # Restrict continuity residual (inner grid)
+    R_p_fine_2d = level_fine.R_p.reshape(level_fine.shape_inner)
+    R_p_coarse_2d = transfer_ops.restriction.restrict_2d(
+        R_p_fine_2d, level_coarse.shape_inner
+    )
+    level_coarse.R_p[:] = R_p_coarse_2d.ravel()
+
+
+# =============================================================================
 # Level-Specific Solver Routines
 # =============================================================================
 
@@ -348,6 +487,7 @@ class MultigridSmoother:
     """Performs RK4 smoothing iterations on a single level.
 
     Encapsulates the time-stepping logic for one multigrid level.
+    Supports FAS scheme by allowing external forcing terms (tau correction).
     """
 
     def __init__(
@@ -368,6 +508,12 @@ class MultigridSmoother:
         self.CFL = CFL
         self.Lx = Lx
         self.Ly = Ly
+
+        # FAS forcing terms (tau correction from fine grid)
+        # These are ADDED to the computed residuals during coarse grid solve
+        self.tau_u = None
+        self.tau_v = None
+        self.tau_p = None
 
         # Use subtraction method on all levels with corner exclusion for stability
         self.corner_treatment = corner_treatment
@@ -451,21 +597,23 @@ class MultigridSmoother:
         return full_2d
 
     def _interpolate_pressure_gradient(self):
-        """Compute pressure gradient on inner grid and extrapolate to full."""
+        """Compute pressure gradient on full grid from inner-grid pressure.
+
+        Uses spectral interpolation (Chebyshev polynomial fit) to extend
+        pressure from inner grid to full grid before differentiation.
+        This maintains spectral accuracy.
+        """
         lvl = self.level
 
-        # Compute on inner grid
-        lvl.dp_dx_inner[:] = lvl.Dx_inner @ lvl.p
-        lvl.dp_dy_inner[:] = lvl.Dy_inner @ lvl.p
+        # Step 1: Interpolate pressure from inner grid to full grid using spectral interpolation
+        # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
+        p_inner_2d = lvl.p.reshape(lvl.shape_inner)
+        p_full_2d = lvl.Interp_x @ p_inner_2d @ lvl.Interp_y.T
+        p_full = p_full_2d.ravel()
 
-        # Extrapolate to full grid
-        dp_dx_inner_2d = lvl.dp_dx_inner.reshape(lvl.shape_inner)
-        dp_dy_inner_2d = lvl.dp_dy_inner.reshape(lvl.shape_inner)
-        dp_dx_2d = self._extrapolate_to_full_grid(dp_dx_inner_2d)
-        dp_dy_2d = self._extrapolate_to_full_grid(dp_dy_inner_2d)
-
-        lvl.dp_dx[:] = dp_dx_2d.ravel()
-        lvl.dp_dy[:] = dp_dy_2d.ravel()
+        # Step 2: Compute pressure gradient on full grid using full diff matrices
+        lvl.dp_dx[:] = lvl.Dx @ p_full
+        lvl.dp_dy[:] = lvl.Dy @ p_full
 
     def _compute_residuals(self, u: np.ndarray, v: np.ndarray, p: np.ndarray):
         """Compute RHS residuals for RK4 pseudo time-stepping."""
@@ -516,6 +664,14 @@ class MultigridSmoother:
         divergence_2d = divergence_full.reshape(lvl.shape_full)
         divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
         lvl.R_p[:] = -self.beta_squared * divergence_inner
+
+        # Add FAS tau correction if set (for coarse grid solves in V-cycle)
+        if self.tau_u is not None:
+            lvl.R_u[:] += self.tau_u
+        if self.tau_v is not None:
+            lvl.R_v[:] += self.tau_v
+        if self.tau_p is not None:
+            lvl.R_p[:] += self.tau_p
 
     def _enforce_boundary_conditions(self, u: np.ndarray, v: np.ndarray):
         """Enforce boundary conditions using corner treatment."""
@@ -631,6 +787,34 @@ class MultigridSmoother:
     def get_continuity_residual(self) -> float:
         """Get L2 norm of continuity residual."""
         return np.linalg.norm(self.level.R_p)
+
+    def set_tau_correction(
+        self,
+        tau_u: np.ndarray,
+        tau_v: np.ndarray,
+        tau_p: np.ndarray,
+    ):
+        """Set FAS tau correction terms for coarse grid solve.
+
+        These terms are added to the computed residuals during RK4 steps.
+        Call clear_tau_correction() after the coarse grid solve is complete.
+
+        Parameters
+        ----------
+        tau_u, tau_v : np.ndarray
+            Momentum tau corrections (full grid size)
+        tau_p : np.ndarray
+            Pressure tau correction (inner grid size)
+        """
+        self.tau_u = tau_u
+        self.tau_v = tau_v
+        self.tau_p = tau_p
+
+    def clear_tau_correction(self):
+        """Clear FAS tau correction terms."""
+        self.tau_u = None
+        self.tau_v = None
+        self.tau_p = None
 
 
 # =============================================================================
@@ -796,3 +980,317 @@ def solve_fsg(
     )
 
     return finest_level, total_iterations, final_converged
+
+
+# =============================================================================
+# VMG Driver (V-cycle Multigrid with FAS)
+# =============================================================================
+
+
+def solve_vmg(
+    levels: List[SpectralLevel],
+    Re: float,
+    beta_squared: float,
+    lid_velocity: float,
+    CFL: float,
+    tolerance: float,
+    max_iterations: int,
+    transfer_ops: Optional[TransferOperators] = None,
+    corner_treatment: Optional[CornerTreatment] = None,
+    Lx: float = 1.0,
+    Ly: float = 1.0,
+    pre_smoothing: List[int] = None,
+    post_smoothing: List[int] = None,
+    correction_damping: float = 0.2,
+) -> Tuple[SpectralLevel, int, bool]:
+    """Solve using V-cycle Multigrid (VMG) with FAS scheme.
+
+    Starts on finest grid and performs V-cycles until convergence.
+    Each V-cycle: down to coarsest (presmoothing), up to finest (postsmoothing).
+
+    Per Zhang & Xi (2010), Section 3.1:
+    - Uses FAS (Full Approximation Storage) scheme for nonlinear problems
+    - Presmoothing iterations vary by level (e.g., 1-2-3 from fine to coarse)
+    - Postsmoothing is optional (paper says often unnecessary)
+
+    Notation from paper: 48-VMG-123 means:
+    - N=48 on finest grid, 3 levels
+    - Presmoothing: 1 step on finest, 2 on intermediate, 3 on coarsest
+
+    Parameters
+    ----------
+    levels : List[SpectralLevel]
+        Grid hierarchy (index 0 = coarsest, index -1 = finest)
+    Re, beta_squared, lid_velocity, CFL : float
+        Solver parameters
+    tolerance : float
+        Convergence tolerance on finest level
+    max_iterations : int
+        Maximum V-cycles
+    transfer_ops : TransferOperators, optional
+        Configured transfer operators
+    corner_treatment : CornerTreatment, optional
+        Corner singularity treatment
+    Lx, Ly : float
+        Domain dimensions
+    pre_smoothing : List[int], optional
+        Presmoothing iterations per level (coarse to fine order).
+        Default: [3, 2, 1] for 3 levels
+    post_smoothing : List[int], optional
+        Postsmoothing iterations per level. Default: [0, 0, 0] (none)
+
+    Returns
+    -------
+    tuple
+        (finest_level, total_iterations, converged)
+    """
+    # Create default transfer operators if not provided
+    if transfer_ops is None:
+        transfer_ops = create_transfer_operators(
+            prolongation_method="fft",
+            restriction_method="fft",
+        )
+
+    # Create default corner treatment if not provided
+    if corner_treatment is None:
+        corner_treatment = create_corner_treatment(method="smoothing")
+
+    n_levels = len(levels)
+
+    # Default smoothing iterations (paper uses 1-2-3 from fine to coarse)
+    # We store in coarse-to-fine order to match levels list
+    if pre_smoothing is None:
+        pre_smoothing = list(range(n_levels, 0, -1))  # e.g., [3, 2, 1] for 3 levels
+    if post_smoothing is None:
+        post_smoothing = [0] * n_levels  # No postsmoothing by default
+
+    log.info(f"VMG: {n_levels} levels, pre_smoothing={pre_smoothing}, post_smoothing={post_smoothing}")
+
+    # Handle subtraction method on coarse levels
+    uses_subtraction = corner_treatment.uses_modified_convection()
+    if uses_subtraction:
+        smoothing_treatment = create_corner_treatment(method="smoothing")
+        min_n_for_subtraction = 8
+    else:
+        smoothing_treatment = None
+        min_n_for_subtraction = 0
+
+    # Create smoothers for each level
+    smoothers = []
+    for level_idx, level in enumerate(levels):
+        # Select corner treatment for this level
+        if uses_subtraction and level.n < min_n_for_subtraction:
+            level_corner_treatment = smoothing_treatment
+        else:
+            level_corner_treatment = corner_treatment
+
+        smoother = MultigridSmoother(
+            level=level,
+            Re=Re,
+            beta_squared=beta_squared,
+            lid_velocity=lid_velocity,
+            CFL=CFL,
+            corner_treatment=level_corner_treatment,
+            Lx=Lx,
+            Ly=Ly,
+        )
+        smoother.initialize_lid()
+        smoothers.append(smoother)
+
+    # Use whatever initial condition is already on finest level
+    # (caller can set it, default from build_hierarchy is zeros)
+    finest_level = levels[-1]
+    smoothers[-1].initialize_lid()  # Just apply lid BC
+
+    total_iterations = 0
+    converged = False
+
+    def v_cycle(level_idx: int) -> int:
+        """Perform one V-cycle starting from given level.
+
+        Uses FAS (Full Approximation Storage) scheme:
+        1. Presmooth on current level
+        2. Compute fine grid residual
+        3. Restrict solution and residual to coarse level
+        4. Compute tau = I(r_fine) - R(I(φ_fine)) [FAS defect correction]
+        5. Set tau on coarse smoother, recurse
+        6. Prolongate correction back to fine level
+        7. Postsmooth
+
+        Returns number of smoothing iterations performed.
+        """
+        iters = 0
+        level = levels[level_idx]
+        smoother = smoothers[level_idx]
+
+        # Presmoothing
+        n_pre = pre_smoothing[level_idx]
+        if n_pre > 0:
+            smoother.smooth(n_pre)
+            iters += n_pre
+
+        # If not coarsest level, recurse
+        if level_idx > 0:
+            coarse_level = levels[level_idx - 1]
+            coarse_smoother = smoothers[level_idx - 1]
+
+            # Step 1: Compute residuals on current (fine) level
+            smoother._compute_residuals(level.u, level.v, level.p)
+
+            # Store fine grid residual before restriction
+            R_u_fine = level.R_u.copy()
+            R_v_fine = level.R_v.copy()
+            R_p_fine = level.R_p.copy()
+
+            # Store current solution before restriction (for correction later)
+            u_old = level.u.copy()
+            v_old = level.v.copy()
+            p_old = level.p.copy()
+
+            # Step 2: Restrict solution to coarse level: φ_coarse = I(φ_fine)
+            restrict_solution(level, coarse_level, transfer_ops)
+
+            # Store restricted solution (needed for correction computation)
+            u_coarse_old = coarse_level.u.copy()
+            v_coarse_old = coarse_level.v.copy()
+            p_coarse_old = coarse_level.p.copy()
+
+            # Step 3: Restrict residuals to coarse level: I(r_fine)
+            # This puts restricted residuals in coarse_level.R_u, R_v, R_p
+            restrict_residual(level, coarse_level, transfer_ops)
+
+            # Store restricted fine grid residual: I(r_fine)
+            I_R_u = coarse_level.R_u.copy()
+            I_R_v = coarse_level.R_v.copy()
+            I_R_p = coarse_level.R_p.copy()
+
+            # Step 4: Compute FAS tau correction
+            # τ = I_H(r_h) - L_H(I_H(u_h))
+            # where:
+            #   I_H(r_h) = restricted fine residual (stored in I_R_u, I_R_v, I_R_p)
+            #   L_H(I_H(u_h)) = coarse residual from restricted solution
+            #
+            # The tau correction ensures the coarse problem is consistent with fine
+            coarse_smoother._compute_residuals(
+                coarse_level.u, coarse_level.v, coarse_level.p
+            )
+
+            # L_H(I_H(u_h)) is now in coarse_level.R_u, R_v, R_p
+            # tau = I_H(r_h) - L_H(I_H(u_h))
+            tau_u = I_R_u - coarse_level.R_u
+            tau_v = I_R_v - coarse_level.R_v
+            tau_p = I_R_p - coarse_level.R_p
+
+            # Set tau correction on coarse smoother
+            coarse_smoother.set_tau_correction(tau_u, tau_v, tau_p)
+
+            # Apply boundary conditions on coarse level
+            coarse_smoother._enforce_boundary_conditions(coarse_level.u, coarse_level.v)
+
+            # Recurse to coarser level
+            iters += v_cycle(level_idx - 1)
+
+            # Clear tau after coarse solve
+            coarse_smoother.clear_tau_correction()
+
+            # Step 6: Compute correction: delta = φ_coarse_new - φ_coarse_old
+            delta_u = coarse_level.u - u_coarse_old
+            delta_v = coarse_level.v - v_coarse_old
+            delta_p = coarse_level.p - p_coarse_old
+
+            # Debug: log correction magnitude
+            if cycle == 0 and level_idx == finest_idx:
+                log.debug(
+                    f"Coarse correction norms: |du|={np.linalg.norm(delta_u):.2e}, "
+                    f"|dv|={np.linalg.norm(delta_v):.2e}, |dp|={np.linalg.norm(delta_p):.2e}"
+                )
+
+            # Prolongate correction to fine level
+            delta_u_2d = delta_u.reshape(coarse_level.shape_full)
+            delta_v_2d = delta_v.reshape(coarse_level.shape_full)
+            delta_p_2d = delta_p.reshape(coarse_level.shape_inner)
+
+            delta_u_fine = transfer_ops.prolongation.prolongate_2d(
+                delta_u_2d, level.shape_full
+            ).ravel()
+            delta_v_fine = transfer_ops.prolongation.prolongate_2d(
+                delta_v_2d, level.shape_full
+            ).ravel()
+            delta_p_fine = transfer_ops.prolongation.prolongate_2d(
+                delta_p_2d, level.shape_inner
+            ).ravel()
+
+            # Damping from parameter (0 = no correction, 1 = full correction)
+            # With proper FAS tau correction, use full correction (1.0)
+            damping = correction_damping
+
+            # Update fine level solution with damped correction
+            level.u[:] = u_old + damping * delta_u_fine
+            level.v[:] = v_old + damping * delta_v_fine
+            level.p[:] = p_old + damping * delta_p_fine
+
+            # Enforce boundary conditions after correction
+            smoother._enforce_boundary_conditions(level.u, level.v)
+
+        # Postsmoothing
+        n_post = post_smoothing[level_idx]
+        if n_post > 0:
+            smoother.smooth(n_post)
+            iters += n_post
+
+        return iters
+
+    # Main V-cycle loop
+    finest_idx = n_levels - 1
+    finest_smoother = smoothers[finest_idx]
+
+    # Track previous solution for convergence check
+    u_prev = finest_level.u.copy()
+    v_prev = finest_level.v.copy()
+
+    for cycle in range(max_iterations):
+        # Perform one V-cycle
+        cycle_iters = v_cycle(finest_idx)
+        total_iterations += cycle_iters
+
+        # Check convergence using relative velocity change (same as SG solver)
+        u_change = np.linalg.norm(finest_level.u - u_prev)
+        v_change = np.linalg.norm(finest_level.v - v_prev)
+        u_prev_norm = np.linalg.norm(u_prev) + 1e-12
+        v_prev_norm = np.linalg.norm(v_prev) + 1e-12
+        u_res = u_change / u_prev_norm
+        v_res = v_change / v_prev_norm
+
+        # Update previous
+        u_prev[:] = finest_level.u
+        v_prev[:] = finest_level.v
+
+        max_res = max(u_res, v_res)
+        if max_res < tolerance:
+            converged = True
+            cont_res = finest_smoother.get_continuity_residual()
+            log.info(
+                f"VMG converged after {cycle + 1} V-cycles ({total_iterations} total iters), "
+                f"residual={max_res:.2e}, continuity={cont_res:.2e}"
+            )
+            break
+
+        # Logging every 10 V-cycles
+        if (cycle + 1) % 10 == 0:
+            cont_res = finest_smoother.get_continuity_residual()
+            log.info(
+                f"VMG cycle {cycle + 1}: u_res={u_res:.2e}, v_res={v_res:.2e}, "
+                f"cont={cont_res:.2e}"
+            )
+
+    if not converged:
+        log.warning(
+            f"VMG did not converge after {max_iterations} V-cycles "
+            f"({total_iterations} total iterations)"
+        )
+
+    log.info(
+        f"VMG completed: {total_iterations} total iterations, converged={converged}"
+    )
+
+    return finest_level, total_iterations, converged

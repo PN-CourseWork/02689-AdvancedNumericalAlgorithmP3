@@ -173,10 +173,16 @@ class FFTProlongation(Prolongation):
     """FFT/DCT-based prolongation operator.
 
     From Zhang & Xi (2010), Eq. 10-11:
-    1. Compute discrete Chebyshev coefficients via DCT
+    1. Compute discrete Chebyshev coefficients via DCT-I
     2. Evaluate polynomial at fine grid points
 
     This is spectrally accurate and efficient via FFT.
+
+    The key relationship is:
+        c_k = DCT-I(f) / N
+
+    where N is the polynomial degree (n_points - 1), and the Chebyshev series
+    uses the primed notation where c_0 and c_N are halved during evaluation.
     """
 
     def prolongate_1d(self, u_coarse: np.ndarray, n_fine: int) -> np.ndarray:
@@ -207,35 +213,27 @@ class FFTProlongation(Prolongation):
                 f"Prolongation requires n_coarse ({n_coarse}) <= n_fine ({n_fine})"
             )
 
-        # Step 1: Compute Chebyshev coefficients from coarse grid values
-        # Using DCT-I: coeffs_k = (2/N) * sum_{j=0}^N (1/c_j) * f_j * cos(pi*k*j/N)
-        # where c_j = 2 if j=0 or N, else 1
+        # Step 1: Compute Chebyshev coefficients via DCT-I
+        # The relationship is: c_k = DCT-I(f) / N (no pre-weighting needed)
         N_c = n_coarse - 1
-
-        # Apply boundary weights to input
-        u_weighted = u_coarse.copy()
-        u_weighted[0] /= 2
-        u_weighted[-1] /= 2
-
-        # DCT-I gives: sum_{j=0}^N f_j * cos(pi*k*j/N)
-        coeffs = dct(u_weighted, type=1) / N_c
-
-        # Apply boundary weights to coefficients
-        coeffs[0] /= 2
-        coeffs[-1] /= 2
+        coeffs = dct(u_coarse, type=1) / N_c
 
         # Step 2: Evaluate Chebyshev polynomial at fine grid points
-        # f(x_i) = sum_{k=0}^{N_c} c_k * T_k(x_i)
-        # where x_i = cos(pi*i/N_f) are fine Chebyshev-Lobatto nodes
+        # The Chebyshev series uses primed notation:
+        #   f(x) = c_0/2 + sum_{k=1}^{N-1} c_k * T_k(x) + c_N/2 * T_N(x)
+        # At CGL nodes x_i = cos(pi*i/M): T_k(x_i) = cos(k*pi*i/M)
         N_f = n_fine - 1
         u_fine = np.zeros(n_fine)
 
         for i in range(n_fine):
-            # Chebyshev-Lobatto node on fine grid
-            theta_fine = np.pi * i / N_f
-            # Evaluate polynomial: sum of c_k * cos(k * theta)
-            for k in range(n_coarse):
-                u_fine[i] += coeffs[k] * np.cos(k * theta_fine)
+            theta = np.pi * i / N_f
+            # First coefficient halved
+            u_fine[i] = coeffs[0] / 2
+            # Interior coefficients
+            for k in range(1, N_c):
+                u_fine[i] += coeffs[k] * np.cos(k * theta)
+            # Last coefficient halved
+            u_fine[i] += coeffs[N_c] / 2 * np.cos(N_c * theta)
 
         return u_fine
 
@@ -244,11 +242,17 @@ class FFTRestriction(Restriction):
     """FFT/DCT-based restriction operator.
 
     From Zhang & Xi (2010):
-    1. Compute discrete Chebyshev coefficients via DCT
+    1. Compute discrete Chebyshev coefficients via DCT-I
     2. Truncate high-frequency coefficients
-    3. Evaluate on coarse grid via inverse DCT
+    3. Evaluate on coarse grid
 
     This is used for restricting residuals in V-cycle multigrid.
+
+    The key relationship is:
+        c_k = DCT-I(f) / N
+
+    where N is the polynomial degree (n_points - 1), and the Chebyshev series
+    uses the primed notation where c_0 and c_N are halved during evaluation.
     """
 
     def restrict_1d(self, u_fine: np.ndarray, n_coarse: int) -> np.ndarray:
@@ -276,36 +280,27 @@ class FFTRestriction(Restriction):
                 f"Restriction requires n_fine ({n_fine}) >= n_coarse ({n_coarse})"
             )
 
-        # Step 1: Compute Chebyshev coefficients from fine grid values
+        # Step 1: Compute Chebyshev coefficients via DCT-I
+        # The relationship is: c_k = DCT-I(f) / N (no pre-weighting needed)
         N_f = n_fine - 1
+        coeffs = dct(u_fine, type=1) / N_f
 
-        # Apply boundary weights to input
-        u_weighted = u_fine.copy()
-        u_weighted[0] /= 2
-        u_weighted[-1] /= 2
-
-        # DCT-I gives: sum_{j=0}^N f_j * cos(pi*k*j/N)
-        coeffs = dct(u_weighted, type=1) / N_f
-
-        # Apply boundary weights to coefficients
-        coeffs[0] /= 2
-        coeffs[-1] /= 2
-
-        # Step 2: Truncate to keep only low-frequency coefficients
-        # (we keep n_coarse coefficients for the coarse polynomial)
-        n_keep = min(n_coarse, len(coeffs))
-        coeffs_truncated = coeffs[:n_keep]
-
-        # Step 3: Evaluate truncated polynomial at coarse grid points
+        # Step 2: Evaluate polynomial at coarse grid points using ALL coefficients
+        # The Chebyshev series uses primed notation:
+        #   f(x) = c_0/2 + sum_{k=1}^{N-1} c_k * T_k(x) + c_N/2 * T_N(x)
+        # where N is the fine grid polynomial degree (n_fine - 1)
         N_c = n_coarse - 1
         u_coarse = np.zeros(n_coarse)
 
         for i in range(n_coarse):
-            # Chebyshev-Lobatto node on coarse grid
-            theta_coarse = np.pi * i / N_c
-            # Evaluate polynomial: sum of c_k * cos(k * theta)
-            for k in range(n_keep):
-                u_coarse[i] += coeffs_truncated[k] * np.cos(k * theta_coarse)
+            theta = np.pi * i / N_c
+            # First coefficient halved
+            u_coarse[i] = coeffs[0] / 2
+            # Interior coefficients (all of them)
+            for k in range(1, N_f):
+                u_coarse[i] += coeffs[k] * np.cos(k * theta)
+            # Last coefficient of ORIGINAL series halved
+            u_coarse[i] += coeffs[N_f] / 2 * np.cos(N_f * theta)
 
         return u_coarse
 

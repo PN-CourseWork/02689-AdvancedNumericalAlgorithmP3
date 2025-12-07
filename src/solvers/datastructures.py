@@ -249,6 +249,15 @@ class SpectralParameters(Parameters):
     prolongation_method: str = "fft"
     restriction_method: str = "fft"
 
+    # VMG-specific: smoothing iterations per level (coarse-to-fine order)
+    # Default is None, which uses [n_levels, n_levels-1, ..., 1]
+    pre_smoothing: list = None
+    post_smoothing: list = None
+
+    # VMG coarse correction damping (0 = no correction, 1 = full correction)
+    # With proper FAS tau correction, use full correction (1.0)
+    correction_damping: float = 1.0
+
 
 @dataclass
 class SpectralSolverFields:

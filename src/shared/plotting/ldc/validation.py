@@ -13,7 +13,6 @@ import pandas as pd
 import seaborn as sns
 from scipy.interpolate import RectBivariateSpline
 
-from spectral import spectral_interpolate
 from utilities.config.paths import get_repo_root
 
 from .data_loading import load_fields_from_zarr, restructure_fields
@@ -190,28 +189,23 @@ def plot_ghia_comparison(
             y_line = np.linspace(y_unique.min(), y_unique.max(), n_points)
             x_line = np.linspace(x_unique.min(), x_unique.max(), n_points)
 
-            # Find physical center (x=0.5, y=0.5), not middle index!
-            # For non-uniform grids (Chebyshev), middle index != physical center
+            # Find physical center (x=0.5, y=0.5)
             x_center = 0.5 * (x_unique.min() + x_unique.max())
             y_center = 0.5 * (y_unique.min() + y_unique.max())
-            x_center_idx = np.argmin(np.abs(x_unique - x_center))
-            y_center_idx = np.argmin(np.abs(y_unique - y_center))
 
-            # Use appropriate interpolation based on solver type
-            # FV uses uniform grids -> linear interpolation
-            # Spectral uses non-uniform grids -> spectral interpolation
-            if solver_name.lower().startswith("fv"):
-                # Linear interpolation for FV solvers
-                u_sim = np.interp(y_line, y_unique, U_2d[:, x_center_idx])
-                v_sim = np.interp(x_line, x_unique, V_2d[y_center_idx, :])
-            else:
-                # Spectral interpolation for spectral solvers
-                u_sim = spectral_interpolate(
-                    y_unique, U_2d[:, x_center_idx], y_line, basis="legendre"
-                )
-                v_sim = spectral_interpolate(
-                    x_unique, V_2d[y_center_idx, :], x_line, basis="legendre"
-                )
+            # Use 2D interpolation to get values EXACTLY at centerlines
+            # This is critical for non-uniform grids (Chebyshev) where
+            # the closest grid point may be significantly off from 0.5
+            U_spline = RectBivariateSpline(y_unique, x_unique, U_2d)
+            V_spline = RectBivariateSpline(y_unique, x_unique, V_2d)
+
+            # u along vertical centerline (x=x_center, varying y)
+            # Use grid=False since we're evaluating at specific (y, x) pairs
+            x_center_arr = np.full_like(y_line, x_center)
+            u_sim = U_spline(y_line, x_center_arr, grid=False)
+            # v along horizontal centerline (y=y_center, varying x)
+            y_center_arr = np.full_like(x_line, y_center)
+            v_sim = V_spline(y_center_arr, x_line, grid=False)
 
             # Create combined method-N label
             method_label = f"{method}-{N}"
