@@ -4,8 +4,10 @@ from abc import ABC, abstractmethod
 import logging
 import os
 import time
+from pathlib import Path
 
 import numpy as np
+import pyvista as pv
 import mlflow
 
 from dataclasses import asdict
@@ -341,25 +343,81 @@ class LidDrivenCavitySolver(ABC):
         return 0.5 * float(np.sum(omega * omega) * dA)
 
     def _compute_palinstrophy(self) -> float:
-        """Compute palinstrophy: P = ∫ (∂ω/∂x)² + (∂ω/∂y)² dA."""
+        """Compute palinstrophy: P = 0.5 * ∫ ||∇ω||² dA."""
         omega = self._compute_vorticity()
         domega_dx, domega_dy = self._compute_gradient(omega)
         dA = self._get_cell_area()
-        return float(np.sum(domega_dx**2 + domega_dy**2) * dA)
+        return 0.5 * float(np.sum(domega_dx**2 + domega_dy**2) * dA)
 
-    def _compute_gradient(self, field: np.ndarray) -> tuple:
-        """Compute gradient of scalar field using finite differences."""
+    def _compute_gradient(
+        self, field: np.ndarray, bc_walls: float = 0.0, bc_lid: float = None
+    ) -> tuple:
+        """Compute gradient of scalar field using finite differences.
+
+        Uses proper ghost cell values for Dirichlet BCs:
+        ghost = 2 * wall_value - interior_value
+
+        Parameters
+        ----------
+        field : np.ndarray
+            Scalar field values at cell centers
+        bc_walls : float
+            Dirichlet BC value at walls (bottom, left, right). Default 0.
+        bc_lid : float or None
+            Dirichlet BC value at top lid. If None, uses bc_walls.
+        """
+        if bc_lid is None:
+            bc_lid = bc_walls
+
         dx, dy = self.dx_min, self.dy_min
         shape = getattr(self, "shape_full", (self.params.nx, self.params.ny))
-        field_2d = np.pad(field.reshape(shape), 1, mode="edge")
-        df_dx = (field_2d[1:-1, 2:] - field_2d[1:-1, :-2]) / (2 * dx)
-        df_dy = (field_2d[2:, 1:-1] - field_2d[:-2, 1:-1]) / (2 * dy)
+        field_2d = field.reshape(shape)  # shape = (ny, nx)
+        ny, nx = shape
+
+        # Create padded array with proper ghost cell values for Dirichlet BCs
+        # Ghost value = 2 * BC_value - interior_value
+        field_padded = np.zeros((ny + 2, nx + 2), dtype=field.dtype)
+        field_padded[1:-1, 1:-1] = field_2d
+
+        # Bottom boundary (j=0 in original, row 0 in padded is ghost)
+        field_padded[0, 1:-1] = 2 * bc_walls - field_2d[0, :]
+
+        # Top boundary (j=ny-1 in original, row ny+1 in padded is ghost)
+        field_padded[-1, 1:-1] = 2 * bc_lid - field_2d[-1, :]
+
+        # Left boundary (i=0 in original, col 0 in padded is ghost)
+        field_padded[1:-1, 0] = 2 * bc_walls - field_2d[:, 0]
+
+        # Right boundary (i=nx-1 in original, col nx+1 in padded is ghost)
+        field_padded[1:-1, -1] = 2 * bc_walls - field_2d[:, -1]
+
+        # Corners (average of adjacent ghost values)
+        field_padded[0, 0] = 0.5 * (field_padded[0, 1] + field_padded[1, 0])
+        field_padded[0, -1] = 0.5 * (field_padded[0, -2] + field_padded[1, -1])
+        field_padded[-1, 0] = 0.5 * (field_padded[-1, 1] + field_padded[-2, 0])
+        field_padded[-1, -1] = 0.5 * (field_padded[-1, -2] + field_padded[-2, -1])
+
+        # Central differences
+        df_dx = (field_padded[1:-1, 2:] - field_padded[1:-1, :-2]) / (2 * dx)
+        df_dy = (field_padded[2:, 1:-1] - field_padded[:-2, 1:-1]) / (2 * dy)
         return df_dx.ravel(), df_dy.ravel()
 
     def _compute_vorticity(self) -> np.ndarray:
-        """Compute vorticity ω = ∂v/∂x - ∂u/∂y using finite differences."""
-        dv_dx, _ = self._compute_gradient(self.arrays.v)
-        _, du_dy = self._compute_gradient(self.arrays.u)
+        """Compute vorticity ω = ∂v/∂x - ∂u/∂y using finite differences.
+
+        Uses proper boundary conditions for lid-driven cavity:
+        - u: bc_walls=0, bc_lid=lid_velocity
+        - v: bc_walls=0, bc_lid=0
+        """
+        # Get lid velocity from params (default 1.0 for lid-driven cavity)
+        lid_velocity = getattr(self.params, "lid_velocity", 1.0)
+
+        # v has zero BC on all walls including lid
+        dv_dx, _ = self._compute_gradient(self.arrays.v, bc_walls=0.0, bc_lid=0.0)
+
+        # u has zero BC on walls, lid_velocity on top
+        _, du_dy = self._compute_gradient(self.arrays.u, bc_walls=0.0, bc_lid=lid_velocity)
+
         return dv_dx - du_dy
 
     def _get_cell_area(self) -> float:
@@ -371,6 +429,127 @@ class LidDrivenCavitySolver(ABC):
         # Fallback: assume unit domain
         n = len(self.arrays.u)
         return 1.0 / n
+
+    # =========================================================================
+    # VTK Export - to_vtk() creates StructuredGrid with all fields
+    # =========================================================================
+
+    def to_vtk(self) -> pv.StructuredGrid:
+        """Export solution to VTK StructuredGrid with all fields and metadata.
+
+        Creates a structured grid with:
+        - Primary fields: u, v, p
+        - Derived fields: velocity_magnitude, vorticity, velocity (vector)
+        - Metadata: Re, N, solver name
+
+        Subclasses may override to use native differentiation for derived fields.
+
+        Returns
+        -------
+        pv.StructuredGrid
+            Solution on structured grid, ready for VTS export
+        """
+        # Get unique sorted coordinates
+        x_unique = np.sort(np.unique(self.fields.x))
+        y_unique = np.sort(np.unique(self.fields.y))
+        nx, ny = len(x_unique), len(y_unique)
+
+        # Reshape fields to 2D grid: U_2d[j, i] = u at (x_unique[i], y_unique[j])
+        indices = np.lexsort((self.fields.x, self.fields.y))
+        u_sorted = self.fields.u[indices]
+        v_sorted = self.fields.v[indices]
+        p_sorted = self.fields.p[indices]
+
+        U_2d = u_sorted.reshape(ny, nx)
+        V_2d = v_sorted.reshape(ny, nx)
+        P_2d = p_sorted.reshape(ny, nx)
+
+        # Create 3D grid (z=0 plane)
+        X, Y = np.meshgrid(x_unique, y_unique)
+        Z = np.zeros_like(X)
+        grid = pv.StructuredGrid(X, Y, Z)
+
+        # Add primary fields - use Fortran order to match VTK's column-major point ordering
+        grid["u"] = U_2d.ravel("F")
+        grid["v"] = V_2d.ravel("F")
+        grid["pressure"] = P_2d.ravel("F")
+
+        # Add derived fields
+        grid["velocity_magnitude"] = np.sqrt(U_2d**2 + V_2d**2).ravel("F")
+
+        # Compute vorticity using native differentiation
+        vorticity = self._compute_vorticity_for_export(U_2d, V_2d, x_unique, y_unique)
+        grid["vorticity"] = vorticity.ravel("F")
+
+        # Add velocity vector field
+        vectors = np.zeros((nx * ny, 3))
+        vectors[:, 0] = U_2d.ravel("F")
+        vectors[:, 1] = V_2d.ravel("F")
+        grid["velocity"] = vectors
+
+        # Add metadata
+        grid.field_data["Re"] = np.array([self.params.Re])
+        grid.field_data["N"] = np.array([self.params.nx])
+        grid.field_data["solver"] = np.array([self.params.name])
+
+        return grid
+
+    def _compute_vorticity_for_export(
+        self, U_2d: np.ndarray, V_2d: np.ndarray, x: np.ndarray, y: np.ndarray
+    ) -> np.ndarray:
+        """Compute vorticity for VTK export. Override for native differentiation.
+
+        Default uses scipy RectBivariateSpline for smooth derivatives.
+
+        Parameters
+        ----------
+        U_2d, V_2d : np.ndarray
+            2D velocity arrays (ny, nx)
+        x, y : np.ndarray
+            1D coordinate arrays
+
+        Returns
+        -------
+        np.ndarray
+            Vorticity field (ny, nx)
+        """
+        from scipy.interpolate import RectBivariateSpline
+
+        U_spline = RectBivariateSpline(y, x, U_2d)
+        V_spline = RectBivariateSpline(y, x, V_2d)
+        dvdx = V_spline(y, x, dx=1)
+        dudy = U_spline(y, x, dy=1)
+        return dvdx - dudy
+
+    def compute_global_quantities(self) -> dict:
+        """Compute global quantities E, Z, P for the current solution.
+
+        Returns
+        -------
+        dict
+            {'E': kinetic_energy, 'Z': enstrophy, 'P': palinstrophy}
+        """
+        return {
+            "E": self._compute_energy(),
+            "Z": self._compute_enstrophy(),
+            "P": self._compute_palinstrophy(),
+        }
+
+    def save_vtk(self, filepath: Path):
+        """Save solution to VTS file.
+
+        Parameters
+        ----------
+        filepath : Path
+            Output file path (should have .vts extension)
+        """
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+
+        grid = self.to_vtk()
+        grid.save(str(filepath))
+
+        log.info(f"Saved VTS to {filepath}")
 
     # ========================================================================
     # MLflow Integration

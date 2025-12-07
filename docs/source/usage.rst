@@ -4,38 +4,54 @@ Usage Guide
 This guide covers running solvers locally with Hydra configuration management
 and on the DTU HPC cluster.
 
+Quick Start
+-----------
+
+.. code-block:: bash
+
+   # Run FV solver with validation experiment
+   uv run python main.py -m +experiment/validation/ghia=fv
+
+   # Run spectral solver
+   uv run python main.py -m +experiment/validation/ghia=spectral
+
+   # Single run (testing)
+   uv run python main.py solver=fv N=32 Re=100
+
+   # Regenerate plots without re-solving
+   uv run python main.py -m +experiment/validation/ghia=fv plot_only=true
+
+   # View MLflow UI
+   uv run mlflow ui
+
 Hydra Configuration
 -------------------
 
 The project uses `Hydra <https://hydra.cc/>`_ for configuration management.
-All solver runs are executed via ``run_solver.py``.
 
-Basic Usage
-^^^^^^^^^^^
+Configuration Structure
+^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code-block:: bash
+.. code-block:: text
 
-   # Finite Volume solver (32x32 cells, Re=100)
-   uv run python run_solver.py solver=fv N=32 Re=100
-
-   # Spectral solver (N=15 gives 16x16 nodes, Re=100)
-   uv run python run_solver.py solver=spectral N=15 Re=100
-
-Using Experiment Configs
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-Pre-defined experiment configurations are in ``conf/experiment/``:
-
-.. code-block:: bash
-
-   # Quick test (small grid, few iterations)
-   uv run python run_solver.py +experiment=quick_test solver=fv
-
-   # FV validation (default settings for benchmarking)
-   uv run python run_solver.py +experiment=fv_validation
-
-   # Spectral validation
-   uv run python run_solver.py +experiment=spectral_validation
+   conf/
+   ├── config.yaml              # Main config (N, Re, tolerance)
+   ├── problem/
+   │   └── ldc.yaml             # Physics (Re, domain size)
+   ├── solver/
+   │   ├── fv.yaml              # Finite Volume settings
+   │   └── spectral/            # Spectral solver variants
+   │       ├── sg.yaml          # Single Grid
+   │       ├── fsg.yaml         # Full Single Grid MG
+   │       ├── vmg.yaml         # V-cycle MultiGrid
+   │       └── fmg.yaml         # Full MultiGrid
+   ├── experiment/
+   │   └── validation/ghia/     # Ghia benchmark experiments
+   │       ├── fv.yaml
+   │       └── spectral.yaml
+   └── mlflow/
+       ├── local.yaml           # File-based tracking (default)
+       └── coolify.yaml         # Remote server
 
 Parameter Sweeps
 ^^^^^^^^^^^^^^^^
@@ -44,178 +60,90 @@ Run multiple configurations with Hydra's multirun (``-m``):
 
 .. code-block:: bash
 
-   # Sweep over grid sizes (sequential)
-   uv run python run_solver.py -m solver=fv N=16,32,64 Re=100
+   # Sweep over grid sizes
+   uv run python main.py -m solver=fv N=16,32,64 Re=100
 
    # Sweep over Reynolds numbers
-   uv run python run_solver.py -m solver=spectral N=31 Re=100,400,1000
+   uv run python main.py -m solver=fv N=32 Re=100,400,1000
 
-Parallel Sweeps (Joblib)
-^^^^^^^^^^^^^^^^^^^^^^^^
+   # Multi-dimensional sweep
+   uv run python main.py -m solver=fv,spectral/sg N=16,32 Re=100,400
 
-Run sweeps in parallel using all CPU cores with the Joblib launcher:
-
-.. code-block:: bash
-
-   # Parallel sweep over grid sizes
-   uv run python run_solver.py -m hydra/launcher=joblib solver=fv N=16,32,64 Re=100
-
-   # Parallel sweep over solvers
-   uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=32 Re=100
-
-   # Parallel multi-dimensional sweep (solver x N x Re = 12 jobs)
-   uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=16,32,64 Re=100,400
-
-   # Control parallelism (e.g., 4 concurrent jobs)
-   uv run python run_solver.py -m hydra/launcher=joblib hydra.launcher.n_jobs=4 solver=fv N=16,32,64
-
-Configuration Structure
-^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: text
-
-   conf/
-   ├── config.yaml              # Main config (N, Re, tolerance, etc.)
-   ├── solver/
-   │   ├── fv.yaml              # FV-specific (alpha_uv, alpha_p, scheme)
-   │   └── spectral.yaml        # Spectral-specific (CFL, beta_squared)
-   ├── experiment/
-   │   ├── quick_test.yaml      # Fast debugging runs
-   │   ├── fv_validation.yaml   # FV benchmark settings
-   │   └── spectral_validation.yaml
-   ├── mlflow/
-   │   ├── local.yaml           # File-based tracking (default)
-   │   └── coolify.yaml         # Remote server
-   └── hydra/
-       └── launcher/
-           └── joblib.yaml      # Parallel launcher (all cores)
-
-Nested Runs for Sweeps
-^^^^^^^^^^^^^^^^^^^^^^
-
-Parameter sweeps automatically create a parent-child run hierarchy in MLflow:
-
-- **Parent run**: Created before sweep starts, logs sweep configuration
-- **Child runs**: Each parameter combination nested under the parent
-
-This makes it easy to:
-
-- View all runs from a sweep together in the MLflow UI
-- Compare metrics across parameter combinations
-- Track sweep-level metadata (HPC job ID, sweep config)
+Sweeps automatically create parent-child run hierarchies in MLflow for easy comparison.
 
 MLflow Tracking
 ^^^^^^^^^^^^^^^
 
-Results are tracked with `MLflow <https://mlflow.org/>`_. Two modes available:
-
-**Local Files (Default):**
+Results are tracked with `MLflow <https://mlflow.org/>`_:
 
 .. code-block:: bash
 
-   uv run python run_solver.py solver=fv mlflow=local
+   # Local file-based tracking (default)
+   uv run python main.py solver=fv N=32 Re=100
 
-   # View UI
-   uv run main.py --mlflow-ui
+   # View results
+   uv run mlflow ui
+   # Open http://localhost:5000
 
-**Remote Server:**
+   # Remote server (configure .env first)
+   uv run python main.py solver=fv N=32 Re=100 mlflow=coolify
 
-.. code-block:: bash
+HPC Cluster (DTU LSF)
+---------------------
 
-   # Setup credentials (one-time)
-   cp .env.template .env
-   # Edit .env with your credentials
+Running experiments on the DTU HPC cluster using LSF job arrays.
 
-   # Run solver
-   uv run python run_solver.py solver=fv mlflow=coolify
-
-HPC Cluster (DTU)
------------------
-
-This section covers running parameter sweeps on the DTU HPC cluster using LSF.
-
-Initial Setup
-^^^^^^^^^^^^^
+Setup
+^^^^^
 
 1. Clone the repository on the HPC cluster
-2. Navigate into the repo root
-3. Set up MLflow credentials:
+2. Configure MLflow credentials:
 
 .. code-block:: bash
 
    cp .env.template .env
    # Edit .env with your credentials
 
-Submitting Jobs
-^^^^^^^^^^^^^^^
-
-Submit jobs using bsub with Hydra:
-
-.. code-block:: bash
-
-   # Single job
-   bsub -q hpc -W 1:00 -n 4 -R "rusage[mem=4GB]" \
-       "uv run python run_solver.py solver=fv N=32 Re=100 mlflow=coolify"
-
-   # Sequential parameter sweep
-   bsub -q hpc -W 4:00 -n 4 -R "rusage[mem=4GB]" \
-       "uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400 mlflow=coolify"
-
-Parallel Sweeps on HPC
+Submitting Experiments
 ^^^^^^^^^^^^^^^^^^^^^^
 
-Use the Joblib launcher to run parameter combinations in parallel on a single node:
+Use the ``hpc_submit.py`` script to submit experiment sweeps as job arrays:
 
 .. code-block:: bash
 
-   # Parallel sweep using all cores on the node
-   bsub -q hpc -W 2:00 -n 16 -R "rusage[mem=2GB]" -R "span[hosts=1]" \
-       "uv run python run_solver.py -m hydra/launcher=joblib solver=fv,spectral N=16,32,64 Re=100,400 mlflow=coolify"
+   # Preview job script (dry run)
+   uv run python scripts/hpc_submit.py +experiment/validation/ghia=fv --dry-run
 
-   # Control number of parallel jobs (e.g., 8 concurrent)
-   bsub -q hpc -W 2:00 -n 8 -R "rusage[mem=4GB]" -R "span[hosts=1]" \
-       "uv run python run_solver.py -m hydra/launcher=joblib hydra.launcher.n_jobs=8 solver=fv N=16,32,64,128 Re=100,400,1000 mlflow=coolify"
+   # Submit FV validation (2 jobs: N=32, N=64)
+   uv run python scripts/hpc_submit.py +experiment/validation/ghia=fv
 
-.. note::
+   # Submit with custom resources
+   uv run python scripts/hpc_submit.py +experiment/validation/ghia=spectral \
+       --queue gpuv100 --time 4:00 --cores 8 --mem 8GB
 
-   The ``-R "span[hosts=1]"`` flag ensures all cores are allocated on a single node.
-   This is required because joblib uses local multiprocessing - it cannot distribute
-   work across multiple nodes. Without this flag, LSF might split your cores across
-   nodes, leaving some unusable.
+The script:
 
-Monitoring Jobs
-^^^^^^^^^^^^^^^
-
-Check the status of your running jobs:
-
-.. code-block:: bash
-
-   bstat
+1. Parses sweep parameters from the experiment config
+2. Generates all parameter combinations
+3. Submits an LSF job array where each job runs one configuration
 
 Example output:
 
 .. code-block:: text
 
-   JOBID      USER    QUEUE      JOB_NAME   NALLOC STAT  START_TIME      ELAPSED
-   27198794   s214960 hpc        *N19-Re100      4 RUN   Nov 27 23:11    0:01:39
-   27198795   s214960 hpc        *N23-Re100      4 RUN   Nov 27 23:11    0:01:39
+   Parsing experiment: +experiment/validation/ghia=fv
+   Sweep parameters: {'N': ['32', '64'], 'Re': ['100']}
+   Total jobs: 2
+     [1] {'N': '32', 'Re': '100'}
+     [2] {'N': '64', 'Re': '100'}
 
-Killing Jobs
-^^^^^^^^^^^^
-
-Kill jobs by name or ID:
+Job Management
+^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
-   # Kill a specific job by name
-   bkill -J LDC-N32-Re100
+   bstat          # Check job status
+   bkill 12345    # Kill specific job
+   bkill 0        # Kill all your jobs
 
-   # Kill a job by ID
-   bkill 27198795
-
-   # Kill all your jobs
-   bkill 0
-
-.. tip::
-
-   Track job progress in the MLflow UI - each run logs the LSF job ID as a tag.
+Logs are written to ``logs/<job_id>_<array_index>.out``.

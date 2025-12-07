@@ -83,6 +83,27 @@ class FVSolver(LidDrivenCavitySolver):
         self.dx_min = self.params.Lx / self.params.nx
         self.dy_min = self.params.Ly / self.params.ny
 
+        # Pre-assemble pressure correction matrix (constant for structured mesh)
+        self.A_p = self._build_pressure_correction_matrix()
+
+    def _build_pressure_correction_matrix(self):
+        """Build pressure correction matrix once (constant for structured mesh).
+
+        The matrix structure and values only depend on mesh geometry and rho,
+        which are constant. We also apply the pressure pinning here.
+        """
+        row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
+        A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
+
+        # Pin pressure at cell 0 to make system non-singular
+        # Use lil_matrix for efficient row/col modification, then convert back
+        A_p_lil = A_p.tolil()
+        A_p_lil[0, :] = 0.0
+        A_p_lil[:, 0] = 0.0
+        A_p_lil[0, 0] = 1.0
+
+        return A_p_lil.tocsr()
+
     def _solve_momentum_equation(
         self, component_idx, phi, grad_phi, phi_prev_iter, grad_p_component, M
     ):
@@ -196,18 +217,16 @@ class FVSolver(LidDrivenCavitySolver):
 
         mdot_calculation(self.mesh, self.rho, a.U_star_rc, out=a.mdot_star)
 
-        # Assemble pressure correction matrix
-        row, col, data = assemble_pressure_correction_matrix(self.mesh, self.rho)
+        # Pressure correction RHS (matrix is pre-built in __init__)
         rhs_p = -compute_divergence_from_face_fluxes(self.mesh, a.mdot_star)
+        rhs_p[0] = 0.0  # Pin pressure at cell 0
 
-        # Solve pressure correction with scipy (handles nullspace internally)
-        A_p = csr_matrix((data, (row, col)), shape=(self.n_cells, self.n_cells))
+        # Solve pressure correction with PyAMG-preconditioned BiCGSTAB
         p_prime, a.M_p = scipy_solver(
-            A_p,
+            self.A_p,
             rhs_p,
             M=a.M_p,
             tolerance=self.params.linear_solver_tol,
-            remove_nullspace=True,
         )
 
         # Velocity and pressure corrections - reuse buffers

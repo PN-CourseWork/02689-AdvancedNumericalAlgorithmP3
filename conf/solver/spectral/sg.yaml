@@ -3,9 +3,17 @@
 _target_: solvers.spectral.sg.SGSolver
 name: spectral
 
+# Problem parameters (interpolated from root config)
+Re: ${Re}
+lid_velocity: ${lid_velocity}
+Lx: ${Lx}
+Ly: ${Ly}
+nx: ${N}
+ny: ${N}
+
 # Solver control
-tolerance: 1.0e-6
-max_iterations: 30000  # Spectral methods converge slowly for high Re
+tolerance: ${tolerance}
+max_iterations: ${max_iterations}
 
 # Spectral-specific parameters
 basis_type: chebyshev    # "chebyshev" or "legendre"

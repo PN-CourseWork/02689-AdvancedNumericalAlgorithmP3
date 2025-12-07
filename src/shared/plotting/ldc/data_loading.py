@@ -1,30 +1,72 @@
 """
 Data Loading and Transformation for LDC Plotting.
 
-Handles loading fields from zarr, restructuring data,
-and converting to DataFrame format.
+Handles loading solution from VTS files and converting to formats
+needed by plotting functions.
 """
 
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import zarr
+import pyvista as pv
+
+
+def load_solution(artifact_dir: Path) -> pv.StructuredGrid:
+    """Load solution as PyVista StructuredGrid.
+
+    The VTS file contains all fields (u, v, p, vorticity, velocity_magnitude)
+    and metadata (Re, N, solver name).
+
+    Parameters
+    ----------
+    artifact_dir : Path
+        Directory containing solution.vts
+
+    Returns
+    -------
+    pv.StructuredGrid
+        Solution grid with all fields
+    """
+    vtk_path = artifact_dir / "solution.vts"
+
+    if not vtk_path.exists():
+        # Fallback to legacy location
+        vtk_path = artifact_dir / "fields" / "solution.vts"
+
+    if not vtk_path.exists():
+        raise FileNotFoundError(f"VTK file not found in {artifact_dir}")
+
+    return pv.read(vtk_path)
 
 
 def load_fields_from_zarr(artifact_dir: Path) -> dict:
-    """Load solution fields from zarr artifacts."""
-    fields_dir = artifact_dir / "fields"
-    if not fields_dir.exists():
-        raise FileNotFoundError(f"Fields directory not found: {fields_dir}")
+    """Load solution fields from VTK artifact.
 
-    fields = {}
-    for name in ["x", "y", "u", "v", "p"]:
-        zarr_path = fields_dir / f"{name}.zarr"
-        if zarr_path.exists():
-            fields[name] = zarr.load(zarr_path)
-        else:
-            raise FileNotFoundError(f"Field not found: {zarr_path}")
+    Note: Legacy function name kept for backwards compatibility.
+    Use load_solution() for new code.
+    """
+    grid = load_solution(artifact_dir)
+
+    # Extract coordinates from structured grid
+    points = grid.points
+    x = points[:, 0]
+    y = points[:, 1]
+
+    # Extract fields
+    fields = {
+        "x": x,
+        "y": y,
+        "u": grid["u"],
+        "v": grid["v"],
+        "p": grid["pressure"],
+    }
+
+    # Include derived fields if available
+    if "vorticity" in grid.array_names:
+        fields["vorticity"] = grid["vorticity"]
+    if "velocity_magnitude" in grid.array_names:
+        fields["velocity_magnitude"] = grid["velocity_magnitude"]
 
     return fields
 

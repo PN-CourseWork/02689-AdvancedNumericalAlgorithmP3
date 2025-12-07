@@ -34,6 +34,34 @@ class MLflowSweepCallback(Callback):
             None  # Store sweep dir while HydraConfig available
         )
 
+    def _find_recent_parent_runs(self) -> list[str]:
+        """Find parent runs from this sweep based on sweep_name pattern."""
+        import mlflow
+
+        if not self._full_experiment_name or not self._base_sweep_name:
+            return []
+
+        try:
+            # Search for parent runs matching the sweep_name pattern
+            # If sweep_name contains ${Re}, search for all Re variants
+            sweep_pattern = self._base_sweep_name.replace("${Re}", "%").replace("{Re}", "%")
+
+            runs = mlflow.search_runs(
+                experiment_names=[self._full_experiment_name],
+                filter_string=f"tags.sweep = 'parent' AND tags.`mlflow.runName` LIKE '{sweep_pattern}'",
+                order_by=["start_time DESC"],
+                max_results=10,
+            )
+
+            if runs.empty:
+                return []
+
+            return runs["run_id"].tolist()
+
+        except Exception as e:
+            log.warning(f"Error finding parent runs: {e}")
+            return []
+
     def _find_existing_parent(
         self, experiment_name: str, sweep_name: str
     ) -> Optional[str]:
@@ -189,45 +217,40 @@ class MLflowSweepCallback(Callback):
         os.environ["MLFLOW_PARENT_RUN_ID"] = parent_id
 
     def on_multirun_end(self, config: DictConfig, **kwargs) -> None:
-        """Clean up after sweep completes and generate plots."""
+        """Clean up after sweep completes and generate comparison plots."""
         if os.environ.get("MLFLOW_SWEEP_ACTIVE") != "1":
             return
 
-        # Clean up env var
         os.environ.pop("MLFLOW_PARENT_RUN_ID", None)
         os.environ.pop("MLFLOW_SWEEP_ACTIVE", None)
 
         log.info("Multirun sweep completed")
 
-        # Generate plots using plot_runs.py
+        # Generate comparison plots for all parent runs
         try:
-            import sys
             from pathlib import Path
+            from shared.plotting.ldc import generate_comparison_plots_for_sweep
 
-            # Add repo root to path for imports
-            repo_root = Path(__file__).parent.parent.parent.parent
-            if str(repo_root) not in sys.path:
-                sys.path.insert(0, str(repo_root))
-
-            # Use stored sweep directory for output
-            if self._sweep_dir:
-                output_dir = Path(self._sweep_dir) / "plots"
-            else:
-                output_dir = Path("outputs") / "plots"
+            output_dir = Path(self._sweep_dir) / "plots" if self._sweep_dir else Path("outputs") / "plots"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            from plot_runs import plot_experiment
+            # Find parent runs - _parent_runs may be empty due to joblib multiprocessing
+            # So we search MLflow directly for parent runs in this experiment
+            parent_run_ids = list(self._parent_runs.values())
+            if not parent_run_ids:
+                parent_run_ids = self._find_recent_parent_runs()
 
-            log.info(f"Generating plots for experiment: {self._full_experiment_name}")
-
-            # Plot all parent runs and their children
-            plot_experiment(
-                experiment_name=self._full_experiment_name,
-                tracking_uri=self._tracking_uri,
-                output_dir=output_dir,
-                parent_run_ids=None,  # Find all parent runs automatically
-                upload_to_mlflow=True,
-            )
-
+            log.info(f"Parent runs for comparison plots: {parent_run_ids}")
+            if parent_run_ids:
+                generate_comparison_plots_for_sweep(
+                    parent_run_ids=parent_run_ids,
+                    tracking_uri=self._tracking_uri,
+                    output_dir=output_dir,
+                    upload_to_mlflow=True,
+                )
+            else:
+                log.warning("No parent runs found for comparison plots")
         except Exception as e:
-            log.warning(f"Failed to generate plots: {e}")
+            log.warning(f"Failed to generate comparison plots: {e}")
+            import traceback
+            log.warning(traceback.format_exc())

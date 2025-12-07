@@ -1,164 +1,138 @@
-#!/usr/bin/env python3
-"""Main entry point for project management - CLI driven."""
+"""
+LDC Solver - Unified entry point for solving and plotting.
 
-import argparse
+Usage:
+    uv run python main.py -m +experiment/validation/ghia=fv
+    uv run python main.py -m +experiment/validation/ghia=fv plot_only=true
+    uv run python main.py solver=fv N=32 Re=100
+"""
+
+import logging
+import os
 import sys
+import tempfile
 from pathlib import Path
 
-# Ensure src directory is in python path
-sys.path.append(str(Path(__file__).parent / "src"))
+import hydra
+import mlflow
+from dotenv import load_dotenv
+from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
 
-from utilities import runners
-from utilities.config import get_repo_root, clean_all
+load_dotenv()
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+log = logging.getLogger(__name__)
 
 
-def build_docs():
-    """Build Sphinx documentation."""
-    import subprocess
+def get_experiment_name(cfg: DictConfig) -> str:
+    """Build full experiment name with optional prefix."""
+    name = cfg.experiment_name
+    prefix = cfg.mlflow.get("project_prefix", "")
+    if prefix and not name.startswith("/"):
+        return f"{prefix}/{name}"
+    return name
 
-    repo_root = get_repo_root()
-    docs_dir = repo_root / "docs"
-    source_dir = docs_dir / "source"
-    build_dir = docs_dir / "build"
 
-    print("\nBuilding Sphinx documentation...")
+def setup_mlflow(cfg: DictConfig) -> str:
+    """Setup MLflow tracking and return experiment name."""
+    tracking_uri = cfg.mlflow.get("tracking_uri", "./mlruns")
+    if str(cfg.mlflow.get("mode", "")).lower() in ("files", "local"):
+        os.environ.pop("MLFLOW_TRACKING_URI", None)
+    os.environ["MLFLOW_TRACKING_URI"] = str(tracking_uri)
+    mlflow.set_tracking_uri(tracking_uri)
 
-    if not source_dir.exists():
-        print(f"  Error: Documentation source directory not found: {source_dir}")
-        return False
-
+    experiment_name = get_experiment_name(cfg)
     try:
-        result = subprocess.run(
-            [
-                "uv",
-                "run",
-                "sphinx-build",
-                "-M",
-                "html",
-                str(source_dir),
-                str(build_dir),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            cwd=str(repo_root),
-        )
+        mlflow.set_experiment(experiment_name)
+    except Exception as exc:
+        experiment_name = f"{experiment_name}-restored"
+        log.warning(f"MLflow set_experiment failed ({exc}); using '{experiment_name}'")
+        mlflow.set_experiment(experiment_name)
 
-        if result.returncode == 0:
-            print("  ✓ Documentation built successfully")
-            print(f"  → Open: {build_dir / 'html' / 'index.html'}\n")
-            return True
-        else:
-            print(f"  ✗ Documentation build failed (exit {result.returncode})")
-            if result.stderr:
-                print(f"    Error: {result.stderr[:500]}")
-            return False
-
-    except subprocess.TimeoutExpired:
-        print("  ✗ Documentation build timed out")
-        return False
-    except FileNotFoundError:
-        print("  ✗ sphinx-build not found. Install with: uv sync")
-        return False
-    except Exception as e:
-        print(f"  ✗ Documentation build failed: {e}")
-        return False
+    return experiment_name
 
 
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Project management for MPI Poisson Solver",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+def find_existing_run(cfg: DictConfig) -> str:
+    """Find existing MLflow run matching config parameters."""
+    experiment = mlflow.get_experiment_by_name(get_experiment_name(cfg))
+    if not experiment:
+        raise ValueError(f"Experiment not found: {cfg.experiment_name}")
+
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=f"params.Re = '{cfg.Re}' AND params.nx = '{cfg.N}' AND attributes.status = 'FINISHED'",
+        max_results=1,
+    )
+    if runs.empty:
+        raise ValueError(f"No matching run found for N={cfg.N}, Re={cfg.Re}")
+
+    run_id = runs.iloc[0]["run_id"]
+    log.info(f"Found existing run: {run_id[:8]}")
+    return run_id
+
+
+def run_solver(cfg: DictConfig) -> str:
+    """Run solver and log to MLflow. Returns run_id."""
+    solver = instantiate(cfg.solver, _convert_="partial")
+    solver_name = cfg.solver.name
+
+    # Run name: spectral uses N+1 (Chebyshev points)
+    N_display = cfg.N + 1 if solver_name.startswith("spectral") else cfg.N
+    run_name = f"{solver_name}_N{N_display}"
+
+    # Parent run tagging for sweeps
+    parent_run_id = os.environ.get("MLFLOW_PARENT_RUN_ID")
+    tags = {"solver": solver_name}
+    if parent_run_id:
+        tags.update({"mlflow.parentRunId": parent_run_id, "parent_run_id": parent_run_id, "sweep": "child"})
+
+    with mlflow.start_run(run_name=run_name, tags=tags, nested=bool(parent_run_id)) as run:
+        mlflow.log_params(solver.params.to_mlflow())
+        mlflow.log_dict(OmegaConf.to_container(cfg), "config.yaml")
+
+        log.info(f"Solving: {solver_name} N={cfg.N} Re={cfg.Re}")
+        solver.solve()
+
+        mlflow.log_metrics(solver.metrics.to_mlflow())
+        if solver.time_series:
+            batch = solver.time_series.to_mlflow_batch()
+            if batch:
+                mlflow.tracking.MlflowClient().log_batch(run.info.run_id, metrics=batch)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vtk_path = Path(tmpdir) / "solution.vts"
+            solver.to_vtk().save(str(vtk_path))
+            mlflow.log_artifact(str(vtk_path))
+
+        log.info(f"Done: {solver.metrics.iterations} iter, converged={solver.metrics.converged}, time={solver.metrics.wall_time_seconds:.2f}s")
+        return run.info.run_id
+
+
+def generate_plots(cfg: DictConfig, run_id: str):
+    """Generate plots for a completed run."""
+    from shared.plotting.ldc import generate_plots_for_run
+
+    generate_plots_for_run(
+        run_id=run_id,
+        tracking_uri=cfg.mlflow.get("tracking_uri", "./mlruns"),
+        output_dir=Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir),
+        solver_name=cfg.solver.name,
+        N=cfg.N,
+        Re=cfg.Re,
+        parent_run_id=os.environ.get("MLFLOW_PARENT_RUN_ID"),
+        upload_to_mlflow=True,
     )
 
-    actions = parser.add_argument_group("Actions")
-    actions.add_argument(
-        "--docs", action="store_true", help="Build Sphinx HTML documentation"
-    )
-    actions.add_argument(
-        "--compute", action="store_true", help="Run all compute scripts (sequentially)"
-    )
-    actions.add_argument(
-        "--plot", action="store_true", help="Run all plotting scripts (in parallel)"
-    )
-    actions.add_argument(
-        "--copy-plots", action="store_true", help="Copy plots to report directory"
-    )
-    actions.add_argument(
-        "--clean", action="store_true", help="Clean all generated files and caches"
-    )
-    actions.add_argument(
-        "--setup-mlflow",
-        action="store_true",
-        help="Interactive MLflow setup (login to Databricks)",
-    )
-    actions.add_argument(
-        "--mlflow-ui", action="store_true", help="Start local MLflow UI (./mlruns)"
-    )
 
-    if len(sys.argv) == 1:
-        parser.print_help()
-        sys.exit(1)
+@hydra.main(config_path="conf", config_name="config", version_base=None)
+def main(cfg: DictConfig) -> None:
+    """Main entry point."""
+    log.info(f"Solver: {cfg.solver.name}, N={cfg.N}, Re={cfg.Re}")
+    log.info(f"MLflow experiment: {setup_mlflow(cfg)}")
 
-    args = parser.parse_args()
-
-    # Execute commands in logical order
-    if args.clean:
-        clean_all()
-
-    if args.setup_mlflow:
-        import mlflow
-
-        print("\nSetting up MLflow...")
-        mlflow.login(backend="databricks", interactive=True)
-
-    if args.compute:
-        runners.run_compute_scripts()
-
-    if args.plot:
-        runners.run_plot_scripts()
-
-    if args.copy_plots:
-        runners.copy_to_report()
-
-    if args.mlflow_ui:
-        import socket
-        import subprocess
-        import threading
-        import webbrowser
-
-        def is_port_free(port):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex(("localhost", port)) != 0
-
-        # Find available port
-        port = 5001
-        while not is_port_free(port) and port < 5010:
-            port += 1
-
-        url = f"http://localhost:{port}"
-        print(f"\nStarting MLflow UI at {url}")
-        print("Press Ctrl+C to stop\n")
-
-        # Open browser after short delay
-        def open_browser():
-            import time
-
-            time.sleep(2)
-            webbrowser.open(url)
-
-        threading.Thread(target=open_browser, daemon=True).start()
-
-        # Run in foreground (blocks until Ctrl+C)
-        try:
-            subprocess.run(["uv", "run", "mlflow", "ui", "--port", str(port)])
-        except KeyboardInterrupt:
-            print("\nMLflow UI stopped.")
-
-    if args.docs:
-        if not build_docs():
-            sys.exit(1)
+    run_id = find_existing_run(cfg) if cfg.get("plot_only") else run_solver(cfg)
+    generate_plots(cfg, run_id)
 
 
 if __name__ == "__main__":

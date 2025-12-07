@@ -26,7 +26,6 @@ extensions = [
     "sphinx.ext.viewcode",
     "numpydoc",
     "sphinx_copybutton",
-    "sphinx_gallery.gen_gallery",
 ]
 
 root_doc = "index"
@@ -58,36 +57,6 @@ numpydoc_xref_ignore = {"optional", "default", "of"}
 # Use numpydoc's enhanced autosummary templates
 templates_path = ["_templates"]
 numpydoc_use_plots = False  # Don't auto-generate plots from Examples
-
-# -- Sphinx Gallery configuration --------------------------------------------
-
-sphinx_gallery_conf = {
-    "examples_dirs": "../../Experiments",  # Path to example scripts
-    "gallery_dirs": "example_gallery",  # Output directory for gallery
-    "filename_pattern": "/plot_",  # Pattern to match which scripts to execute
-    "download_all_examples": False,  # No download buttons
-    "remove_config_comments": True,  # Clean up notebook outputs
-    "abort_on_example_error": False,  # Continue if examples fail
-    "plot_gallery": True,  # Enable plot gallery generation
-    "capture_repr": ("_repr_html_", "__repr__"),  # Capture output representations
-    "matplotlib_animations": True,  # Support matplotlib animations
-    # Remove Jupyter cell markers (# %%) from rendered output
-    "first_notebook_cell": None,  # Don't add a first cell
-    "last_notebook_cell": None,  # Don't add a last cell
-    "notebook_images": False,  # Don't embed images in notebooks
-    # Cross-referencing: Create "Examples using X" in API docs
-    "backreferences_dir": "gen_modules/backreferences",
-    "doc_module": (
-        "solvers",
-        "utils",
-    ),  # Generate backreferences for our packages
-    "inspect_global_variables": True,  # Detect classes/functions used in examples
-    # Make code clickable: Link to API docs when code mentions package functions
-    "reference_url": {
-        "solvers": None,  # None = use local docs (not external URL)
-        "utils": None,
-    },
-}
 
 # -- Intersphinx configuration -----------------------------------------------
 
