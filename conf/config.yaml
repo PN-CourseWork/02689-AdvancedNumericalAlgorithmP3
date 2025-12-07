@@ -1,27 +1,9 @@
 # Main Hydra configuration for LDC solvers
 #
-# STANDARD USAGE - Always use -m (multirun mode):
-#
-#   Validation:
-#     uv run python run_solver.py -m +experiment=validation/ghia
-#
-#   Benchmarking:
-#     uv run python run_solver.py -m +experiment=benchmarking/multigrid_comparison
-#
-#   Quick testing:
-#     uv run python run_solver.py -m +experiment=testing/quick_test
-#
-#   Custom sweeps:
-#     uv run python run_solver.py -m solver=fv N=16,32,64 Re=100,400
-#
-#   Override machine for HPC:
-#     uv run python run_solver.py -m machine=hpc +experiment=validation/ghia
-#
-# Regenerate plots (separate tool):
-#   uv run python plot_runs.py +experiment=validation/ghia
-#
-# Single runs (testing only, no -m flag needed):
-#   uv run python run_solver.py solver=fv N=32 Re=100
+# Usage:
+#   uv run python main.py -m +experiment/validation/ghia=fv      # solve + plot
+#   uv run python main.py -m +experiment/validation/ghia=fv plot_only=true  # plot only
+#   uv run python main.py solver=fv N=32 Re=100                  # single run
 
 defaults:
   - problem: ldc
@@ -40,6 +22,9 @@ max_iterations: ${solver.max_iterations}
 # Default experiment name (typically overridden by experiment config)
 experiment_name: LDC-Dev
 sweep_name: dev-run
+
+# Plot-only mode (skip solving, regenerate plots from existing runs)
+plot_only: false
 
 # =============================================================================
 # Hydra output paths and callbacks

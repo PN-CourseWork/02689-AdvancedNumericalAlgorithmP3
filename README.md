@@ -12,75 +12,53 @@ Comparing Finite Volume and Spectral methods for the incompressible Navier-Stoke
 uv sync
 ```
 
-## Running Solvers
-
-The project uses [Hydra](https://hydra.cc/) for configuration management. Run solvers via `run_solver.py`:
-
-### Using Experiment Configs
-
-Pre-defined experiment configurations are in `conf/experiment/`:
+## Usage
 
 ```bash
-uv run python run_solver.py -m +experiment=fv_validation
+# Run solver + generate plots (default)
+uv run python main.py -m +experiment/validation/ghia=fv
+
+# Regenerate plots only (no solving)
+uv run python main.py -m +experiment/validation/ghia=fv plot_only=true
+
+# Single run (testing)
+uv run python main.py solver=fv N=32 Re=100
+
+# Custom sweeps
+uv run python main.py -m solver=fv N=16,32,64 Re=100,400
 ```
 
-for only plots: pass  plot_only=true
+## Configuration
 
-Overwriting at runtime: 
-uv run python run_solver.py -m +experiment=fv_validation N=16,32,64 Re=100
-
-
-### Configuration Structure
+The project uses [Hydra](https://hydra.cc/) for configuration. Structure:
 
 ```
 conf/
-├── config.yaml              # Main config (N, Re, tolerance, etc.)
+├── config.yaml              # Main config (N, Re, tolerance)
 ├── solver/
-│   ├── fv.yaml              # FV-specific (alpha_uv, alpha_p, scheme)
-│   └── spectral.yaml        # Spectral-specific (CFL, beta_squared)
+│   ├── fv.yaml              # Finite Volume settings
+│   └── spectral/            # Spectral solver variants
 ├── experiment/
-│   ├── quick_test.yaml      # Fast debugging runs
-│   ├── fv_validation.yaml   # FV benchmark settings
-│   └── spectral_validation.yaml
-├── mlflow/
-│   ├── local.yaml           # File-based tracking (default)
-│   └── coolify.yaml         # Remote server (Coolify)
-└── hydra/
-    └── launcher/
-        └── joblib.yaml      # Parallel launcher (all cores)
+│   └── validation/ghia/     # Ghia benchmark experiments
+└── mlflow/
+    ├── local.yaml           # File-based tracking (default)
+    └── coolify.yaml         # Remote server
 ```
 
 ## MLflow
 
-Results are tracked with [MLflow](https://mlflow.org/). Two tracking modes are available:
-
-### Local Files (Default)
-
-File-based tracking in `./mlruns` - no setup required:
+Results are tracked with [MLflow](https://mlflow.org/):
 
 ```bash
-uv run python run_solver.py solver=fv mlflow=local
+# Local UI
+uv run mlflow ui
 
-# View UI
-uv run main.py --mlflow-ui
+# Remote server
+# https://kni.dk/mlflow-ana-p3/
 ```
-
-### Remote Server (Coolify)
-
-[mlflow-server](https://kni.dk/mlflow-ana-p3/#/experiments) 
-```bash
-# Setup credentials (one-time)
-cp .env.template .env
-# Edit .env with your credentials
-
-# Run solver
-uv run python run_solver.py solver=fv mlflow=coolify
-```
-
 
 ## References
 
-- [High-Re solutions for incompressible flow (Ghia et al.)](https://www.sciencedirect.com/science/article/pii/0021999182900584) - Benchmark data
-- [Chebyshev pseudospectral multigrid method](https://www.sciencedirect.com/science/article/pii/S0045793009001121) - Spectral method
-- [The 2D lid-driven cavity problem revisited](https://www.researchgate.net/publication/222433759_The_2D_lid-driven_cavity_problem_revisited) - Conserved quantities
-- [P_N-P_{N-2} spectral method](https://www.sciencedirect.com/science/article/pii/S0743731518305549) - Pressure formulation
+- [High-Re solutions for incompressible flow (Ghia et al.)](https://www.sciencedirect.com/science/article/pii/0021999182900584)
+- [Chebyshev pseudospectral multigrid method](https://www.sciencedirect.com/science/article/pii/S0045793009001121)
+- [The 2D lid-driven cavity problem revisited](https://www.researchgate.net/publication/222433759_The_2D_lid-driven_cavity_problem_revisited)
