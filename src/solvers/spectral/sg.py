@@ -655,9 +655,10 @@ class SGSolver(LidDrivenCavitySolver):
         Returns
         -------
         dict
-            {'psi_min': float, 'x': float, 'y': float}
+            {'psi_min': float, 'x': float, 'y': float, 'omega_center': float}
         """
         psi_2d, x_2d, y_2d = self._compute_streamfunction()
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
 
         # Find global minimum
         min_idx = np.unravel_index(np.argmin(psi_2d), psi_2d.shape)
@@ -665,7 +666,15 @@ class SGSolver(LidDrivenCavitySolver):
         x_min = x_2d[min_idx]
         y_min = y_2d[min_idx]
 
-        return {"psi_min": float(psi_min), "x": float(x_min), "y": float(y_min)}
+        # Get vorticity at the vortex center
+        omega_center = omega_2d[min_idx]
+
+        return {
+            "psi_min": float(psi_min),
+            "x": float(x_min),
+            "y": float(y_min),
+            "omega_center": float(omega_center),
+        }
 
     def _find_corner_vortices(self) -> dict:
         """Find secondary corner vortices (BR, BL, TL).
@@ -677,9 +686,10 @@ class SGSolver(LidDrivenCavitySolver):
         Returns
         -------
         dict
-            {'BR': {'psi': float, 'x': float, 'y': float}, 'BL': {...}, 'TL': {...}}
+            {'BR': {'psi': float, 'x': float, 'y': float, 'omega': float}, ...}
         """
         psi_2d, x_2d, y_2d = self._compute_streamfunction()
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
 
         results = {}
 
@@ -702,9 +712,10 @@ class SGSolver(LidDrivenCavitySolver):
                     "psi": float(psi_val),
                     "x": float(x_2d[max_idx]),
                     "y": float(y_2d[max_idx]),
+                    "omega": float(omega_2d[max_idx]),
                 }
             else:
-                results[name] = {"psi": 0.0, "x": 0.0, "y": 0.0}
+                results[name] = {"psi": 0.0, "x": 0.0, "y": 0.0, "omega": 0.0}
 
         return results
 
@@ -744,16 +755,20 @@ class SGSolver(LidDrivenCavitySolver):
             "psi_min": primary["psi_min"],
             "psi_min_x": primary["x"],
             "psi_min_y": primary["y"],
+            "omega_center": primary["omega_center"],
             "omega_max": max_omega["omega_max"],
             "omega_max_x": max_omega["x"],
             "omega_max_y": max_omega["y"],
             "psi_BR": corners["BR"]["psi"],
             "psi_BR_x": corners["BR"]["x"],
             "psi_BR_y": corners["BR"]["y"],
+            "omega_BR": corners["BR"]["omega"],
             "psi_BL": corners["BL"]["psi"],
             "psi_BL_x": corners["BL"]["x"],
             "psi_BL_y": corners["BL"]["y"],
+            "omega_BL": corners["BL"]["omega"],
             "psi_TL": corners["TL"]["psi"],
             "psi_TL_x": corners["TL"]["x"],
             "psi_TL_y": corners["TL"]["y"],
+            "omega_TL": corners["TL"]["omega"],
         }

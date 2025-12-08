@@ -181,18 +181,22 @@ class LidDrivenCavitySolver(ABC):
             psi_min=vortex_metrics.get("psi_min", 0.0),
             psi_min_x=vortex_metrics.get("psi_min_x", 0.0),
             psi_min_y=vortex_metrics.get("psi_min_y", 0.0),
+            omega_center=vortex_metrics.get("omega_center", 0.0),
             omega_max=vortex_metrics.get("omega_max", 0.0),
             omega_max_x=vortex_metrics.get("omega_max_x", 0.0),
             omega_max_y=vortex_metrics.get("omega_max_y", 0.0),
             psi_BR=vortex_metrics.get("psi_BR", 0.0),
             psi_BR_x=vortex_metrics.get("psi_BR_x", 0.0),
             psi_BR_y=vortex_metrics.get("psi_BR_y", 0.0),
+            omega_BR=vortex_metrics.get("omega_BR", 0.0),
             psi_BL=vortex_metrics.get("psi_BL", 0.0),
             psi_BL_x=vortex_metrics.get("psi_BL_x", 0.0),
             psi_BL_y=vortex_metrics.get("psi_BL_y", 0.0),
+            omega_BL=vortex_metrics.get("omega_BL", 0.0),
             psi_TL=vortex_metrics.get("psi_TL", 0.0),
             psi_TL_x=vortex_metrics.get("psi_TL_x", 0.0),
             psi_TL_y=vortex_metrics.get("psi_TL_y", 0.0),
+            omega_TL=vortex_metrics.get("omega_TL", 0.0),
         )
 
     def solve(self, tolerance: float = None, max_iter: int = None):
@@ -870,6 +874,108 @@ class LidDrivenCavitySolver(ABC):
             Path to the file to log as artifact.
         """
         mlflow.log_artifact(filepath)
+
+    def mlflow_log_validation_table(self, reference_csv: str = None):
+        """Log validation metrics comparison table to MLflow.
+
+        Creates a table comparing computed vortex metrics against Botella & Peyret
+        reference values, including energy/enstrophy/palinstrophy.
+
+        Parameters
+        ----------
+        reference_csv : str, optional
+            Path to reference CSV file. If None, uses default for current Re.
+        """
+        import pandas as pd
+
+        if not mlflow.active_run():
+            log.warning("No active MLflow run - skipping validation table")
+            return
+
+        # Load reference data
+        if reference_csv is None:
+            Re = int(self.params.Re)
+            reference_csv = f"data/validation/botella/botella_Re{Re}_vortex.csv"
+
+        ref_path = Path(reference_csv)
+        if not ref_path.exists():
+            log.warning(f"Reference file not found: {ref_path}")
+            return
+
+        ref_df = pd.read_csv(ref_path, comment="#")
+        ref = ref_df.iloc[0].to_dict()
+
+        # Build validation table rows
+        rows = []
+
+        def add_row(metric_name, computed, reference, unit="", use_abs=False):
+            """Add a row to the validation table."""
+            if reference != 0 and reference is not None:
+                # For vorticity, compare absolute values (sign convention may differ)
+                if use_abs:
+                    error_pct = abs(abs(computed) - abs(reference)) / abs(reference) * 100
+                else:
+                    error_pct = abs(computed - reference) / abs(reference) * 100
+            else:
+                error_pct = 0.0
+            rows.append({
+                "Metric": metric_name,
+                "Computed": f"{computed:.6f}",
+                "Reference": f"{reference:.6f}" if reference else "-",
+                "Error (%)": f"{error_pct:.2f}" if reference else "-",
+                "Unit": unit,
+            })
+
+        # Primary vortex metrics
+        add_row("ψ_min (Primary)", self.metrics.psi_min, ref.get("psi_min"))
+        add_row("x (Primary)", self.metrics.psi_min_x, ref.get("psi_min_x"))
+        add_row("y (Primary)", self.metrics.psi_min_y, ref.get("psi_min_y"))
+        add_row("ω_center (Primary)", self.metrics.omega_center, ref.get("omega_center"), use_abs=True)
+
+        # Secondary vortex - Bottom Right
+        add_row("ψ_BR", self.metrics.psi_BR, ref.get("psi_BR"))
+        add_row("x_BR", self.metrics.psi_BR_x, ref.get("psi_BR_x"))
+        add_row("y_BR", self.metrics.psi_BR_y, ref.get("psi_BR_y"))
+
+        # Secondary vortex - Bottom Left
+        add_row("ψ_BL", self.metrics.psi_BL, ref.get("psi_BL"))
+        add_row("x_BL", self.metrics.psi_BL_x, ref.get("psi_BL_x"))
+        add_row("y_BL", self.metrics.psi_BL_y, ref.get("psi_BL_y"))
+
+        # Global quantities (no reference for these typically)
+        rows.append({
+            "Metric": "--- Global Quantities ---",
+            "Computed": "",
+            "Reference": "",
+            "Error (%)": "",
+            "Unit": "",
+        })
+        rows.append({
+            "Metric": "Energy (E)",
+            "Computed": f"{self.metrics.final_energy:.6e}",
+            "Reference": "-",
+            "Error (%)": "-",
+            "Unit": "",
+        })
+        rows.append({
+            "Metric": "Enstrophy (Z)",
+            "Computed": f"{self.metrics.final_enstrophy:.6e}",
+            "Reference": "-",
+            "Error (%)": "-",
+            "Unit": "",
+        })
+        rows.append({
+            "Metric": "Palinstrophy (P)",
+            "Computed": f"{self.metrics.final_palinstrophy:.6e}",
+            "Reference": "-",
+            "Error (%)": "-",
+            "Unit": "",
+        })
+
+        # Create DataFrame and log to MLflow
+        table_df = pd.DataFrame(rows)
+        mlflow.log_table(table_df, artifact_file="validation_metrics.json")
+        log.info("Logged validation metrics table to MLflow")
 
     # =========================================================================
     # Validation against reference FV solutions

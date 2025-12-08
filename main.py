@@ -106,6 +106,9 @@ def run_solver(cfg: DictConfig) -> str:
             if batch:
                 mlflow.tracking.MlflowClient().log_batch(run.info.run_id, metrics=batch)
 
+        # Log validation metrics comparison table
+        solver.mlflow_log_validation_table()
+
         with tempfile.TemporaryDirectory() as tmpdir:
             vtk_path = Path(tmpdir) / "solution.vts"
             solver.to_vtk().save(str(vtk_path))
