@@ -1,14 +1,14 @@
 # @package _global_
-# Convergence test - Spectral solver with Saad regularization at Re=1000
+# Convergence test - Spectral solver with Saad regularization at Re=100
 # Sweep over N values with polynomial corner treatment
 
 defaults:
   - override /solver: spectral/fsg
-  - override /validation: fv-regu
+  - override /validation: fv
 
 # MLflow experiment
 experiment_name: LDC-Convergence
-sweep_name: regu-Re1000-b
+sweep_name: regu-Re100
 
 # Use Saad/polynomial corner treatment for regularized problem
 solver:
@@ -17,5 +17,5 @@ solver:
 hydra:
   sweeper:
     params:
-      Re: 1000
-      N: 14, 16, 18, 20, 22, 24, 26, 28, 30
+      Re: 100
+      N: 8, 10, 12, 14, 16, 18, 20, 24, 28, 32
