@@ -152,6 +152,13 @@ class LidDrivenCavitySolver(ABC):
             palinstrophy=downsample(palinstrophy_history),
         )
 
+        # Compute vortex metrics (streamfunction-based)
+        try:
+            vortex_metrics = self.compute_vortex_metrics()
+        except Exception as e:
+            log.warning(f"Failed to compute vortex metrics: {e}")
+            vortex_metrics = {}
+
         # Update metrics with convergence info (use FINAL values, not downsampled)
         self.metrics = Metrics(
             iterations=final_iter_count,
@@ -170,6 +177,22 @@ class LidDrivenCavitySolver(ABC):
             final_palinstrophy=palinstrophy_history[-1]
             if palinstrophy_history
             else 0.0,
+            # Vortex metrics
+            psi_min=vortex_metrics.get("psi_min", 0.0),
+            psi_min_x=vortex_metrics.get("psi_min_x", 0.0),
+            psi_min_y=vortex_metrics.get("psi_min_y", 0.0),
+            omega_max=vortex_metrics.get("omega_max", 0.0),
+            omega_max_x=vortex_metrics.get("omega_max_x", 0.0),
+            omega_max_y=vortex_metrics.get("omega_max_y", 0.0),
+            psi_BR=vortex_metrics.get("psi_BR", 0.0),
+            psi_BR_x=vortex_metrics.get("psi_BR_x", 0.0),
+            psi_BR_y=vortex_metrics.get("psi_BR_y", 0.0),
+            psi_BL=vortex_metrics.get("psi_BL", 0.0),
+            psi_BL_x=vortex_metrics.get("psi_BL_x", 0.0),
+            psi_BL_y=vortex_metrics.get("psi_BL_y", 0.0),
+            psi_TL=vortex_metrics.get("psi_TL", 0.0),
+            psi_TL_x=vortex_metrics.get("psi_TL_x", 0.0),
+            psi_TL_y=vortex_metrics.get("psi_TL_y", 0.0),
         )
 
     def solve(self, tolerance: float = None, max_iter: int = None):
@@ -533,6 +556,205 @@ class LidDrivenCavitySolver(ABC):
             "E": self._compute_energy(),
             "Z": self._compute_enstrophy(),
             "P": self._compute_palinstrophy(),
+        }
+
+    # =========================================================================
+    # Vortex Detection (Streamfunction-based, for comparison with Saad/Botella)
+    # =========================================================================
+
+    def _compute_streamfunction(self) -> tuple:
+        """Compute streamfunction ψ by solving ∇²ψ = -ω.
+
+        Uses Poisson solver with ψ=0 on all boundaries (closed cavity).
+
+        Returns
+        -------
+        psi_2d : np.ndarray
+            Streamfunction on 2D grid (ny, nx)
+        x_unique : np.ndarray
+            Unique x coordinates
+        y_unique : np.ndarray
+            Unique y coordinates
+        """
+        from scipy.sparse import diags
+        from scipy.sparse.linalg import spsolve
+
+        # Get vorticity
+        omega = self._compute_vorticity()
+
+        # Get grid info
+        shape = getattr(self, "shape_full", (self.params.nx, self.params.ny))
+        ny, nx = shape
+        dx, dy = self.dx_min, self.dy_min
+
+        # Reshape omega to 2D
+        omega_2d = omega.reshape(shape)
+
+        # Build Laplacian matrix for interior points with Dirichlet BC (ψ=0 on boundaries)
+        # Interior grid is (ny-2) x (nx-2)
+        n_interior = (ny - 2) * (nx - 2)
+
+        # Coefficients for 5-point stencil
+        cx = 1.0 / (dx * dx)
+        cy = 1.0 / (dy * dy)
+        cc = -2.0 * (cx + cy)
+
+        # Build sparse matrix
+        diag_main = np.full(n_interior, cc)
+        diag_x = np.full(n_interior - 1, cx)
+        diag_y = np.full(n_interior - (nx - 2), cy)
+
+        # Remove connections across row boundaries for x-direction
+        for i in range(1, ny - 2):
+            idx = i * (nx - 2) - 1
+            if idx < len(diag_x):
+                diag_x[idx] = 0.0
+
+        A = diags(
+            [diag_y, diag_x, diag_main, diag_x, diag_y],
+            [-(nx - 2), -1, 0, 1, (nx - 2)],
+            format="csr",
+        )
+
+        # RHS: -omega on interior (boundary ψ=0 contributions are zero)
+        rhs = -omega_2d[1:-1, 1:-1].ravel()
+
+        # Solve
+        psi_interior = spsolve(A, rhs)
+
+        # Reconstruct full ψ with zero boundaries
+        psi_2d = np.zeros((ny, nx))
+        psi_2d[1:-1, 1:-1] = psi_interior.reshape(ny - 2, nx - 2)
+
+        # Get coordinates
+        x_unique = np.sort(np.unique(self.fields.x))
+        y_unique = np.sort(np.unique(self.fields.y))
+
+        return psi_2d, x_unique, y_unique
+
+    def _find_primary_vortex(self) -> dict:
+        """Find the primary vortex (global minimum of streamfunction).
+
+        Returns
+        -------
+        dict
+            {'psi_min': float, 'x': float, 'y': float}
+        """
+        psi_2d, x_unique, y_unique = self._compute_streamfunction()
+
+        # Find global minimum
+        min_idx = np.unravel_index(np.argmin(psi_2d), psi_2d.shape)
+        psi_min = psi_2d[min_idx]
+        x_min = x_unique[min_idx[1]]
+        y_min = y_unique[min_idx[0]]
+
+        return {"psi_min": float(psi_min), "x": float(x_min), "y": float(y_min)}
+
+    def _find_corner_vortices(self) -> dict:
+        """Find secondary corner vortices (BR, BL, TL).
+
+        Corner vortices have opposite sign to primary vortex:
+        - Primary vortex has ψ < 0 (clockwise rotation)
+        - Secondary vortices have ψ > 0 (counter-clockwise rotation)
+
+        Search regions:
+        - BR (bottom-right): x > 0.5, y < 0.5
+        - BL (bottom-left): x < 0.5, y < 0.5
+        - TL (top-left): x < 0.5, y > 0.5
+
+        Returns
+        -------
+        dict
+            {'BR': {'psi': float, 'x': float, 'y': float}, 'BL': {...}, 'TL': {...}}
+        """
+        psi_2d, x_unique, y_unique = self._compute_streamfunction()
+
+        # Create 2D coordinate arrays
+        X, Y = np.meshgrid(x_unique, y_unique)
+
+        results = {}
+
+        # Define search regions (corners)
+        regions = {
+            "BR": (X > 0.5) & (Y < 0.5),  # Bottom-right
+            "BL": (X < 0.5) & (Y < 0.5),  # Bottom-left
+            "TL": (X < 0.5) & (Y > 0.5),  # Top-left
+        }
+
+        for name, mask in regions.items():
+            # Secondary vortices have ψ > 0 (opposite sign to primary)
+            psi_region = np.where(mask, psi_2d, -np.inf)
+            max_idx = np.unravel_index(np.argmax(psi_region), psi_2d.shape)
+            psi_val = psi_2d[max_idx]
+
+            # Only report if we found a positive ψ (secondary vortex exists)
+            if psi_val > 0:
+                results[name] = {
+                    "psi": float(psi_val),
+                    "x": float(x_unique[max_idx[1]]),
+                    "y": float(y_unique[max_idx[0]]),
+                }
+            else:
+                results[name] = {"psi": 0.0, "x": 0.0, "y": 0.0}
+
+        return results
+
+    def _find_max_vorticity(self) -> dict:
+        """Find maximum vorticity and its location.
+
+        Returns
+        -------
+        dict
+            {'omega_max': float, 'x': float, 'y': float}
+        """
+        omega = self._compute_vorticity()
+
+        # Get grid shape
+        shape = getattr(self, "shape_full", (self.params.nx, self.params.ny))
+        omega_2d = omega.reshape(shape)
+
+        # Find maximum (by absolute value, but track actual sign)
+        max_abs_idx = np.unravel_index(np.argmax(np.abs(omega_2d)), omega_2d.shape)
+        omega_max = omega_2d[max_abs_idx]
+
+        # Get coordinates
+        x_unique = np.sort(np.unique(self.fields.x))
+        y_unique = np.sort(np.unique(self.fields.y))
+
+        return {
+            "omega_max": float(omega_max),
+            "x": float(x_unique[max_abs_idx[1]]),
+            "y": float(y_unique[max_abs_idx[0]]),
+        }
+
+    def compute_vortex_metrics(self) -> dict:
+        """Compute all vortex-related metrics for validation.
+
+        Returns
+        -------
+        dict
+            Dictionary with primary vortex, corner vortices, and max vorticity
+        """
+        primary = self._find_primary_vortex()
+        corners = self._find_corner_vortices()
+        max_omega = self._find_max_vorticity()
+
+        return {
+            "psi_min": primary["psi_min"],
+            "psi_min_x": primary["x"],
+            "psi_min_y": primary["y"],
+            "omega_max": max_omega["omega_max"],
+            "omega_max_x": max_omega["x"],
+            "omega_max_y": max_omega["y"],
+            "psi_BR": corners["BR"]["psi"],
+            "psi_BR_x": corners["BR"]["x"],
+            "psi_BR_y": corners["BR"]["y"],
+            "psi_BL": corners["BL"]["psi"],
+            "psi_BL_x": corners["BL"]["x"],
+            "psi_BL_y": corners["BL"]["y"],
+            "psi_TL": corners["TL"]["psi"],
+            "psi_TL_x": corners["TL"]["x"],
+            "psi_TL_y": corners["TL"]["y"],
         }
 
     def save_vtk(self, filepath: Path):

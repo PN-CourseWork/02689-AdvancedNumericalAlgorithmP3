@@ -593,3 +593,167 @@ class SGSolver(LidDrivenCavitySolver):
 
         grad_omega_sq = domega_dx_2d**2 + domega_dy_2d**2
         return 0.5 * float(np.sum(self.W_2d * grad_omega_sq))
+
+    # =========================================================================
+    # Streamfunction Computation (for vortex detection)
+    # =========================================================================
+
+    def _compute_streamfunction(self) -> tuple:
+        """Compute streamfunction ψ by solving ∇²ψ = -ω using spectral Laplacian.
+
+        Uses the spectral Laplacian matrix with Dirichlet BC (ψ=0 on walls).
+
+        Returns
+        -------
+        psi_2d : np.ndarray
+            Streamfunction on 2D grid (Nx+1, Ny+1)
+        x_2d : np.ndarray
+            X coordinates 2D grid
+        y_2d : np.ndarray
+            Y coordinates 2D grid
+        """
+        from scipy.sparse import csr_matrix
+        from scipy.sparse.linalg import spsolve
+
+        # Get vorticity using spectral differentiation
+        omega = self._compute_vorticity()
+        omega_2d = omega.reshape(self.shape_full)
+
+        Nx, Ny = self.shape_full
+
+        # Build modified Laplacian with Dirichlet BCs (ψ=0 on boundaries)
+        # For boundary nodes, we set row to identity (ψ_boundary = 0)
+        Lap = self.Laplacian.copy()
+
+        # Create boundary mask (1D indices of boundary nodes)
+        boundary_mask = np.zeros(Nx * Ny, dtype=bool)
+        for i in range(Nx):
+            boundary_mask[i * Ny] = True  # Bottom: j=0
+            boundary_mask[i * Ny + Ny - 1] = True  # Top: j=Ny-1
+        for j in range(Ny):
+            boundary_mask[j] = True  # Left: i=0
+            boundary_mask[(Nx - 1) * Ny + j] = True  # Right: i=Nx-1
+
+        # Modify Laplacian for Dirichlet BCs
+        for idx in np.where(boundary_mask)[0]:
+            Lap[idx, :] = 0
+            Lap[idx, idx] = 1.0
+
+        # RHS: -ω on interior, 0 on boundary
+        rhs = -omega.copy()
+        rhs[boundary_mask] = 0.0
+
+        # Solve sparse system
+        Lap_sparse = csr_matrix(Lap)
+        psi = spsolve(Lap_sparse, rhs)
+
+        return psi.reshape(self.shape_full), self.x_full, self.y_full
+
+    def _find_primary_vortex(self) -> dict:
+        """Find the primary vortex (global minimum of streamfunction).
+
+        Returns
+        -------
+        dict
+            {'psi_min': float, 'x': float, 'y': float}
+        """
+        psi_2d, x_2d, y_2d = self._compute_streamfunction()
+
+        # Find global minimum
+        min_idx = np.unravel_index(np.argmin(psi_2d), psi_2d.shape)
+        psi_min = psi_2d[min_idx]
+        x_min = x_2d[min_idx]
+        y_min = y_2d[min_idx]
+
+        return {"psi_min": float(psi_min), "x": float(x_min), "y": float(y_min)}
+
+    def _find_corner_vortices(self) -> dict:
+        """Find secondary corner vortices (BR, BL, TL).
+
+        Corner vortices have opposite sign to primary vortex:
+        - Primary vortex has ψ < 0 (clockwise rotation)
+        - Secondary vortices have ψ > 0 (counter-clockwise rotation)
+
+        Returns
+        -------
+        dict
+            {'BR': {'psi': float, 'x': float, 'y': float}, 'BL': {...}, 'TL': {...}}
+        """
+        psi_2d, x_2d, y_2d = self._compute_streamfunction()
+
+        results = {}
+
+        # Define search regions (corners)
+        regions = {
+            "BR": (x_2d > 0.5) & (y_2d < 0.5),  # Bottom-right
+            "BL": (x_2d < 0.5) & (y_2d < 0.5),  # Bottom-left
+            "TL": (x_2d < 0.5) & (y_2d > 0.5),  # Top-left
+        }
+
+        for name, mask in regions.items():
+            # Secondary vortices have ψ > 0 (opposite sign to primary)
+            psi_region = np.where(mask, psi_2d, -np.inf)
+            max_idx = np.unravel_index(np.argmax(psi_region), psi_2d.shape)
+            psi_val = psi_2d[max_idx]
+
+            # Only report if we found a positive ψ (secondary vortex exists)
+            if psi_val > 0:
+                results[name] = {
+                    "psi": float(psi_val),
+                    "x": float(x_2d[max_idx]),
+                    "y": float(y_2d[max_idx]),
+                }
+            else:
+                results[name] = {"psi": 0.0, "x": 0.0, "y": 0.0}
+
+        return results
+
+    def _find_max_vorticity(self) -> dict:
+        """Find maximum vorticity and its location.
+
+        Returns
+        -------
+        dict
+            {'omega_max': float, 'x': float, 'y': float}
+        """
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
+
+        # Find maximum (by absolute value, but track actual sign)
+        max_abs_idx = np.unravel_index(np.argmax(np.abs(omega_2d)), omega_2d.shape)
+        omega_max = omega_2d[max_abs_idx]
+
+        return {
+            "omega_max": float(omega_max),
+            "x": float(self.x_full[max_abs_idx]),
+            "y": float(self.y_full[max_abs_idx]),
+        }
+
+    def compute_vortex_metrics(self) -> dict:
+        """Compute all vortex-related metrics for validation.
+
+        Returns
+        -------
+        dict
+            Dictionary with primary vortex, corner vortices, and max vorticity
+        """
+        primary = self._find_primary_vortex()
+        corners = self._find_corner_vortices()
+        max_omega = self._find_max_vorticity()
+
+        return {
+            "psi_min": primary["psi_min"],
+            "psi_min_x": primary["x"],
+            "psi_min_y": primary["y"],
+            "omega_max": max_omega["omega_max"],
+            "omega_max_x": max_omega["x"],
+            "omega_max_y": max_omega["y"],
+            "psi_BR": corners["BR"]["psi"],
+            "psi_BR_x": corners["BR"]["x"],
+            "psi_BR_y": corners["BR"]["y"],
+            "psi_BL": corners["BL"]["psi"],
+            "psi_BL_x": corners["BL"]["x"],
+            "psi_BL_y": corners["BL"]["y"],
+            "psi_TL": corners["TL"]["psi"],
+            "psi_TL_x": corners["TL"]["x"],
+            "psi_TL_y": corners["TL"]["y"],
+        }
