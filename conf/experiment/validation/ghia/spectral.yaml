@@ -9,7 +9,7 @@ defaults:
 experiment_name: LDC-Validation
 sweep_name: ghia-Re${Re}
 
-tolerance: 1.0e-6
+tolerance: 1.0e-5
 
 # Validation parameters
 
@@ -17,7 +17,7 @@ hydra:
   sweeper:
     params:
       # Sweep over spectral solver types
-      solver: spectral/vmg ,spectral/fsg #, #spectral/sg
+      solver: spectral/vmg ,spectral/fsg, spectral/sg
       Re: 100
       N: 21
       # Sweep over corner treatments
