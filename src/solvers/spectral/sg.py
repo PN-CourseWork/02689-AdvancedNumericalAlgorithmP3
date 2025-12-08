@@ -599,9 +599,10 @@ class SGSolver(LidDrivenCavitySolver):
     # =========================================================================
 
     def _compute_streamfunction(self) -> tuple:
-        """Compute streamfunction ψ by solving ∇²ψ = -ω using spectral Laplacian.
+        """Compute streamfunction ψ by solving ∇²ψ = -ω using FFT-based solver.
 
-        Uses the spectral Laplacian matrix with Dirichlet BC (ψ=0 on walls).
+        Uses DST (Discrete Sine Transform) for O(N² log N) Poisson solve with
+        homogeneous Dirichlet BCs (ψ=0 on walls).
 
         Returns
         -------
@@ -612,8 +613,7 @@ class SGSolver(LidDrivenCavitySolver):
         y_2d : np.ndarray
             Y coordinates 2D grid
         """
-        from scipy.sparse import csr_matrix
-        from scipy.sparse.linalg import spsolve
+        from scipy.fft import dstn, idstn
 
         # Get vorticity using spectral differentiation
         omega = self._compute_vorticity()
@@ -621,33 +621,46 @@ class SGSolver(LidDrivenCavitySolver):
 
         Nx, Ny = self.shape_full
 
-        # Build modified Laplacian with Dirichlet BCs (ψ=0 on boundaries)
-        # For boundary nodes, we set row to identity (ψ_boundary = 0)
-        Lap = self.Laplacian.copy()
+        # Extract interior points (excluding boundaries where ψ=0)
+        # Interior is (Nx-2) x (Ny-2)
+        rhs_interior = -omega_2d[1:-1, 1:-1]
 
-        # Create boundary mask (1D indices of boundary nodes)
-        boundary_mask = np.zeros(Nx * Ny, dtype=bool)
-        for i in range(Nx):
-            boundary_mask[i * Ny] = True  # Bottom: j=0
-            boundary_mask[i * Ny + Ny - 1] = True  # Top: j=Ny-1
-        for j in range(Ny):
-            boundary_mask[j] = True  # Left: i=0
-            boundary_mask[(Nx - 1) * Ny + j] = True  # Right: i=Nx-1
+        nx_int, ny_int = rhs_interior.shape
 
-        # Modify Laplacian for Dirichlet BCs
-        for idx in np.where(boundary_mask)[0]:
-            Lap[idx, :] = 0
-            Lap[idx, idx] = 1.0
+        # DST-I (Type 1) eigenvalues for Laplacian with Dirichlet BCs
+        # For domain [0, Lx] x [0, Ly] with N interior points:
+        # λ_k = -( (k*π/Lx)² + (l*π/Ly)² )
+        # With our normalized domain [0,1] x [0,1]:
+        k = np.arange(1, nx_int + 1)
+        l = np.arange(1, ny_int + 1)
 
-        # RHS: -ω on interior, 0 on boundary
-        rhs = -omega.copy()
-        rhs[boundary_mask] = 0.0
+        # Eigenvalues: λ_{kl} = -π²(k²/Lx² + l²/Ly²)
+        # For unit domain: λ_{kl} = -π²(k² + l²) but we need to account for
+        # the effective grid spacing in the DST
+        lambda_k = -((k * np.pi / (nx_int + 1)) ** 2)
+        lambda_l = -((l * np.pi / (ny_int + 1)) ** 2)
 
-        # Solve sparse system
-        Lap_sparse = csr_matrix(Lap)
-        psi = spsolve(Lap_sparse, rhs)
+        # 2D eigenvalue matrix
+        Lambda_kl = lambda_k[:, np.newaxis] + lambda_l[np.newaxis, :]
 
-        return psi.reshape(self.shape_full), self.x_full, self.y_full
+        # Scale for physical domain size
+        Lambda_kl = Lambda_kl * ((nx_int + 1) ** 2)
+
+        # Forward DST (Type I)
+        rhs_hat = dstn(rhs_interior, type=1)
+
+        # Solve in spectral space: psi_hat = rhs_hat / Lambda
+        # Avoid division by zero (shouldn't happen for Dirichlet problem)
+        psi_hat = rhs_hat / Lambda_kl
+
+        # Inverse DST (Type I) - note: DST-I is its own inverse up to scaling
+        psi_interior = idstn(psi_hat, type=1)
+
+        # Assemble full solution with boundary conditions (ψ=0 on boundaries)
+        psi_2d = np.zeros((Nx, Ny))
+        psi_2d[1:-1, 1:-1] = psi_interior
+
+        return psi_2d, self.x_full, self.y_full
 
     def _find_primary_vortex(self) -> dict:
         """Find the primary vortex (global minimum of streamfunction).

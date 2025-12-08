@@ -136,6 +136,44 @@ def _compute_continuity_residual(
             idx += 1
 
 
+@njit(cache=True, fastmath=True)
+def _interpolate_and_differentiate_pressure(
+    p_inner: np.ndarray,
+    Interp_x: np.ndarray,
+    Interp_y_T: np.ndarray,
+    Dx_1d: np.ndarray,
+    Dy_1d_T: np.ndarray,
+    dp_dx: np.ndarray,
+    dp_dy: np.ndarray,
+    shape_inner: tuple,
+):
+    """JIT-compiled pressure interpolation and gradient computation.
+
+    Combines:
+    1. Interpolation from inner to full grid: p_full = Interp_x @ p_inner @ Interp_y.T
+    2. Gradient computation: dp/dx = Dx @ p_full, dp/dy = p_full @ Dy.T
+    """
+    # Reshape to 2D
+    ni, nj = shape_inner
+    p_inner_2d = p_inner.reshape((ni, nj))
+
+    # Interpolate: p_full = Interp_x @ p_inner @ Interp_y.T
+    p_full_2d = Interp_x @ p_inner_2d @ Interp_y_T
+
+    # Compute gradients
+    dp_dx_2d = Dx_1d @ p_full_2d
+    dp_dy_2d = p_full_2d @ Dy_1d_T
+
+    # Flatten to output
+    n = dp_dx_2d.shape[0]
+    idx = 0
+    for i in range(n):
+        for j in range(n):
+            dp_dx[idx] = dp_dx_2d[i, j]
+            dp_dy[idx] = dp_dy_2d[i, j]
+            idx += 1
+
+
 def _build_interpolation_matrix_1d(nodes_inner, nodes_full):
     """Build interpolation matrix from inner grid to full grid.
 
@@ -729,6 +767,9 @@ class MultigridSmoother:
         self._Dy_1d_T = level.Dy_1d.T.copy()
         self._Dyy_1d_T = level.Dyy_1d.T.copy()
 
+        # Cache transposed interpolation matrix for pressure gradient
+        self._Interp_y_T = level.Interp_y.T.copy()
+
         if self._uses_modified_convection:
             # Cache singular velocity and derivatives at this level's grid points
             X_flat = level.X.ravel()
@@ -801,7 +842,7 @@ class MultigridSmoother:
 
         Uses spectral interpolation (Chebyshev polynomial fit) to extend
         pressure from inner grid to full grid before differentiation.
-        Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
+        OPTIMIZED: Uses JIT-compiled kernel for combined interpolation and differentiation.
 
         Parameters
         ----------
@@ -810,16 +851,17 @@ class MultigridSmoother:
         """
         lvl = self.level
 
-        # Step 1: Interpolate pressure from inner grid to full grid using spectral interpolation
-        # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
-        p_inner_2d = p.reshape(lvl.shape_inner)
-        p_full_2d = lvl.Interp_x @ p_inner_2d @ lvl.Interp_y.T
-
-        # Step 2: Compute pressure gradient using tensor products (O(N³) instead of O(N⁴))
-        # d/dx: apply Dx_1d along axis 0 (rows)
-        # d/dy: apply Dy_1d along axis 1 (columns via cached transpose)
-        lvl.dp_dx[:] = (lvl.Dx_1d @ p_full_2d).ravel()
-        lvl.dp_dy[:] = (p_full_2d @ self._Dy_1d_T).ravel()
+        # JIT-compiled combined interpolation and gradient computation
+        _interpolate_and_differentiate_pressure(
+            p,
+            lvl.Interp_x,
+            self._Interp_y_T,
+            lvl.Dx_1d,
+            self._Dy_1d_T,
+            lvl.dp_dx,
+            lvl.dp_dy,
+            lvl.shape_inner,
+        )
 
     def _compute_residuals(self, u: np.ndarray, v: np.ndarray, p: np.ndarray):
         """Compute RHS residuals for RK4 pseudo time-stepping.
