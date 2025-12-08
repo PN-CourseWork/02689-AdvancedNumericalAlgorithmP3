@@ -206,21 +206,23 @@ class SGSolver(LidDrivenCavitySolver):
         # 1D differentiation matrices on full grid
         x_nodes_full = self.basis_x.nodes(Nx + 1)
         y_nodes_full = self.basis_y.nodes(Ny + 1)
-        Dx_1d = self.basis_x.diff_matrix(x_nodes_full)  # (Nx+1) × (Nx+1)
-        Dy_1d = self.basis_y.diff_matrix(y_nodes_full)  # (Ny+1) × (Ny+1)
+        self.Dx_1d = self.basis_x.diff_matrix(x_nodes_full)  # (Nx+1) × (Nx+1)
+        self.Dy_1d = self.basis_y.diff_matrix(y_nodes_full)  # (Ny+1) × (Ny+1)
 
-        # 2D differentiation via Kronecker products
+        # Second derivatives for Laplacian (tensor product form)
+        self.Dxx_1d = self.Dx_1d @ self.Dx_1d
+        self.Dyy_1d = self.Dy_1d @ self.Dy_1d
+
+        # 2D differentiation via Kronecker products (kept for compatibility)
         # For meshgrid with indexing='ij': first index is x, second is y
         Ix = np.eye(Nx + 1)
         Iy = np.eye(Ny + 1)
-        self.Dx = np.kron(Dx_1d, Iy)  # d/dx on full grid
-        self.Dy = np.kron(Ix, Dy_1d)  # d/dy on full grid
+        self.Dx = np.kron(self.Dx_1d, Iy)  # d/dx on full grid
+        self.Dy = np.kron(Ix, self.Dy_1d)  # d/dy on full grid
 
         # Laplacian: ∇² = ∂²/∂x² + ∂²/∂y²
-        Dxx_1d = Dx_1d @ Dx_1d
-        Dyy_1d = Dy_1d @ Dy_1d
-        self.Dxx = np.kron(Dxx_1d, Iy)
-        self.Dyy = np.kron(Ix, Dyy_1d)
+        self.Dxx = np.kron(self.Dxx_1d, Iy)
+        self.Dyy = np.kron(Ix, self.Dyy_1d)
         self.Laplacian = self.Dxx + self.Dyy
 
         # Build 1D interpolation matrices from inner to full grid (for pressure)
@@ -277,19 +279,22 @@ class SGSolver(LidDrivenCavitySolver):
         PN-PN-2 method:
         1. Pressure p exists on (Nx-1) × (Ny-1) inner grid
         2. Interpolate p to full (Nx+1) × (Ny+1) grid using spectral interpolation
-        3. Compute ∂p/∂x and ∂p/∂y on full grid using full-grid diff matrices
+        3. Compute ∂p/∂x and ∂p/∂y on full grid using tensor product diff matrices
 
         Note: We use Chebyshev polynomial interpolation (not linear extrapolation)
         to maintain spectral accuracy. The interpolation matrices are precomputed.
+
+        Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
         """
         # Step 1: Interpolate pressure from inner grid to full grid using spectral interpolation
         # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
         p_full_2d = self.Interp_x @ self.p_2d @ self.Interp_y.T
-        p_full = p_full_2d.ravel()
 
-        # Step 2: Compute pressure gradient on full grid using full diff matrices
-        self.arrays.dp_dx[:] = self.Dx @ p_full
-        self.arrays.dp_dy[:] = self.Dy @ p_full
+        # Step 2: Compute pressure gradient using tensor product (O(N³) instead of O(N⁴))
+        # d/dx: apply Dx_1d along axis 0 (rows)
+        # d/dy: apply Dy_1d along axis 1 (columns)
+        self.arrays.dp_dx[:] = (self.Dx_1d @ p_full_2d).ravel()
+        self.arrays.dp_dy[:] = (p_full_2d @ self.Dy_1d.T).ravel()
 
     def _compute_residuals(self, u, v, p):
         """Compute RHS residuals for pseudo time-stepping.
@@ -303,6 +308,8 @@ class SGSolver(LidDrivenCavitySolver):
         For subtraction method (Zhang & Xi 2010):
         Modified convection: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
 
+        Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
+
         Parameters
         ----------
         u, v : np.ndarray
@@ -314,15 +321,31 @@ class SGSolver(LidDrivenCavitySolver):
         -------
         self.arrays.R_u, self.arrays.R_v (full grid), self.arrays.R_p (inner grid)
         """
-        # Compute velocity derivatives on full grid (spectral differentiation of u_c)
-        self.arrays.du_dx[:] = self.Dx @ u
-        self.arrays.du_dy[:] = self.Dy @ u
-        self.arrays.dv_dx[:] = self.Dx @ v
-        self.arrays.dv_dy[:] = self.Dy @ v
+        # Reshape to 2D for tensor product operations
+        u_2d = u.reshape(self.shape_full)
+        v_2d = v.reshape(self.shape_full)
 
-        # Compute Laplacians on full grid
-        self.arrays.lap_u[:] = self.Laplacian @ u
-        self.arrays.lap_v[:] = self.Laplacian @ v
+        # Compute velocity derivatives using tensor products (O(N³) instead of O(N⁴))
+        # d/dx: apply Dx_1d along axis 0
+        # d/dy: apply Dy_1d along axis 1 (via transpose trick)
+        du_dx_2d = self.Dx_1d @ u_2d
+        du_dy_2d = u_2d @ self.Dy_1d.T
+        dv_dx_2d = self.Dx_1d @ v_2d
+        dv_dy_2d = v_2d @ self.Dy_1d.T
+
+        # Store flattened derivatives
+        self.arrays.du_dx[:] = du_dx_2d.ravel()
+        self.arrays.du_dy[:] = du_dy_2d.ravel()
+        self.arrays.dv_dx[:] = dv_dx_2d.ravel()
+        self.arrays.dv_dy[:] = dv_dy_2d.ravel()
+
+        # Compute Laplacians using tensor products: ∇²u = d²u/dx² + d²u/dy²
+        # d²/dx²: apply Dxx_1d along axis 0
+        # d²/dy²: apply Dyy_1d along axis 1
+        lap_u_2d = self.Dxx_1d @ u_2d + u_2d @ self.Dyy_1d.T
+        lap_v_2d = self.Dxx_1d @ v_2d + v_2d @ self.Dyy_1d.T
+        self.arrays.lap_u[:] = lap_u_2d.ravel()
+        self.arrays.lap_v[:] = lap_v_2d.ravel()
 
         # Compute pressure gradient from inner grid p and interpolate to full grid
         self._interpolate_pressure_gradient()
@@ -356,9 +379,8 @@ class SGSolver(LidDrivenCavitySolver):
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
 
         # Continuity residual on INNER grid: R_p = -β²(∂u/∂x + ∂v/∂y)
-        # Compute divergence on full grid, then restrict to inner grid
-        divergence_full = self.arrays.du_dx + self.arrays.dv_dy
-        divergence_2d = divergence_full.reshape(self.shape_full)
+        # Use the already-computed 2D derivatives directly
+        divergence_2d = du_dx_2d + dv_dy_2d
         divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
 
         # Pressure residual on inner grid
