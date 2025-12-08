@@ -12,6 +12,6 @@ name: spectral_vmg
 # VMG Multigrid settings
 multigrid: vmg
 n_levels: 3
-coarse_tolerance_factor: 10.0
+coarse_tolerance_factor: 1.0
 prolongation_method: fft
 restriction_method: fft

@@ -121,6 +121,9 @@ class SGSolver(LidDrivenCavitySolver):
         # Initialize lid velocity with corner treatment
         self._initialize_lid_velocity()
 
+        # Setup quadrature weights for proper integration (energy, enstrophy, etc.)
+        self._setup_quadrature_weights()
+
     def _setup_grids(self):
         """Setup full and reduced grids using Legendre-Gauss-Lobatto nodes."""
         # Full grid: (Nx+1) × (Ny+1)
@@ -513,3 +516,80 @@ class SGSolver(LidDrivenCavitySolver):
             "v_residual": np.linalg.norm(self.arrays.R_v),
             "continuity_residual": np.linalg.norm(self.arrays.R_p),
         }
+
+    # =========================================================================
+    # Quadrature-Based Integration for Spectral Grids
+    # =========================================================================
+
+    def _setup_quadrature_weights(self):
+        """Setup 2D quadrature weight matrix for proper spectral integration.
+
+        For Gauss-Lobatto grids, proper integration requires quadrature weights
+        that account for non-uniform node spacing. This creates a 2D weight
+        matrix W[i,j] = w_x[i] * w_y[j] for tensor product quadrature.
+        """
+        Nx, Ny = self.params.nx + 1, self.params.ny + 1
+
+        # Get 1D quadrature weights from basis
+        self.w_x = self.basis_x.quadrature_weights(Nx)  # 1D weights in x
+        self.w_y = self.basis_y.quadrature_weights(Ny)  # 1D weights in y
+
+        # Create 2D weight matrix via outer product: W[i,j] = w_x[i] * w_y[j]
+        self.W_2d = np.outer(self.w_x, self.w_y)  # Shape: (Nx, Ny)
+
+    def _compute_energy(self) -> float:
+        """Compute kinetic energy using spectral quadrature.
+
+        E = 0.5 * ∫∫ (u² + v²) dA
+
+        Uses Gauss-Lobatto quadrature weights for accurate integration on
+        non-uniform spectral grids.
+        """
+        u_2d = self.arrays.u.reshape(self.shape_full)
+        v_2d = self.arrays.v.reshape(self.shape_full)
+
+        # Quadrature: ∫∫ f dA ≈ Σᵢⱼ w_x[i] * w_y[j] * f[i,j]
+        integrand = u_2d * u_2d + v_2d * v_2d
+        return 0.5 * float(np.sum(self.W_2d * integrand))
+
+    def _compute_vorticity(self) -> np.ndarray:
+        """Compute vorticity ω = ∂v/∂x - ∂u/∂y using spectral differentiation.
+
+        Uses the spectral differentiation matrices for accurate derivatives.
+        """
+        u_2d = self.arrays.u.reshape(self.shape_full)
+        v_2d = self.arrays.v.reshape(self.shape_full)
+
+        # Spectral differentiation (tensor product form)
+        dv_dx_2d = self.Dx_1d @ v_2d
+        du_dy_2d = u_2d @ self.Dy_1d.T
+
+        return (dv_dx_2d - du_dy_2d).ravel()
+
+    def _compute_enstrophy(self) -> float:
+        """Compute enstrophy using spectral methods.
+
+        Z = 0.5 * ∫∫ ω² dA
+
+        Uses spectral differentiation for vorticity and Gauss-Lobatto
+        quadrature for integration.
+        """
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
+        return 0.5 * float(np.sum(self.W_2d * omega_2d * omega_2d))
+
+    def _compute_palinstrophy(self) -> float:
+        """Compute palinstrophy using spectral methods.
+
+        P = 0.5 * ∫∫ ||∇ω||² dA
+
+        Uses spectral differentiation for vorticity gradient and Gauss-Lobatto
+        quadrature for integration.
+        """
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
+
+        # Spectral differentiation of vorticity
+        domega_dx_2d = self.Dx_1d @ omega_2d
+        domega_dy_2d = omega_2d @ self.Dy_1d.T
+
+        grad_omega_sq = domega_dx_2d**2 + domega_dy_2d**2
+        return 0.5 * float(np.sum(self.W_2d * grad_omega_sq))
