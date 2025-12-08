@@ -109,7 +109,13 @@ class SpectralLevel:
     dx_min: float
     dy_min: float
 
-    # Differentiation matrices (2D Kronecker form)
+    # 1D differentiation matrices (for O(N³) tensor product operations)
+    Dx_1d: np.ndarray  # 1D d/dx matrix (N+1) × (N+1)
+    Dy_1d: np.ndarray  # 1D d/dy matrix (N+1) × (N+1)
+    Dxx_1d: np.ndarray  # 1D d²/dx² matrix (N+1) × (N+1)
+    Dyy_1d: np.ndarray  # 1D d²/dy² matrix (N+1) × (N+1)
+
+    # 2D Kronecker form (kept for compatibility, but prefer 1D for performance)
     Dx: np.ndarray  # d/dx on full grid
     Dy: np.ndarray  # d/dy on full grid
     Dxx: np.ndarray  # d²/dx² on full grid
@@ -208,17 +214,17 @@ def build_spectral_level(
     dx_min = np.min(np.diff(x_nodes))
     dy_min = np.min(np.diff(y_nodes))
 
-    # Build differentiation matrices
+    # Build 1D differentiation matrices (stored for O(N³) tensor product operations)
     Dx_1d = basis_x.diff_matrix(x_nodes)
     Dy_1d = basis_y.diff_matrix(y_nodes)
+    Dxx_1d = Dx_1d @ Dx_1d
+    Dyy_1d = Dy_1d @ Dy_1d
 
+    # Build 2D Kronecker matrices (kept for compatibility)
     Ix = np.eye(n + 1)
     Iy = np.eye(n + 1)
     Dx = np.kron(Dx_1d, Iy)
     Dy = np.kron(Ix, Dy_1d)
-
-    Dxx_1d = Dx_1d @ Dx_1d
-    Dyy_1d = Dy_1d @ Dy_1d
     Dxx = np.kron(Dxx_1d, Iy)
     Dyy = np.kron(Ix, Dyy_1d)
     Laplacian = Dxx + Dyy
@@ -249,6 +255,12 @@ def build_spectral_level(
         shape_inner=shape_inner,
         dx_min=dx_min,
         dy_min=dy_min,
+        # 1D matrices for tensor product operations
+        Dx_1d=Dx_1d,
+        Dy_1d=Dy_1d,
+        Dxx_1d=Dxx_1d,
+        Dyy_1d=Dyy_1d,
+        # 2D Kronecker matrices (kept for compatibility)
         Dx=Dx,
         Dy=Dy,
         Dxx=Dxx,
@@ -640,7 +652,7 @@ class MultigridSmoother:
 
         Uses spectral interpolation (Chebyshev polynomial fit) to extend
         pressure from inner grid to full grid before differentiation.
-        This maintains spectral accuracy.
+        Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
         """
         lvl = self.level
 
@@ -648,25 +660,43 @@ class MultigridSmoother:
         # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
         p_inner_2d = lvl.p.reshape(lvl.shape_inner)
         p_full_2d = lvl.Interp_x @ p_inner_2d @ lvl.Interp_y.T
-        p_full = p_full_2d.ravel()
 
-        # Step 2: Compute pressure gradient on full grid using full diff matrices
-        lvl.dp_dx[:] = lvl.Dx @ p_full
-        lvl.dp_dy[:] = lvl.Dy @ p_full
+        # Step 2: Compute pressure gradient using tensor products (O(N³) instead of O(N⁴))
+        # d/dx: apply Dx_1d along axis 0 (rows)
+        # d/dy: apply Dy_1d along axis 1 (columns via transpose trick)
+        lvl.dp_dx[:] = (lvl.Dx_1d @ p_full_2d).ravel()
+        lvl.dp_dy[:] = (p_full_2d @ lvl.Dy_1d.T).ravel()
 
     def _compute_residuals(self, u: np.ndarray, v: np.ndarray, p: np.ndarray):
-        """Compute RHS residuals for RK4 pseudo time-stepping."""
+        """Compute RHS residuals for RK4 pseudo time-stepping.
+
+        Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
+        """
         lvl = self.level
 
-        # Velocity derivatives
-        lvl.du_dx[:] = lvl.Dx @ u
-        lvl.du_dy[:] = lvl.Dy @ u
-        lvl.dv_dx[:] = lvl.Dx @ v
-        lvl.dv_dy[:] = lvl.Dy @ v
+        # Reshape to 2D for tensor product operations
+        u_2d = u.reshape(lvl.shape_full)
+        v_2d = v.reshape(lvl.shape_full)
 
-        # Laplacians
-        lvl.lap_u[:] = lvl.Laplacian @ u
-        lvl.lap_v[:] = lvl.Laplacian @ v
+        # Compute velocity derivatives using tensor products (O(N³) instead of O(N⁴))
+        # d/dx: apply Dx_1d along axis 0
+        # d/dy: apply Dy_1d along axis 1 (via transpose trick)
+        du_dx_2d = lvl.Dx_1d @ u_2d
+        du_dy_2d = u_2d @ lvl.Dy_1d.T
+        dv_dx_2d = lvl.Dx_1d @ v_2d
+        dv_dy_2d = v_2d @ lvl.Dy_1d.T
+
+        # Store flattened derivatives
+        lvl.du_dx[:] = du_dx_2d.ravel()
+        lvl.du_dy[:] = du_dy_2d.ravel()
+        lvl.dv_dx[:] = dv_dx_2d.ravel()
+        lvl.dv_dy[:] = dv_dy_2d.ravel()
+
+        # Compute Laplacians using tensor products: ∇²u = d²u/dx² + d²u/dy²
+        lap_u_2d = lvl.Dxx_1d @ u_2d + u_2d @ lvl.Dyy_1d.T
+        lap_v_2d = lvl.Dxx_1d @ v_2d + v_2d @ lvl.Dyy_1d.T
+        lvl.lap_u[:] = lap_u_2d.ravel()
+        lvl.lap_v[:] = lap_v_2d.ravel()
 
         # Pressure gradient (needs p array set first)
         old_p = lvl.p.copy()

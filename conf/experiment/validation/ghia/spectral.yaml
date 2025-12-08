@@ -9,7 +9,7 @@ defaults:
 experiment_name: LDC-Validation
 sweep_name: ghia-Re${Re}
 
-tolerance: 1.0e-5
+tolerance: 1.0e-6
 
 # Validation parameters
 
