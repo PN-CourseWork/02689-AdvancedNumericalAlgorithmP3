@@ -73,7 +73,13 @@ class FASLevel:
     X: np.ndarray  # Full grid
     Y: np.ndarray
 
-    # Differentiation matrices (2D Kronecker form)
+    # 1D differentiation matrices (for O(N³) tensor product operations)
+    Dx_1d: np.ndarray      # 1D d/dx matrix (N+1) × (N+1)
+    Dy_1d: np.ndarray      # 1D d/dy matrix (N+1) × (N+1)
+    Dxx_1d: np.ndarray     # 1D d²/dx² matrix (N+1) × (N+1)
+    Dyy_1d: np.ndarray     # 1D d²/dy² matrix (N+1) × (N+1)
+
+    # 2D Kronecker form (kept for compatibility, but prefer 1D for performance)
     Dx: np.ndarray      # d/dx on full grid
     Dy: np.ndarray      # d/dy on full grid
     Laplacian: np.ndarray
@@ -184,17 +190,17 @@ def build_fas_level(
     # 2D meshgrid
     X, Y = np.meshgrid(x_nodes, y_nodes, indexing="ij")
 
-    # Differentiation matrices
+    # Build 1D differentiation matrices (stored for O(N³) tensor product operations)
     Dx_1d = basis_x.diff_matrix(x_nodes)
     Dy_1d = basis_y.diff_matrix(y_nodes)
+    Dxx_1d = Dx_1d @ Dx_1d
+    Dyy_1d = Dy_1d @ Dy_1d
 
+    # Build 2D Kronecker matrices (kept for compatibility)
     Ix = np.eye(n + 1)
     Iy = np.eye(n + 1)
     Dx = np.kron(Dx_1d, Iy)
     Dy = np.kron(Ix, Dy_1d)
-
-    Dxx_1d = Dx_1d @ Dx_1d
-    Dyy_1d = Dy_1d @ Dy_1d
     Dxx = np.kron(Dxx_1d, Iy)
     Dyy = np.kron(Ix, Dyy_1d)
     Laplacian = Dxx + Dyy
@@ -216,6 +222,12 @@ def build_fas_level(
         dy_min=dy_min,
         X=X,
         Y=Y,
+        # 1D matrices for tensor product operations
+        Dx_1d=Dx_1d,
+        Dy_1d=Dy_1d,
+        Dxx_1d=Dxx_1d,
+        Dyy_1d=Dyy_1d,
+        # 2D Kronecker matrices (kept for compatibility)
         Dx=Dx,
         Dy=Dy,
         Laplacian=Laplacian,
@@ -317,6 +329,7 @@ def compute_residuals(
 
     Stores results in level.R_u, level.R_v, level.R_p.
 
+    Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
     Uses standard convection (no subtraction method - using smoothing for corners).
 
     Parameters
@@ -332,22 +345,36 @@ def compute_residuals(
     beta_squared : float
         Artificial compressibility parameter
     """
-    # Velocity derivatives
-    level.du_dx[:] = level.Dx @ u
-    level.du_dy[:] = level.Dy @ u
-    level.dv_dx[:] = level.Dx @ v
-    level.dv_dy[:] = level.Dy @ v
+    # Reshape to 2D for tensor product operations
+    u_2d = u.reshape(level.shape_full)
+    v_2d = v.reshape(level.shape_full)
 
-    # Laplacians
-    level.lap_u[:] = level.Laplacian @ u
-    level.lap_v[:] = level.Laplacian @ v
+    # Compute velocity derivatives using tensor products (O(N³) instead of O(N⁴))
+    # d/dx: apply Dx_1d along axis 0
+    # d/dy: apply Dy_1d along axis 1 (via transpose trick)
+    du_dx_2d = level.Dx_1d @ u_2d
+    du_dy_2d = u_2d @ level.Dy_1d.T
+    dv_dx_2d = level.Dx_1d @ v_2d
+    dv_dy_2d = v_2d @ level.Dy_1d.T
+
+    # Store flattened derivatives
+    level.du_dx[:] = du_dx_2d.ravel()
+    level.du_dy[:] = du_dy_2d.ravel()
+    level.dv_dx[:] = dv_dx_2d.ravel()
+    level.dv_dy[:] = dv_dy_2d.ravel()
+
+    # Compute Laplacians using tensor products: ∇²u = d²u/dx² + d²u/dy²
+    lap_u_2d = level.Dxx_1d @ u_2d + u_2d @ level.Dyy_1d.T
+    lap_v_2d = level.Dxx_1d @ v_2d + v_2d @ level.Dyy_1d.T
+    level.lap_u[:] = lap_u_2d.ravel()
+    level.lap_v[:] = lap_v_2d.ravel()
 
     # Pressure gradient: interpolate from inner to full grid, then differentiate
     p_inner_2d = p.reshape(level.shape_inner)
     p_full_2d = level.Interp_x @ p_inner_2d @ level.Interp_y.T
-    p_full = p_full_2d.ravel()
-    level.dp_dx[:] = level.Dx @ p_full
-    level.dp_dy[:] = level.Dy @ p_full
+    # Use tensor products for pressure gradient
+    level.dp_dx[:] = (level.Dx_1d @ p_full_2d).ravel()
+    level.dp_dy[:] = (p_full_2d @ level.Dy_1d.T).ravel()
 
     # Standard convection: (u·∇)u
     conv_u = u * level.du_dx + v * level.du_dy
@@ -366,8 +393,8 @@ def compute_residuals(
         level.R_v[:] += level.tau_v
 
     # Continuity residual on inner grid: R_p = -β²(∂u/∂x + ∂v/∂y)
-    divergence_full = level.du_dx + level.dv_dy
-    divergence_2d = divergence_full.reshape(level.shape_full)
+    # Use already computed derivatives
+    divergence_2d = du_dx_2d + dv_dy_2d
     divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
     level.R_p[:] = -beta_squared * divergence_inner
 
@@ -490,15 +517,19 @@ def compute_continuity_rms(level: FASLevel) -> float:
 
     E_RMS = sqrt( Σᵢⱼ (∂u/∂x + ∂v/∂y)²ᵢⱼ / ((Nx-1)(Ny-1)) )
 
+    Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
     Computed on inner grid only.
     """
-    # Compute divergence on full grid
-    du_dx = level.Dx @ level.u
-    dv_dy = level.Dy @ level.v
-    div_full = du_dx + dv_dy
+    # Reshape to 2D for tensor product operations
+    u_2d = level.u.reshape(level.shape_full)
+    v_2d = level.v.reshape(level.shape_full)
+
+    # Compute divergence using tensor products (O(N³) instead of O(N⁴))
+    du_dx_2d = level.Dx_1d @ u_2d
+    dv_dy_2d = v_2d @ level.Dy_1d.T
+    div_2d = du_dx_2d + dv_dy_2d
 
     # Extract inner grid
-    div_2d = div_full.reshape(level.shape_full)
     div_inner = div_2d[1:-1, 1:-1].ravel()
 
     # RMS
@@ -707,6 +738,11 @@ def fas_vcycle(
 
         # 2d. Restrict solution (direct injection)
         restrict_solution(level, coarse)
+
+        # 2d'. Enforce proper BCs on coarse grid after restriction
+        # Critical: injection copies fine grid values which have different smoothing
+        enforce_boundary_conditions(coarse, coarse.u, coarse.v, lid_velocity, corner_treatment, Lx, Ly)
+
         u_H_old = coarse.u.copy()
         v_H_old = coarse.v.copy()
         p_H_old = coarse.p.copy()
@@ -714,22 +750,18 @@ def fas_vcycle(
         # 2e. Compute coarse residual at restricted solution
         compute_residuals(coarse, coarse.u, coarse.v, coarse.p, Re, beta_squared)
 
+        # 2e'. Zero coarse residual at boundaries (BCs enforced separately)
+        # This is critical for tau consistency: I_r has zero boundaries, so should R_H
+        R_u_2d = coarse.R_u.reshape(coarse.shape_full)
+        R_v_2d = coarse.R_v.reshape(coarse.shape_full)
+        R_u_2d[0, :] = 0.0; R_u_2d[-1, :] = 0.0; R_u_2d[:, 0] = 0.0; R_u_2d[:, -1] = 0.0
+        R_v_2d[0, :] = 0.0; R_v_2d[-1, :] = 0.0; R_v_2d[:, 0] = 0.0; R_v_2d[:, -1] = 0.0
+
         # 2f. Compute tau correction: tau = I(r_h) - r_H'
+        # Now both I_r and R_H have zero boundaries, so tau will too
         tau_u = I_r_u - coarse.R_u
         tau_v = I_r_v - coarse.R_v
         tau_p = I_r_p - coarse.R_p
-
-        # Zero tau at boundaries
-        tau_u_2d = tau_u.reshape(coarse.shape_full)
-        tau_v_2d = tau_v.reshape(coarse.shape_full)
-        tau_u_2d[0, :] = 0.0
-        tau_u_2d[-1, :] = 0.0
-        tau_u_2d[:, 0] = 0.0
-        tau_u_2d[:, -1] = 0.0
-        tau_v_2d[0, :] = 0.0
-        tau_v_2d[-1, :] = 0.0
-        tau_v_2d[:, 0] = 0.0
-        tau_v_2d[:, -1] = 0.0
 
         # 2g. Set tau and recurse
         coarse.tau_u = tau_u
