@@ -71,6 +71,7 @@ class Prolongation(ABC):
         """Prolongate 2D field from coarse to fine grid.
 
         Uses row-column algorithm: interpolate in x-direction, then y-direction.
+        Fully vectorized - no Python loops.
 
         Parameters
         ----------
@@ -90,17 +91,67 @@ class Prolongation(ABC):
         if (nx_c, ny_c) == (nx_f, ny_f):
             return u_coarse_2d.copy()
 
-        # Interpolate in x-direction (column by column)
-        temp = np.zeros((nx_f, ny_c))
-        for j in range(ny_c):
-            temp[:, j] = self.prolongate_1d(u_coarse_2d[:, j], nx_f)
+        # Vectorized interpolation in x-direction (all columns at once)
+        temp = self._prolongate_batch(u_coarse_2d, nx_f, axis=0)
 
-        # Interpolate in y-direction (row by row)
-        u_fine_2d = np.zeros((nx_f, ny_f))
-        for i in range(nx_f):
-            u_fine_2d[i, :] = self.prolongate_1d(temp[i, :], ny_f)
+        # Vectorized interpolation in y-direction (all rows at once)
+        u_fine_2d = self._prolongate_batch(temp, ny_f, axis=1)
 
         return u_fine_2d
+
+    def _prolongate_batch(
+        self, data: np.ndarray, n_target: int, axis: int
+    ) -> np.ndarray:
+        """Prolongate along specified axis (vectorized over the other axis).
+
+        Parameters
+        ----------
+        data : np.ndarray
+            2D input array
+        n_target : int
+            Target size along interpolation axis
+        axis : int
+            Axis to interpolate along (0 or 1)
+
+        Returns
+        -------
+        np.ndarray
+            Interpolated array
+        """
+        n_source = data.shape[axis]
+        if n_source == n_target:
+            return data.copy()
+
+        # Move interpolation axis to position 0 for uniform processing
+        if axis == 1:
+            data = data.T
+
+        n_source, n_other = data.shape
+        N_c = n_source - 1
+        N_f = n_target - 1
+
+        # DCT along axis 0 (all columns at once)
+        coeffs = dct(data, type=1, axis=0) / N_c
+
+        # Build cosine evaluation matrix: cos(k * pi * i / N_f)
+        # Shape: (n_target, n_source)
+        i_vals = np.arange(n_target)
+        k_vals = np.arange(n_source)
+        theta_matrix = np.outer(i_vals, k_vals) * (np.pi / N_f)
+        cos_matrix = np.cos(theta_matrix)
+
+        # Apply halving to first and last coefficients (along axis 0)
+        coeffs[0, :] /= 2
+        coeffs[-1, :] /= 2
+
+        # Matrix multiplication: result[i, j] = sum_k cos_matrix[i,k] * coeffs[k,j]
+        result = cos_matrix @ coeffs
+
+        # Transpose back if needed
+        if axis == 1:
+            result = result.T
+
+        return result
 
 
 class Restriction(ABC):
@@ -132,6 +183,7 @@ class Restriction(ABC):
         """Restrict 2D field from fine to coarse grid.
 
         Uses row-column algorithm: restrict in x-direction, then y-direction.
+        Fully vectorized - no Python loops.
 
         Parameters
         ----------
@@ -151,17 +203,70 @@ class Restriction(ABC):
         if (nx_f, ny_f) == (nx_c, ny_c):
             return u_fine_2d.copy()
 
-        # Restrict in x-direction (column by column)
-        temp = np.zeros((nx_c, ny_f))
-        for j in range(ny_f):
-            temp[:, j] = self.restrict_1d(u_fine_2d[:, j], nx_c)
+        # Vectorized restriction in x-direction (all columns at once)
+        temp = self._restrict_batch(u_fine_2d, nx_c, axis=0)
 
-        # Restrict in y-direction (row by row)
-        u_coarse_2d = np.zeros((nx_c, ny_c))
-        for i in range(nx_c):
-            u_coarse_2d[i, :] = self.restrict_1d(temp[i, :], ny_c)
+        # Vectorized restriction in y-direction (all rows at once)
+        u_coarse_2d = self._restrict_batch(temp, ny_c, axis=1)
 
         return u_coarse_2d
+
+    def _restrict_batch(
+        self, data: np.ndarray, n_target: int, axis: int
+    ) -> np.ndarray:
+        """Restrict along specified axis (vectorized over the other axis).
+
+        Parameters
+        ----------
+        data : np.ndarray
+            2D input array
+        n_target : int
+            Target size along restriction axis
+        axis : int
+            Axis to restrict along (0 or 1)
+
+        Returns
+        -------
+        np.ndarray
+            Restricted array
+        """
+        n_source = data.shape[axis]
+        if n_source == n_target:
+            return data.copy()
+
+        # Move restriction axis to position 0 for uniform processing
+        if axis == 1:
+            data = data.T
+
+        n_source, n_other = data.shape
+        N_f = n_source - 1
+        N_c = n_target - 1
+
+        # DCT along axis 0 (all columns at once)
+        coeffs = dct(data, type=1, axis=0) / N_f
+
+        # Truncate coefficients to first n_target terms
+        coeffs_truncated = coeffs[:n_target, :].copy()
+
+        # Build cosine evaluation matrix: cos(k * pi * i / N_c)
+        # Shape: (n_target, n_target)
+        i_vals = np.arange(n_target)
+        k_vals = np.arange(n_target)
+        theta_matrix = np.outer(i_vals, k_vals) * (np.pi / N_c)
+        cos_matrix = np.cos(theta_matrix)
+
+        # Apply halving to first and last coefficients (along axis 0)
+        coeffs_truncated[0, :] /= 2
+        coeffs_truncated[-1, :] /= 2
+
+        # Matrix multiplication: result[i, j] = sum_k cos_matrix[i,k] * coeffs[k,j]
+        result = cos_matrix @ coeffs_truncated
+
+        # Transpose back if needed
+        if axis == 1:
+            result = result.T
+
+        return result
 
 
 # =============================================================================

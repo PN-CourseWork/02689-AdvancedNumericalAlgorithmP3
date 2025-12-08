@@ -112,6 +112,11 @@ class FASLevel:
     tau_v: Optional[np.ndarray] = None
     tau_p: Optional[np.ndarray] = None
 
+    # Pre-computed boundary conditions (set once during initialization)
+    # Shape: (n+1,) for each boundary edge
+    bc_lid_u: Optional[np.ndarray] = None  # North boundary (lid) u-velocity
+    bc_lid_v: Optional[np.ndarray] = None  # North boundary (lid) v-velocity
+
 
 def _build_interpolation_matrix_1d(nodes_inner: np.ndarray, nodes_full: np.ndarray) -> np.ndarray:
     """Build spectral interpolation matrix from inner to full grid.
@@ -403,40 +408,32 @@ def enforce_boundary_conditions(
     """Enforce boundary conditions on velocity fields.
 
     Modifies u, v in place.
+
+    Caches the lid BC values on first call since they never change.
     """
     u_2d = u.reshape(level.shape_full)
     v_2d = v.reshape(level.shape_full)
 
-    # Get wall velocities (0 for smoothing method)
-    # West
-    u_wall, v_wall = corner_treatment.get_wall_velocity(
-        level.X[0, :], level.Y[0, :], Lx, Ly
-    )
-    u_2d[0, :] = u_wall
-    v_2d[0, :] = v_wall
+    # Walls are always zero velocity - set directly without function calls
+    u_2d[0, :] = 0.0   # West
+    v_2d[0, :] = 0.0
+    u_2d[-1, :] = 0.0  # East
+    v_2d[-1, :] = 0.0
+    u_2d[:, 0] = 0.0   # South
+    v_2d[:, 0] = 0.0
 
-    # East
-    u_wall, v_wall = corner_treatment.get_wall_velocity(
-        level.X[-1, :], level.Y[-1, :], Lx, Ly
-    )
-    u_2d[-1, :] = u_wall
-    v_2d[-1, :] = v_wall
+    # North (lid) - cache on first call
+    if level.bc_lid_u is None:
+        u_lid, v_lid = corner_treatment.get_lid_velocity(
+            level.X[:, -1], level.Y[:, -1],
+            lid_velocity=lid_velocity,
+            Lx=Lx, Ly=Ly,
+        )
+        level.bc_lid_u = u_lid.ravel()
+        level.bc_lid_v = v_lid.ravel()
 
-    # South
-    u_wall, v_wall = corner_treatment.get_wall_velocity(
-        level.X[:, 0], level.Y[:, 0], Lx, Ly
-    )
-    u_2d[:, 0] = u_wall
-    v_2d[:, 0] = v_wall
-
-    # North (lid)
-    u_lid, v_lid = corner_treatment.get_lid_velocity(
-        level.X[:, -1], level.Y[:, -1],
-        lid_velocity=lid_velocity,
-        Lx=Lx, Ly=Ly,
-    )
-    u_2d[:, -1] = u_lid
-    v_2d[:, -1] = v_lid
+    u_2d[:, -1] = level.bc_lid_u
+    v_2d[:, -1] = level.bc_lid_v
 
 
 def fas_rk4_step(

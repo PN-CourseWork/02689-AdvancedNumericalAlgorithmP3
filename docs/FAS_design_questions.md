@@ -137,6 +137,9 @@ What should we call this solver?
 - **(A)** `FASSolver` / `fas.py` / `fas.yaml` FAS.py!
 - **(B)** `FASVCycleSolver` / `fas_vcycle.py` / `fas_vcycle.yaml`
 - **(C)** `VMG2Solver` / `vmg2.py` / `vmg2.yaml` (improved VMG)
+
+
+additionally: You should really verify each component in isolation before doing end-to-end testing! Your tests should not run for longer than 10-20 seconds!
 - **(D)** Other (specify)
 
 **Your answer:**
