@@ -218,22 +218,26 @@ class FFTProlongation(Prolongation):
         N_c = n_coarse - 1
         coeffs = dct(u_coarse, type=1) / N_c
 
-        # Step 2: Evaluate Chebyshev polynomial at fine grid points
+        # Step 2: Evaluate Chebyshev polynomial at fine grid points (VECTORIZED)
         # The Chebyshev series uses primed notation:
         #   f(x) = c_0/2 + sum_{k=1}^{N-1} c_k * T_k(x) + c_N/2 * T_N(x)
         # At CGL nodes x_i = cos(pi*i/M): T_k(x_i) = cos(k*pi*i/M)
         N_f = n_fine - 1
-        u_fine = np.zeros(n_fine)
 
-        for i in range(n_fine):
-            theta = np.pi * i / N_f
-            # First coefficient halved
-            u_fine[i] = coeffs[0] / 2
-            # Interior coefficients
-            for k in range(1, N_c):
-                u_fine[i] += coeffs[k] * np.cos(k * theta)
-            # Last coefficient halved
-            u_fine[i] += coeffs[N_c] / 2 * np.cos(N_c * theta)
+        # Build cosine evaluation matrix: cos(k * pi * i / N_f) for all i, k
+        # Shape: (n_fine, n_coarse)
+        i_vals = np.arange(n_fine)
+        k_vals = np.arange(n_coarse)
+        theta_matrix = np.outer(i_vals, k_vals) * (np.pi / N_f)
+        cos_matrix = np.cos(theta_matrix)
+
+        # Apply halving to first and last coefficients
+        coeffs_weighted = coeffs.copy()
+        coeffs_weighted[0] /= 2
+        coeffs_weighted[-1] /= 2
+
+        # Matrix-vector multiplication: u_fine = cos_matrix @ coeffs_weighted
+        u_fine = cos_matrix @ coeffs_weighted
 
         return u_fine
 
@@ -290,23 +294,29 @@ class FFTRestriction(Restriction):
         N_f = n_fine - 1
         coeffs = dct(u_fine, type=1) / N_f
 
-        # Step 2: Evaluate polynomial at coarse grid points using TRUNCATED coefficients
+        # Step 2: Evaluate polynomial at coarse grid points using TRUNCATED coefficients (VECTORIZED)
         # Per Zhang & Xi (2010): "set the coefficients belonging to the high
         # frequencies to zero" - only use first N_c + 1 coefficients
         # The Chebyshev series uses primed notation:
         #   f(x) = c_0/2 + sum_{k=1}^{N_c-1} c_k * T_k(x) + c_{N_c}/2 * T_{N_c}(x)
         N_c = n_coarse - 1
-        u_coarse = np.zeros(n_coarse)
 
-        for i in range(n_coarse):
-            theta = np.pi * i / N_c
-            # First coefficient halved
-            u_coarse[i] = coeffs[0] / 2
-            # Interior coefficients (only up to N_c - 1, TRUNCATING high frequencies)
-            for k in range(1, N_c):
-                u_coarse[i] += coeffs[k] * np.cos(k * theta)
-            # Last TRUNCATED coefficient halved
-            u_coarse[i] += coeffs[N_c] / 2 * np.cos(N_c * theta)
+        # Truncate coefficients to first n_coarse terms
+        coeffs_truncated = coeffs[:n_coarse].copy()
+
+        # Build cosine evaluation matrix: cos(k * pi * i / N_c) for all i, k
+        # Shape: (n_coarse, n_coarse)
+        i_vals = np.arange(n_coarse)
+        k_vals = np.arange(n_coarse)
+        theta_matrix = np.outer(i_vals, k_vals) * (np.pi / N_c)
+        cos_matrix = np.cos(theta_matrix)
+
+        # Apply halving to first and last coefficients
+        coeffs_truncated[0] /= 2
+        coeffs_truncated[-1] /= 2
+
+        # Matrix-vector multiplication: u_coarse = cos_matrix @ coeffs_truncated
+        u_coarse = cos_matrix @ coeffs_truncated
 
         return u_coarse
 

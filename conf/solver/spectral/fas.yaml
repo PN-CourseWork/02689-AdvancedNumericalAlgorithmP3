@@ -1,0 +1,37 @@
+# @package solver
+# FAS V-Cycle Multigrid Solver (Zhang & Xi 2010)
+#
+# Paper-faithful implementation achieving ~90% time reduction (10x speedup)
+# with 3 levels using:
+# - pre_smooth = 1 (paper uses 1 RK4 step per level)
+# - post_smooth = 0 (paper: "unnecessary" and "sometimes brings instabilities")
+# - No damping on coarse correction
+# - Continuity RMS convergence criterion
+
+defaults:
+  - /solver/spectral/sg  # Extend single grid spectral solver
+
+_target_: solvers.spectral.fas.FASSolver
+
+# Override name for FAS variant
+name: spectral_fas
+
+# FAS Multigrid settings
+multigrid: fas
+n_levels: 3              # Number of levels (2 or 3 recommended)
+coarsest_n: 12           # Minimum N for coarsest grid (paper uses N~12 minimum)
+
+# FAS V-cycle parameters (paper-faithful defaults)
+pre_smooth: 1            # Pre-smoothing RK4 steps per level (paper: 1)
+post_smooth: 0           # Post-smoothing steps (paper: 0 - "unnecessary")
+
+# Transfer operators (paper Section 3.3)
+# - Restrict variables: injection (coarse GLL nodes are subset of fine)
+# - Restrict residuals: FFT + high-frequency truncation
+# - Prolongate corrections: FFT (Chebyshev interpolation)
+prolongation_method: fft
+restriction_method: fft
+
+# Corner treatment: always use smoothing (simpler, general for regularized BC)
+corner_treatment: smoothing
+corner_smoothing: 0.15

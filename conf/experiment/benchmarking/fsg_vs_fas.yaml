@@ -1,0 +1,30 @@
+# @package _global_
+# FSG vs FAS Multigrid Comparison
+#
+# Compares Full Single Grid (FSG) and FAS V-cycle Multigrid methods.
+#
+# Run with:
+#   uv run python run_solver.py -m +experiment=benchmarking/fsg_vs_fas
+#
+# Based on Zhang & Xi (2010) paper comparison.
+
+defaults:
+  - override /solver: spectral/fsg
+
+# MLflow experiment
+experiment_name: LDC-FSG-vs-FAS
+sweep_name: fsg-fas-comparison
+
+# Convergence tolerance
+tolerance: 1.0e-4
+
+hydra:
+  sweeper:
+    params:
+      # Compare FSG and FAS methods
+      solver: spectral/fsg,spectral/fas
+      # Grid sizes - use N that allows 2-level hierarchy with coarsest_n=12
+      # N=24 -> [12, 24], N=48 -> [12, 24, 48]
+      N: 24,48
+      # Reynolds number
+      Re: 100
