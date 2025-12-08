@@ -984,10 +984,11 @@ class LidDrivenCavitySolver(ABC):
     def compute_validation_errors(
         self, reference_dir: str = "data/validation/fv", save_plots: bool = True
     ) -> dict:
-        """Compute L2 errors against reference FV solution.
+        """Compute L2 errors against reference FV solutions.
 
-        Loads the reference solution for the current Re, evaluates computed
-        solution at reference grid coordinates, and computes relative L2 errors.
+        Computes errors against both normal FV and regularized FV solutions:
+        - FV (normal): discontinuous lid velocity at corners
+        - FV-regu: regularized/smoothed lid velocity (matches spectral corner treatment)
 
         Parameters
         ----------
@@ -999,59 +1000,71 @@ class LidDrivenCavitySolver(ABC):
         Returns
         -------
         dict
-            {'u_L2_error': float, 'v_L2_error': float} or empty dict if no reference
+            L2 errors: {u_L2_error, v_L2_error, u_L2_error_regu, v_L2_error_regu}
         """
-        ref_path = Path(reference_dir) / f"Re{int(self.params.Re)}" / "solution.vts"
+        results = {}
+        Re = int(self.params.Re)
 
-        if not ref_path.exists():
-            log.warning(f"No reference solution found at {ref_path}")
-            return {}
+        # Define reference directories to compare against
+        ref_dirs = [
+            ("data/validation/fv", ""),           # normal FV
+            ("data/validation/fv-regu", "_regu"), # regularized FV
+        ]
 
-        # Load reference solution
-        ref_mesh = pv.read(str(ref_path))
-        ref_u = ref_mesh.point_data["u"]
-        ref_v = ref_mesh.point_data["v"]
+        for ref_base_dir, suffix in ref_dirs:
+            ref_path = Path(ref_base_dir) / f"Re{Re}" / "solution.vts"
 
-        # Get reference grid coordinates
-        ref_points = ref_mesh.points
-        ref_x = ref_points[:, 0]
-        ref_y = ref_points[:, 1]
+            if not ref_path.exists():
+                log.debug(f"No reference solution at {ref_path}")
+                continue
 
-        # Evaluate computed solution at reference grid points
-        # Subclasses can override _evaluate_at_points for native interpolation (e.g., spectral)
-        curr_u_at_ref, curr_v_at_ref = self._evaluate_at_points(ref_x, ref_y)
+            # Load reference solution
+            ref_mesh = pv.read(str(ref_path))
+            ref_u = ref_mesh.point_data["u"]
+            ref_v = ref_mesh.point_data["v"]
 
-        # Only compute norm on interior points (exclude boundaries where BCs differ)
-        # Use small margin to exclude boundary points
-        margin = 0.02
-        interior = (
-            (ref_x > margin) & (ref_x < self.params.Lx - margin) &
-            (ref_y > margin) & (ref_y < self.params.Ly - margin)
-        )
-        valid = interior & ~(np.isnan(curr_u_at_ref) | np.isnan(curr_v_at_ref))
-        n_valid = np.sum(valid)
-        n_total = len(ref_u)
+            # Get reference grid coordinates
+            ref_points = ref_mesh.points
+            ref_x = ref_points[:, 0]
+            ref_y = ref_points[:, 1]
 
-        if n_valid < n_total * 0.5:
-            log.warning(f"Only {n_valid}/{n_total} valid points for validation")
+            # Evaluate computed solution at reference grid points
+            curr_u_at_ref, curr_v_at_ref = self._evaluate_at_points(ref_x, ref_y)
 
-        # Compute relative L2 errors on valid interior points
-        u_error = np.linalg.norm(curr_u_at_ref[valid] - ref_u[valid]) / (
-            np.linalg.norm(ref_u[valid]) + 1e-12
-        )
-        v_error = np.linalg.norm(curr_v_at_ref[valid] - ref_v[valid]) / (
-            np.linalg.norm(ref_v[valid]) + 1e-12
-        )
+            # Only compute norm on interior points (exclude boundaries where BCs differ)
+            margin = 0.02
+            interior = (
+                (ref_x > margin) & (ref_x < self.params.Lx - margin) &
+                (ref_y > margin) & (ref_y < self.params.Ly - margin)
+            )
+            valid = interior & ~(np.isnan(curr_u_at_ref) | np.isnan(curr_v_at_ref))
+            n_valid = np.sum(valid)
+            n_total = len(ref_u)
 
-        log.info(f"Validation errors vs FV reference ({n_valid}/{n_total} pts): u_L2={u_error:.6e}, v_L2={v_error:.6e}")
+            if n_valid < n_total * 0.5:
+                log.warning(f"Only {n_valid}/{n_total} valid points for {ref_base_dir}")
 
-        # Save error distribution plots
-        if save_plots:
-            self._save_validation_error_plots(
-                ref_x, ref_y, ref_u, ref_v, curr_u_at_ref, curr_v_at_ref, valid
+            # Compute relative L2 errors on valid interior points
+            u_error = np.linalg.norm(curr_u_at_ref[valid] - ref_u[valid]) / (
+                np.linalg.norm(ref_u[valid]) + 1e-12
+            )
+            v_error = np.linalg.norm(curr_v_at_ref[valid] - ref_v[valid]) / (
+                np.linalg.norm(ref_v[valid]) + 1e-12
             )
 
-        return {"u_L2_error": float(u_error), "v_L2_error": float(v_error)}
+            ref_label = "FV-regu" if suffix else "FV"
+            log.info(f"L2 errors vs {ref_label} ({n_valid}/{n_total} pts): u={u_error:.6e}, v={v_error:.6e}")
+
+            results[f"u_L2_error{suffix}"] = float(u_error)
+            results[f"v_L2_error{suffix}"] = float(v_error)
+
+            # Save error distribution plots (only for normal FV to avoid clutter)
+            if save_plots and not suffix:
+                self._save_validation_error_plots(
+                    ref_x, ref_y, ref_u, ref_v, curr_u_at_ref, curr_v_at_ref, valid
+                )
+
+        return results
 
     def _save_validation_error_plots(
         self, ref_x, ref_y, ref_u, ref_v, curr_u, curr_v, valid_mask

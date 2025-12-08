@@ -366,7 +366,10 @@ def prolongate_solution(
     level_coarse: SpectralLevel,
     level_fine: SpectralLevel,
     transfer_ops: TransferOperators,
-    lid_velocity: float = 1.0,
+    corner_treatment: CornerTreatment,
+    lid_velocity: float,
+    Lx: float,
+    Ly: float,
 ) -> None:
     """Prolongate solution (u, v, p) from coarse level to fine level.
 
@@ -383,8 +386,12 @@ def prolongate_solution(
         Target (fine) level to receive interpolated solution
     transfer_ops : TransferOperators
         Configured transfer operators for prolongation
+    corner_treatment : CornerTreatment
+        Corner singularity treatment handler for boundary conditions
     lid_velocity : float
-        Lid velocity for boundary condition (default: 1.0)
+        Lid velocity magnitude
+    Lx, Ly : float
+        Domain dimensions
     """
     # Prolongate velocities (full grid)
     u_coarse_2d = level_coarse.u.reshape(level_coarse.shape_full)
@@ -399,18 +406,36 @@ def prolongate_solution(
 
     # Re-enforce boundary conditions after interpolation
     # (spectral interpolation can introduce Gibbs oscillations at boundaries)
-    # Bottom: u=0, v=0
-    u_fine_2d[0, :] = 0.0
-    v_fine_2d[0, :] = 0.0
-    # Top: u=lid_velocity, v=0
-    u_fine_2d[-1, :] = lid_velocity
-    v_fine_2d[-1, :] = 0.0
-    # Left: u=0, v=0
-    u_fine_2d[:, 0] = 0.0
-    v_fine_2d[:, 0] = 0.0
-    # Right: u=0, v=0
-    u_fine_2d[:, -1] = 0.0
-    v_fine_2d[:, -1] = 0.0
+
+    # West boundary
+    u_wall, v_wall = corner_treatment.get_wall_velocity(
+        level_fine.X[0, :], level_fine.Y[0, :], Lx, Ly
+    )
+    u_fine_2d[0, :] = u_wall
+    v_fine_2d[0, :] = v_wall
+
+    # East boundary
+    u_wall, v_wall = corner_treatment.get_wall_velocity(
+        level_fine.X[-1, :], level_fine.Y[-1, :], Lx, Ly
+    )
+    u_fine_2d[-1, :] = u_wall
+    v_fine_2d[-1, :] = v_wall
+
+    # South boundary
+    u_wall, v_wall = corner_treatment.get_wall_velocity(
+        level_fine.X[:, 0], level_fine.Y[:, 0], Lx, Ly
+    )
+    u_fine_2d[:, 0] = u_wall
+    v_fine_2d[:, 0] = v_wall
+
+    # North boundary (moving lid)
+    x_lid = level_fine.X[:, -1]
+    y_lid = level_fine.Y[:, -1]
+    u_lid, v_lid = corner_treatment.get_lid_velocity(
+        x_lid, y_lid, lid_velocity, Lx, Ly
+    )
+    u_fine_2d[:, -1] = u_lid
+    v_fine_2d[:, -1] = v_lid
 
     level_fine.u[:] = u_fine_2d.ravel()
     level_fine.v[:] = v_fine_2d.ravel()
@@ -994,6 +1019,14 @@ def solve_fsg(
             f"tolerance={level_tol:.2e}"
         )
 
+        # Select corner treatment for this level
+        # For subtraction: use smoothing on coarse levels for stability
+        if uses_subtraction and level.n < min_n_for_subtraction:
+            level_corner_treatment = smoothing_treatment
+            log.debug(f"  Level {level_idx} (N={level.n}): using smoothing (N < {min_n_for_subtraction})")
+        else:
+            level_corner_treatment = corner_treatment
+
         # Initialize from previous level or zeros
         if level_idx == 0:
             # Coarsest level: start from zeros
@@ -1002,15 +1035,15 @@ def solve_fsg(
             level.p[:] = 0.0
         else:
             # Prolongate from previous (coarser) level
-            prolongate_solution(levels[level_idx - 1], level, transfer_ops, lid_velocity)
-
-        # Select corner treatment for this level
-        # For subtraction: use smoothing on coarse levels for stability
-        if uses_subtraction and level.n < min_n_for_subtraction:
-            level_corner_treatment = smoothing_treatment
-            log.debug(f"  Level {level_idx} (N={level.n}): using smoothing (N < {min_n_for_subtraction})")
-        else:
-            level_corner_treatment = corner_treatment
+            prolongate_solution(
+                levels[level_idx - 1],
+                level,
+                transfer_ops,
+                level_corner_treatment,
+                lid_velocity,
+                Lx,
+                Ly,
+            )
 
         # Create smoother for this level
         smoother = MultigridSmoother(
