@@ -1,0 +1,3 @@
+# @package validation
+# Standard FV reference data (constant lid velocity)
+reference_dir: data/validation/fv

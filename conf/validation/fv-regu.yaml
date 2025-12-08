@@ -1,0 +1,3 @@
+# @package validation
+# Regularized FV reference data (Saad polynomial lid velocity)
+reference_dir: data/validation/fv-regu

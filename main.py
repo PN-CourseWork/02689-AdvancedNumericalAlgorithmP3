@@ -94,6 +94,12 @@ def run_solver(cfg: DictConfig) -> str:
         log.info(f"Solving: {solver_name} N={cfg.N} Re={cfg.Re}")
         solver.solve()
 
+        # Compute validation errors against reference FV solution
+        reference_dir = cfg.get("validation", {}).get("reference_dir", "data/validation/fv")
+        validation_errors = solver.compute_validation_errors(reference_dir=reference_dir)
+        if validation_errors:
+            mlflow.log_metrics(validation_errors)
+
         mlflow.log_metrics(solver.metrics.to_mlflow())
         if solver.time_series:
             batch = solver.time_series.to_mlflow_batch()

@@ -1,0 +1,32 @@
+Lx: 1.0
+Ly: 1.0
+N: 128
+Re: 400
+experiment_name: LDC-Convergence
+lid_velocity: 1.0
+max_iterations: 100000
+mlflow:
+  mode: coolify
+  project_prefix: ''
+  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI}
+plot_only: false
+solver:
+  Lx: ${Lx}
+  Ly: ${Ly}
+  Re: ${Re}
+  _target_: solvers.fv.solver.FVSolver
+  alpha_p: 0.2
+  alpha_uv: 0.4
+  convection_scheme: TVD
+  corner_smoothing: 0.15
+  corner_treatment: saad
+  lid_velocity: ${lid_velocity}
+  limiter: MUSCL
+  linear_solver_tol: 1.0e-09
+  max_iterations: ${max_iterations}
+  name: fv
+  nx: ${N}
+  ny: ${N}
+  tolerance: ${tolerance}
+sweep_name: regu-Re400
+tolerance: 1.0e-06

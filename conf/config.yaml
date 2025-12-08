@@ -8,6 +8,7 @@
 defaults:
   - problem: ldc
   - solver: fv
+  - validation: fv
   - mlflow: local
   - machine: local
   - _self_

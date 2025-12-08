@@ -1,0 +1,21 @@
+# @package _global_
+# Convergence test - FV solver reference with Saad regularization at Re=1000
+# N=128 as reference solution for spectral convergence
+
+defaults:
+  - override /solver: fv
+  - override /validation: fv-regu
+
+# MLflow experiment
+experiment_name: LDC-Convergence
+sweep_name: regu-Re1000
+
+# Use Saad/polynomial corner treatment for regularized problem
+solver:
+  corner_treatment: saad
+
+hydra:
+  sweeper:
+    params:
+      Re: 1000
+      N: 128
