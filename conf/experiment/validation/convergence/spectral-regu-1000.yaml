@@ -4,7 +4,7 @@
 
 defaults:
   - override /solver: spectral/fsg
-  #- override /validation: fv-regu
+  - override /validation: fv-regu
 
 # MLflow experiment
 experiment_name: LDC-Convergence
