@@ -33,7 +33,7 @@ class SGSolver(LidDrivenCavitySolver):
     the incompressible Navier-Stokes equations on a Legendre-Gauss-Lobatto grid.
 
     This is the base spectral solver without multigrid acceleration.
-    For multigrid variants, see FSGSolver, VMGSolver, FMGSolver.
+    For multigrid variants, see FSGSolver and FMGSolver.
 
     Parameters
     ----------
@@ -206,32 +206,67 @@ class SGSolver(LidDrivenCavitySolver):
         # 1D differentiation matrices on full grid
         x_nodes_full = self.basis_x.nodes(Nx + 1)
         y_nodes_full = self.basis_y.nodes(Ny + 1)
-        Dx_1d = self.basis_x.diff_matrix(x_nodes_full)  # (Nx+1) × (Nx+1)
-        Dy_1d = self.basis_y.diff_matrix(y_nodes_full)  # (Ny+1) × (Ny+1)
+        self.Dx_1d = self.basis_x.diff_matrix(x_nodes_full)  # (Nx+1) × (Nx+1)
+        self.Dy_1d = self.basis_y.diff_matrix(y_nodes_full)  # (Ny+1) × (Ny+1)
 
-        # 2D differentiation via Kronecker products
+        # Second derivatives for Laplacian (tensor product form)
+        self.Dxx_1d = self.Dx_1d @ self.Dx_1d
+        self.Dyy_1d = self.Dy_1d @ self.Dy_1d
+
+        # 2D differentiation via Kronecker products (kept for compatibility)
         # For meshgrid with indexing='ij': first index is x, second is y
         Ix = np.eye(Nx + 1)
         Iy = np.eye(Ny + 1)
-        self.Dx = np.kron(Dx_1d, Iy)  # d/dx on full grid
-        self.Dy = np.kron(Ix, Dy_1d)  # d/dy on full grid
+        self.Dx = np.kron(self.Dx_1d, Iy)  # d/dx on full grid
+        self.Dy = np.kron(Ix, self.Dy_1d)  # d/dy on full grid
 
         # Laplacian: ∇² = ∂²/∂x² + ∂²/∂y²
-        Dxx_1d = Dx_1d @ Dx_1d
-        Dyy_1d = Dy_1d @ Dy_1d
-        self.Dxx = np.kron(Dxx_1d, Iy)
-        self.Dyy = np.kron(Ix, Dyy_1d)
+        self.Dxx = np.kron(self.Dxx_1d, Iy)
+        self.Dyy = np.kron(Ix, self.Dyy_1d)
         self.Laplacian = self.Dxx + self.Dyy
 
-        # 1D differentiation matrices on reduced grid (for pressure)
-        Dx_inner_1d = self.basis_x.diff_matrix(self.x_inner)  # (Nx-1) × (Nx-1)
-        Dy_inner_1d = self.basis_y.diff_matrix(self.y_inner)  # (Ny-1) × (Ny-1)
+        # Build 1D interpolation matrices from inner to full grid (for pressure)
+        # These use Chebyshev polynomial interpolation for spectral accuracy
+        self.Interp_x = self._build_interpolation_matrix_1d(self.x_inner, x_nodes_full)
+        self.Interp_y = self._build_interpolation_matrix_1d(self.y_inner, y_nodes_full)
 
-        # 2D differentiation on reduced grid
-        Ix_inner = np.eye(Nx - 1)
-        Iy_inner = np.eye(Ny - 1)
-        self.Dx_inner = np.kron(Dx_inner_1d, Iy_inner)
-        self.Dy_inner = np.kron(Ix_inner, Dy_inner_1d)
+    def _build_interpolation_matrix_1d(self, nodes_inner, nodes_full):
+        """Build interpolation matrix from inner grid to full grid.
+
+        Uses Chebyshev polynomial interpolation for spectral accuracy.
+        Given values f_inner at nodes_inner, computes f_full = Interp @ f_inner.
+
+        Parameters
+        ----------
+        nodes_inner : np.ndarray
+            Inner grid nodes (excludes boundary points)
+        nodes_full : np.ndarray
+            Full grid nodes (includes boundary points)
+
+        Returns
+        -------
+        Interp : np.ndarray
+            Interpolation matrix of shape (n_full, n_inner)
+        """
+        from numpy.polynomial.chebyshev import chebvander
+
+        n_inner = len(nodes_inner)
+        n_full = len(nodes_full)
+
+        # Map physical domain to [-1, 1] for Chebyshev polynomials
+        a, b = nodes_full[0], nodes_full[-1]
+        xi_inner = 2 * (nodes_inner - a) / (b - a) - 1
+        xi_full = 2 * (nodes_full - a) / (b - a) - 1
+
+        # Vandermonde matrices: V[i,k] = T_k(xi[i])
+        V_inner = chebvander(xi_inner, n_inner - 1)  # (n_inner, n_inner)
+        V_full = chebvander(xi_full, n_inner - 1)    # (n_full, n_inner)
+
+        # Interpolation: f_full = V_full @ coeffs, where coeffs = V_inner^{-1} @ f_inner
+        # So: f_full = (V_full @ V_inner^{-1}) @ f_inner = Interp @ f_inner
+        Interp = V_full @ np.linalg.solve(V_inner, np.eye(n_inner))
+
+        return Interp
 
     def _initialize_lid_velocity(self):
         """Initialize lid velocity using corner treatment."""
@@ -239,24 +274,27 @@ class SGSolver(LidDrivenCavitySolver):
         self._apply_lid_boundary(self.u_2d, self.v_2d)
 
     def _interpolate_pressure_gradient(self):
-        """Compute pressure gradient on inner grid and interpolate to full grid.
+        """Compute pressure gradient on full grid from inner-grid pressure.
 
         PN-PN-2 method:
         1. Pressure p exists on (Nx-1) × (Ny-1) inner grid
-        2. Compute ∂p/∂x and ∂p/∂y on inner grid using inner diff matrices
-        3. Extrapolate gradients to boundaries on full grid
+        2. Interpolate p to full (Nx+1) × (Ny+1) grid using spectral interpolation
+        3. Compute ∂p/∂x and ∂p/∂y on full grid using tensor product diff matrices
+
+        Note: We use Chebyshev polynomial interpolation (not linear extrapolation)
+        to maintain spectral accuracy. The interpolation matrices are precomputed.
+
+        Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
         """
-        # Compute pressure gradient on inner grid (this is where pressure actually lives!)
-        self.arrays.dp_dx_inner[:] = self.Dx_inner @ self.arrays.p
-        self.arrays.dp_dy_inner[:] = self.Dy_inner @ self.arrays.p
+        # Step 1: Interpolate pressure from inner grid to full grid using spectral interpolation
+        # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
+        p_full_2d = self.Interp_x @ self.p_2d @ self.Interp_y.T
 
-        # Extrapolate to full grid (using 2D views)
-        dp_dx_2d = self._extrapolate_to_full_grid(self.dp_dx_inner_2d)
-        dp_dy_2d = self._extrapolate_to_full_grid(self.dp_dy_inner_2d)
-
-        # Store flattened on full grid
-        self.arrays.dp_dx[:] = dp_dx_2d.ravel()
-        self.arrays.dp_dy[:] = dp_dy_2d.ravel()
+        # Step 2: Compute pressure gradient using tensor product (O(N³) instead of O(N⁴))
+        # d/dx: apply Dx_1d along axis 0 (rows)
+        # d/dy: apply Dy_1d along axis 1 (columns)
+        self.arrays.dp_dx[:] = (self.Dx_1d @ p_full_2d).ravel()
+        self.arrays.dp_dy[:] = (p_full_2d @ self.Dy_1d.T).ravel()
 
     def _compute_residuals(self, u, v, p):
         """Compute RHS residuals for pseudo time-stepping.
@@ -270,6 +308,8 @@ class SGSolver(LidDrivenCavitySolver):
         For subtraction method (Zhang & Xi 2010):
         Modified convection: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
 
+        Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
+
         Parameters
         ----------
         u, v : np.ndarray
@@ -281,15 +321,31 @@ class SGSolver(LidDrivenCavitySolver):
         -------
         self.arrays.R_u, self.arrays.R_v (full grid), self.arrays.R_p (inner grid)
         """
-        # Compute velocity derivatives on full grid (spectral differentiation of u_c)
-        self.arrays.du_dx[:] = self.Dx @ u
-        self.arrays.du_dy[:] = self.Dy @ u
-        self.arrays.dv_dx[:] = self.Dx @ v
-        self.arrays.dv_dy[:] = self.Dy @ v
+        # Reshape to 2D for tensor product operations
+        u_2d = u.reshape(self.shape_full)
+        v_2d = v.reshape(self.shape_full)
 
-        # Compute Laplacians on full grid
-        self.arrays.lap_u[:] = self.Laplacian @ u
-        self.arrays.lap_v[:] = self.Laplacian @ v
+        # Compute velocity derivatives using tensor products (O(N³) instead of O(N⁴))
+        # d/dx: apply Dx_1d along axis 0
+        # d/dy: apply Dy_1d along axis 1 (via transpose trick)
+        du_dx_2d = self.Dx_1d @ u_2d
+        du_dy_2d = u_2d @ self.Dy_1d.T
+        dv_dx_2d = self.Dx_1d @ v_2d
+        dv_dy_2d = v_2d @ self.Dy_1d.T
+
+        # Store flattened derivatives
+        self.arrays.du_dx[:] = du_dx_2d.ravel()
+        self.arrays.du_dy[:] = du_dy_2d.ravel()
+        self.arrays.dv_dx[:] = dv_dx_2d.ravel()
+        self.arrays.dv_dy[:] = dv_dy_2d.ravel()
+
+        # Compute Laplacians using tensor products: ∇²u = d²u/dx² + d²u/dy²
+        # d²/dx²: apply Dxx_1d along axis 0
+        # d²/dy²: apply Dyy_1d along axis 1
+        lap_u_2d = self.Dxx_1d @ u_2d + u_2d @ self.Dyy_1d.T
+        lap_v_2d = self.Dxx_1d @ v_2d + v_2d @ self.Dyy_1d.T
+        self.arrays.lap_u[:] = lap_u_2d.ravel()
+        self.arrays.lap_v[:] = lap_v_2d.ravel()
 
         # Compute pressure gradient from inner grid p and interpolate to full grid
         self._interpolate_pressure_gradient()
@@ -323,9 +379,8 @@ class SGSolver(LidDrivenCavitySolver):
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
 
         # Continuity residual on INNER grid: R_p = -β²(∂u/∂x + ∂v/∂y)
-        # Compute divergence on full grid, then restrict to inner grid
-        divergence_full = self.arrays.du_dx + self.arrays.dv_dy
-        divergence_2d = divergence_full.reshape(self.shape_full)
+        # Use the already-computed 2D derivatives directly
+        divergence_2d = du_dx_2d + dv_dy_2d
         divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
 
         # Pressure residual on inner grid
@@ -458,178 +513,3 @@ class SGSolver(LidDrivenCavitySolver):
             "v_residual": np.linalg.norm(self.arrays.R_v),
             "continuity_residual": np.linalg.norm(self.arrays.R_p),
         }
-
-    def _compute_vorticity_for_export(
-        self, U_2d: np.ndarray, V_2d: np.ndarray, x: np.ndarray, y: np.ndarray
-    ) -> np.ndarray:
-        """Compute vorticity using spectral differentiation.
-
-        Override base class to use spectral differentiation matrices
-        for higher accuracy.
-
-        Parameters
-        ----------
-        U_2d, V_2d : np.ndarray
-            2D velocity arrays (ny, nx) - note: different from internal (nx+1, ny+1)
-        x, y : np.ndarray
-            1D coordinate arrays
-
-        Returns
-        -------
-        np.ndarray
-            Vorticity field (ny, nx)
-        """
-        # Use internal spectral differentiation on the full grid arrays
-        # The fields are already finalized in self.arrays
-        dv_dx = self.Dx @ self.arrays.v
-        du_dy = self.Dy @ self.arrays.u
-        vorticity = dv_dx - du_dy
-
-        # Reshape to match the expected output (ny, nx) from VTK grid ordering
-        # Internal shape is (Nx+1, Ny+1), but VTK uses (Ny+1, Nx+1) ordering
-        vort_2d = vorticity.reshape(self.shape_full)  # (Nx+1, Ny+1)
-        return vort_2d.T  # Transpose to (Ny+1, Nx+1) for VTK
-
-    def _compute_vorticity(self) -> np.ndarray:
-        """Compute vorticity using spectral differentiation.
-
-        Override base class finite difference implementation.
-        """
-        dv_dx = self.Dx @ self.arrays.v
-        du_dy = self.Dy @ self.arrays.u
-        return dv_dx - du_dy
-
-    def _compute_gradient(
-        self, field: np.ndarray, bc_walls: float = 0.0, bc_lid: float = None
-    ) -> tuple:
-        """Compute gradient using spectral differentiation.
-
-        Override base class finite difference implementation.
-        BC parameters are ignored since spectral methods handle BCs through
-        the differentiation matrices and boundary point values.
-        """
-        df_dx = self.Dx @ field
-        df_dy = self.Dy @ field
-        return df_dx, df_dy
-
-    def _compute_quadrature_weights(self) -> np.ndarray:
-        """Compute 2D quadrature weights for integration on Gauss-Lobatto grid.
-
-        Uses trapezoidal rule weights based on non-uniform node spacing.
-        Returns weights as 1D array matching self.arrays.u ordering.
-        """
-        # Get 1D nodes
-        x_nodes = self.basis_x.nodes(self.params.nx + 1)
-        y_nodes = self.basis_y.nodes(self.params.ny + 1)
-
-        # Compute 1D trapezoidal weights
-        def trapezoidal_weights(nodes):
-            n = len(nodes)
-            w = np.zeros(n)
-            for i in range(1, n - 1):
-                w[i] = 0.5 * (nodes[i + 1] - nodes[i - 1])
-            w[0] = 0.5 * (nodes[1] - nodes[0])
-            w[-1] = 0.5 * (nodes[-1] - nodes[-2])
-            return w
-
-        wx = trapezoidal_weights(x_nodes)
-        wy = trapezoidal_weights(y_nodes)
-
-        # 2D weights via outer product, then flatten to match array ordering
-        # shape_full = (nx+1, ny+1) with indexing='ij', so W[i,j] = wx[i] * wy[j]
-        W_2d = np.outer(wx, wy)
-        return W_2d.ravel()
-
-    def _compute_energy(self) -> float:
-        """Compute kinetic energy using spectral quadrature: E = 0.5 * ∫(u² + v²) dA."""
-        W = self._compute_quadrature_weights()
-        return 0.5 * float(np.sum(W * (self.arrays.u**2 + self.arrays.v**2)))
-
-    def _compute_enstrophy(self) -> float:
-        """Compute enstrophy using spectral quadrature: Z = 0.5 * ∫ω² dA."""
-        omega = self._compute_vorticity()
-        W = self._compute_quadrature_weights()
-        return 0.5 * float(np.sum(W * omega**2))
-
-    def _compute_palinstrophy(self) -> float:
-        """Compute palinstrophy using spectral quadrature: P = 0.5 * ∫||∇ω||² dA."""
-        omega = self._compute_vorticity()
-        domega_dx, domega_dy = self._compute_gradient(omega)
-        W = self._compute_quadrature_weights()
-        return 0.5 * float(np.sum(W * (domega_dx**2 + domega_dy**2)))
-
-    def _evaluate_at_points(self, x: np.ndarray, y: np.ndarray) -> tuple:
-        """Evaluate solution at arbitrary points using spectral polynomial evaluation.
-
-        Uses tensor product spectral interpolation to evaluate the polynomial
-        representation of the solution at any physical coordinates.
-
-        Parameters
-        ----------
-        x, y : np.ndarray
-            Physical coordinates to evaluate at (must be same length)
-
-        Returns
-        -------
-        u, v : np.ndarray
-            Velocity components at requested points
-        """
-        from solvers.spectral.basis.polynomial import spectral_interpolate
-
-        # Get spectral nodes
-        x_nodes = self.basis_x.nodes(self.params.nx + 1)
-        y_nodes = self.basis_y.nodes(self.params.ny + 1)
-
-        # Reshape fields to 2D: u_2d[i, j] = u at (x_nodes[i], y_nodes[j])
-        u_2d = self.fields.u.reshape(self.shape_full)
-        v_2d = self.fields.v.reshape(self.shape_full)
-
-        basis = self.params.basis_type.lower()
-        n_points = len(x)
-
-        # Precompute interpolation matrices (Vandermonde approach)
-        # This avoids recomputing V^{-1} for every point
-        from solvers.spectral.basis.polynomial import vandermonde
-
-        alpha, beta = (0.0, 0.0) if basis == "legendre" else (-0.5, -0.5)
-
-        # Map to reference domain [-1, 1]
-        x_min, x_max = x_nodes.min(), x_nodes.max()
-        y_min, y_max = y_nodes.min(), y_nodes.max()
-        x_ref = 2.0 * (x - x_min) / (x_max - x_min) - 1.0
-        y_ref = 2.0 * (y - y_min) / (y_max - y_min) - 1.0
-        x_nodes_ref = 2.0 * (x_nodes - x_min) / (x_max - x_min) - 1.0
-        y_nodes_ref = 2.0 * (y_nodes - y_min) / (y_max - y_min) - 1.0
-
-        # Compute Vandermonde matrices and their inverses ONCE
-        Vx = vandermonde(x_nodes_ref, alpha, beta)
-        Vy = vandermonde(y_nodes_ref, alpha, beta)
-        Vx_inv = np.linalg.inv(Vx)
-        Vy_inv = np.linalg.inv(Vy)
-
-        # Get modal coefficients for u and v (transform nodal -> modal)
-        # u_modal[i,j] = modal coefficient for mode (i,j)
-        u_modal = Vx_inv @ u_2d @ Vy_inv.T
-        v_modal = Vx_inv @ v_2d @ Vy_inv.T
-
-        # Evaluate at all points using vectorized Vandermonde evaluation
-        from scipy.special import eval_jacobi
-
-        nx_modes = len(x_nodes)
-        ny_modes = len(y_nodes)
-
-        # Build evaluation Vandermonde matrices for all query points
-        Vx_eval = np.zeros((n_points, nx_modes))
-        Vy_eval = np.zeros((n_points, ny_modes))
-        for n in range(nx_modes):
-            Vx_eval[:, n] = eval_jacobi(n, alpha, beta, x_ref)
-        for n in range(ny_modes):
-            Vy_eval[:, n] = eval_jacobi(n, alpha, beta, y_ref)
-
-        # Evaluate: for each point k, u[k] = sum_{i,j} Vx_eval[k,i] * u_modal[i,j] * Vy_eval[k,j]
-        # This is equivalent to: u[k] = Vx_eval[k,:] @ u_modal @ Vy_eval[k,:].T
-        # Vectorized: element-wise multiply and sum
-        u_out = np.einsum('ki,ij,kj->k', Vx_eval, u_modal, Vy_eval)
-        v_out = np.einsum('ki,ij,kj->k', Vx_eval, v_modal, Vy_eval)
-
-        return u_out, v_out
