@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
 import numpy as np
+from numba import njit, prange
 
 from solvers.spectral.operators.transfer_operators import (
     TransferOperators,
@@ -28,6 +29,111 @@ from solvers.spectral.operators.corner import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Numba JIT-compiled kernels for performance-critical operations
+# =============================================================================
+
+
+@njit(cache=True, fastmath=True)
+def _compute_derivatives_and_laplacian(
+    u_2d: np.ndarray,
+    v_2d: np.ndarray,
+    Dx_1d: np.ndarray,
+    Dy_1d_T: np.ndarray,
+    Dxx_1d: np.ndarray,
+    Dyy_1d_T: np.ndarray,
+    du_dx: np.ndarray,
+    du_dy: np.ndarray,
+    dv_dx: np.ndarray,
+    dv_dy: np.ndarray,
+    lap_u: np.ndarray,
+    lap_v: np.ndarray,
+):
+    """JIT-compiled computation of all velocity derivatives and Laplacians.
+
+    Computes:
+    - du/dx, du/dy, dv/dx, dv/dy (first derivatives)
+    - lap_u = d²u/dx² + d²u/dy², lap_v = d²v/dx² + d²v/dy² (Laplacians)
+
+    All outputs are flattened 1D arrays.
+    """
+    n = u_2d.shape[0]
+
+    # Compute all matrix products
+    # du/dx = Dx @ u, du/dy = u @ Dy.T
+    du_dx_2d = Dx_1d @ u_2d
+    du_dy_2d = u_2d @ Dy_1d_T
+    dv_dx_2d = Dx_1d @ v_2d
+    dv_dy_2d = v_2d @ Dy_1d_T
+
+    # Laplacians: lap_u = Dxx @ u + u @ Dyy.T
+    lap_u_2d = Dxx_1d @ u_2d + u_2d @ Dyy_1d_T
+    lap_v_2d = Dxx_1d @ v_2d + v_2d @ Dyy_1d_T
+
+    # Flatten to output arrays
+    idx = 0
+    for i in range(n):
+        for j in range(n):
+            du_dx[idx] = du_dx_2d[i, j]
+            du_dy[idx] = du_dy_2d[i, j]
+            dv_dx[idx] = dv_dx_2d[i, j]
+            dv_dy[idx] = dv_dy_2d[i, j]
+            lap_u[idx] = lap_u_2d[i, j]
+            lap_v[idx] = lap_v_2d[i, j]
+            idx += 1
+
+    return du_dx_2d, dv_dy_2d  # Return these for divergence computation
+
+
+@njit(cache=True, fastmath=True)
+def _compute_momentum_residuals(
+    u: np.ndarray,
+    v: np.ndarray,
+    du_dx: np.ndarray,
+    du_dy: np.ndarray,
+    dv_dx: np.ndarray,
+    dv_dy: np.ndarray,
+    lap_u: np.ndarray,
+    lap_v: np.ndarray,
+    dp_dx: np.ndarray,
+    dp_dy: np.ndarray,
+    nu: float,
+    R_u: np.ndarray,
+    R_v: np.ndarray,
+):
+    """JIT-compiled momentum residual computation.
+
+    Computes: R_u = -conv_u - dp/dx + nu*lap_u
+              R_v = -conv_v - dp/dy + nu*lap_v
+    where conv_u = u*du/dx + v*du/dy, conv_v = u*dv/dx + v*dv/dy
+    """
+    n = u.shape[0]
+    for i in range(n):
+        conv_u = u[i] * du_dx[i] + v[i] * du_dy[i]
+        conv_v = u[i] * dv_dx[i] + v[i] * dv_dy[i]
+        R_u[i] = -conv_u - dp_dx[i] + nu * lap_u[i]
+        R_v[i] = -conv_v - dp_dy[i] + nu * lap_v[i]
+
+
+@njit(cache=True, fastmath=True)
+def _compute_continuity_residual(
+    du_dx_2d: np.ndarray,
+    dv_dy_2d: np.ndarray,
+    beta_squared: float,
+    R_p: np.ndarray,
+):
+    """JIT-compiled continuity residual on inner grid.
+
+    Computes: R_p = -beta² * (du/dx + dv/dy) on interior points only
+    """
+    n = du_dx_2d.shape[0]
+    idx = 0
+    for i in range(1, n - 1):
+        for j in range(1, n - 1):
+            R_p[idx] = -beta_squared * (du_dx_2d[i, j] + dv_dy_2d[i, j])
+            idx += 1
 
 
 def _build_interpolation_matrix_1d(nodes_inner, nodes_full):
@@ -575,6 +681,7 @@ class MultigridSmoother:
     ):
         self.level = level
         self.Re = Re
+        self.nu = 1.0 / Re  # Cache viscosity
         self.beta_squared = beta_squared
         self.lid_velocity = lid_velocity
         self.CFL = CFL
@@ -590,6 +697,37 @@ class MultigridSmoother:
         # Use subtraction method on all levels with corner exclusion for stability
         self.corner_treatment = corner_treatment
         self._uses_modified_convection = corner_treatment.uses_modified_convection()
+
+        # ========== OPTIMIZATION: Cache boundary conditions ==========
+        # Pre-compute and cache lid velocity (it never changes during solve)
+        x_lid = level.X[:, -1]
+        y_lid = level.Y[:, -1]
+        self._cached_u_lid, self._cached_v_lid = corner_treatment.get_lid_velocity(
+            x_lid, y_lid, lid_velocity=lid_velocity, Lx=Lx, Ly=Ly
+        )
+
+        # Pre-compute wall velocities (zeros for smoothing method)
+        # West boundary
+        self._cached_u_west, self._cached_v_west = corner_treatment.get_wall_velocity(
+            level.X[0, :], level.Y[0, :], Lx, Ly
+        )
+        # East boundary
+        self._cached_u_east, self._cached_v_east = corner_treatment.get_wall_velocity(
+            level.X[-1, :], level.Y[-1, :], Lx, Ly
+        )
+        # South boundary
+        self._cached_u_south, self._cached_v_south = corner_treatment.get_wall_velocity(
+            level.X[:, 0], level.Y[:, 0], Lx, Ly
+        )
+
+        # ========== OPTIMIZATION: Pre-allocate work arrays ==========
+        n_full = level.n_nodes_full
+        self._conv_u = np.zeros(n_full)
+        self._conv_v = np.zeros(n_full)
+
+        # Cache transposed differentiation matrices for faster matmul
+        self._Dy_1d_T = level.Dy_1d.T.copy()
+        self._Dyy_1d_T = level.Dyy_1d.T.copy()
 
         if self._uses_modified_convection:
             # Cache singular velocity and derivatives at this level's grid points
@@ -634,20 +772,10 @@ class MultigridSmoother:
             self._conv_vs_vs = self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
 
     def _apply_lid_boundary(self, u_2d: np.ndarray, v_2d: np.ndarray):
-        """Apply lid boundary condition using corner treatment."""
-        x_lid = self.level.X[:, -1]
-        y_lid = self.level.Y[:, -1]
-
-        u_lid, v_lid = self.corner_treatment.get_lid_velocity(
-            x_lid,
-            y_lid,
-            lid_velocity=self.lid_velocity,
-            Lx=self.Lx,
-            Ly=self.Ly,
-        )
-
-        u_2d[:, -1] = u_lid
-        v_2d[:, -1] = v_lid
+        """Apply lid boundary condition using cached values."""
+        # OPTIMIZATION: Use pre-computed lid velocities instead of calling corner_treatment
+        u_2d[:, -1] = self._cached_u_lid
+        v_2d[:, -1] = self._cached_v_lid
 
     def _extrapolate_to_full_grid(self, inner_2d: np.ndarray) -> np.ndarray:
         """Extrapolate from inner grid to full grid."""
@@ -668,130 +796,112 @@ class MultigridSmoother:
 
         return full_2d
 
-    def _interpolate_pressure_gradient(self):
+    def _interpolate_pressure_gradient(self, p: np.ndarray):
         """Compute pressure gradient on full grid from inner-grid pressure.
 
         Uses spectral interpolation (Chebyshev polynomial fit) to extend
         pressure from inner grid to full grid before differentiation.
         Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
+
+        Parameters
+        ----------
+        p : np.ndarray
+            Pressure array on inner grid (passed directly to avoid copy)
         """
         lvl = self.level
 
         # Step 1: Interpolate pressure from inner grid to full grid using spectral interpolation
         # 2D interpolation via tensor product: p_full = Interp_x @ p_inner @ Interp_y.T
-        p_inner_2d = lvl.p.reshape(lvl.shape_inner)
+        p_inner_2d = p.reshape(lvl.shape_inner)
         p_full_2d = lvl.Interp_x @ p_inner_2d @ lvl.Interp_y.T
 
         # Step 2: Compute pressure gradient using tensor products (O(N³) instead of O(N⁴))
         # d/dx: apply Dx_1d along axis 0 (rows)
-        # d/dy: apply Dy_1d along axis 1 (columns via transpose trick)
+        # d/dy: apply Dy_1d along axis 1 (columns via cached transpose)
         lvl.dp_dx[:] = (lvl.Dx_1d @ p_full_2d).ravel()
-        lvl.dp_dy[:] = (p_full_2d @ lvl.Dy_1d.T).ravel()
+        lvl.dp_dy[:] = (p_full_2d @ self._Dy_1d_T).ravel()
 
     def _compute_residuals(self, u: np.ndarray, v: np.ndarray, p: np.ndarray):
         """Compute RHS residuals for RK4 pseudo time-stepping.
 
         Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
+        OPTIMIZED: Uses Numba JIT-compiled kernels for performance.
         """
         lvl = self.level
 
-        # Reshape to 2D for tensor product operations
+        # Reshape to 2D for tensor product operations (views, no copy)
         u_2d = u.reshape(lvl.shape_full)
         v_2d = v.reshape(lvl.shape_full)
 
-        # Compute velocity derivatives using tensor products (O(N³) instead of O(N⁴))
-        # d/dx: apply Dx_1d along axis 0
-        # d/dy: apply Dy_1d along axis 1 (via transpose trick)
-        du_dx_2d = lvl.Dx_1d @ u_2d
-        du_dy_2d = u_2d @ lvl.Dy_1d.T
-        dv_dx_2d = lvl.Dx_1d @ v_2d
-        dv_dy_2d = v_2d @ lvl.Dy_1d.T
+        # JIT-compiled: Compute all derivatives and Laplacians in one call
+        du_dx_2d, dv_dy_2d = _compute_derivatives_and_laplacian(
+            u_2d, v_2d,
+            lvl.Dx_1d, self._Dy_1d_T,
+            lvl.Dxx_1d, self._Dyy_1d_T,
+            lvl.du_dx, lvl.du_dy,
+            lvl.dv_dx, lvl.dv_dy,
+            lvl.lap_u, lvl.lap_v,
+        )
 
-        # Store flattened derivatives
-        lvl.du_dx[:] = du_dx_2d.ravel()
-        lvl.du_dy[:] = du_dy_2d.ravel()
-        lvl.dv_dx[:] = dv_dx_2d.ravel()
-        lvl.dv_dy[:] = dv_dy_2d.ravel()
-
-        # Compute Laplacians using tensor products: ∇²u = d²u/dx² + d²u/dy²
-        lap_u_2d = lvl.Dxx_1d @ u_2d + u_2d @ lvl.Dyy_1d.T
-        lap_v_2d = lvl.Dxx_1d @ v_2d + v_2d @ lvl.Dyy_1d.T
-        lvl.lap_u[:] = lap_u_2d.ravel()
-        lvl.lap_v[:] = lap_v_2d.ravel()
-
-        # Pressure gradient (needs p array set first)
-        old_p = lvl.p.copy()
-        lvl.p[:] = p
-        self._interpolate_pressure_gradient()
-        lvl.p[:] = old_p
-
-        # Momentum residuals - convection terms
-        # Term 1: u_c·∇u_c (computational velocity advecting computational gradient)
-        conv_u = u * lvl.du_dx + v * lvl.du_dy
-        conv_v = u * lvl.dv_dx + v * lvl.dv_dy
+        # Compute pressure gradient
+        self._interpolate_pressure_gradient(p)
 
         if self._uses_modified_convection:
-            # Additional terms for subtraction method (Botella & Peyret 1998)
-            # Term 2: u_s·∇u_c (singular velocity advecting computational gradient)
-            conv_u = conv_u + self._u_s * lvl.du_dx + self._v_s * lvl.du_dy
-            conv_v = conv_v + self._u_s * lvl.dv_dx + self._v_s * lvl.dv_dy
+            # Subtraction method - use numpy (not JIT) for this less common path
+            conv_u = u * lvl.du_dx + v * lvl.du_dy
+            conv_v = u * lvl.dv_dx + v * lvl.dv_dy
+            conv_u += self._u_s * lvl.du_dx + self._v_s * lvl.du_dy
+            conv_v += self._u_s * lvl.dv_dx + self._v_s * lvl.dv_dy
+            conv_u += u * self._dus_dx + v * self._dus_dy
+            conv_v += u * self._dvs_dx + v * self._dvs_dy
+            conv_u += self._conv_us_us
+            conv_v += self._conv_vs_vs
+            lvl.R_u[:] = -conv_u - lvl.dp_dx + self.nu * lvl.lap_u
+            lvl.R_v[:] = -conv_v - lvl.dp_dy + self.nu * lvl.lap_v
+        else:
+            # JIT-compiled: Compute momentum residuals (common path)
+            _compute_momentum_residuals(
+                u, v,
+                lvl.du_dx, lvl.du_dy,
+                lvl.dv_dx, lvl.dv_dy,
+                lvl.lap_u, lvl.lap_v,
+                lvl.dp_dx, lvl.dp_dy,
+                self.nu,
+                lvl.R_u, lvl.R_v,
+            )
 
-            # Term 3: u_c·∇u_s (computational velocity advecting singular gradient)
-            conv_u = conv_u + u * self._dus_dx + v * self._dus_dy
-            conv_v = conv_v + u * self._dvs_dx + v * self._dvs_dy
-
-            # Term 4: u_s·∇u_s (precomputed constant)
-            conv_u = conv_u + self._conv_us_us
-            conv_v = conv_v + self._conv_vs_vs
-
-        nu = 1.0 / self.Re
-
-        lvl.R_u[:] = -conv_u - lvl.dp_dx + nu * lvl.lap_u
-        lvl.R_v[:] = -conv_v - lvl.dp_dy + nu * lvl.lap_v
-
-        # Continuity residual (on inner grid)
-        divergence_full = lvl.du_dx + lvl.dv_dy
-        divergence_2d = divergence_full.reshape(lvl.shape_full)
-        divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
-        lvl.R_p[:] = -self.beta_squared * divergence_inner
+        # JIT-compiled: Continuity residual on inner grid
+        _compute_continuity_residual(du_dx_2d, dv_dy_2d, self.beta_squared, lvl.R_p)
 
         # Add FAS tau correction if set (for coarse grid solves in V-cycle)
         if self.tau_u is not None:
-            lvl.R_u[:] += self.tau_u
+            lvl.R_u += self.tau_u
         if self.tau_v is not None:
-            lvl.R_v[:] += self.tau_v
+            lvl.R_v += self.tau_v
         if self.tau_p is not None:
-            lvl.R_p[:] += self.tau_p
+            lvl.R_p += self.tau_p
 
     def _enforce_boundary_conditions(self, u: np.ndarray, v: np.ndarray):
-        """Enforce boundary conditions using corner treatment."""
+        """Enforce boundary conditions using cached values."""
         u_2d = u.reshape(self.level.shape_full)
         v_2d = v.reshape(self.level.shape_full)
 
-        # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
+        # OPTIMIZATION: Use pre-computed wall velocities instead of calling corner_treatment
         # West boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.level.X[0, :], self.level.Y[0, :], self.Lx, self.Ly
-        )
-        u_2d[0, :] = u_wall
-        v_2d[0, :] = v_wall
+        u_2d[0, :] = self._cached_u_west
+        v_2d[0, :] = self._cached_v_west
 
         # East boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.level.X[-1, :], self.level.Y[-1, :], self.Lx, self.Ly
-        )
-        u_2d[-1, :] = u_wall
-        v_2d[-1, :] = v_wall
+        u_2d[-1, :] = self._cached_u_east
+        v_2d[-1, :] = self._cached_v_east
 
         # South boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.level.X[:, 0], self.level.Y[:, 0], self.Lx, self.Ly
-        )
-        u_2d[:, 0] = u_wall
-        v_2d[:, 0] = v_wall
+        u_2d[:, 0] = self._cached_u_south
+        v_2d[:, 0] = self._cached_v_south
 
-        # North boundary (moving lid)
-        self._apply_lid_boundary(u_2d, v_2d)
+        # North boundary (moving lid) - also uses cached values
+        u_2d[:, -1] = self._cached_u_lid
+        v_2d[:, -1] = self._cached_v_lid
 
     def _compute_adaptive_timestep(self) -> float:
         """Compute adaptive timestep based on CFL."""
