@@ -95,7 +95,8 @@ def run_solver(cfg: DictConfig) -> str:
         solver.solve()
 
         # Compute validation errors against reference FV solution
-        validation_errors = solver.compute_validation_errors()
+        reference_dir = cfg.get("validation", {}).get("reference_dir", "data/validation/fv")
+        validation_errors = solver.compute_validation_errors(reference_dir=reference_dir)
         if validation_errors:
             mlflow.log_metrics(validation_errors)
 

@@ -4,10 +4,12 @@
 
 defaults:
   - override /solver: fv
+  - override /validation: fv-regu
 
 # MLflow experiment
 experiment_name: LDC-Convergence
 sweep_name: regu-Re1000
+
 # Use Saad/polynomial corner treatment for regularized problem
 solver:
   corner_treatment: saad
