@@ -366,10 +366,14 @@ def prolongate_solution(
     level_coarse: SpectralLevel,
     level_fine: SpectralLevel,
     transfer_ops: TransferOperators,
+    lid_velocity: float = 1.0,
 ) -> None:
     """Prolongate solution (u, v, p) from coarse level to fine level.
 
     Modifies level_fine.u, level_fine.v, level_fine.p in place.
+
+    IMPORTANT: After spectral interpolation, boundary conditions are
+    re-enforced explicitly to avoid Gibbs-type oscillations at boundaries.
 
     Parameters
     ----------
@@ -379,6 +383,8 @@ def prolongate_solution(
         Target (fine) level to receive interpolated solution
     transfer_ops : TransferOperators
         Configured transfer operators for prolongation
+    lid_velocity : float
+        Lid velocity for boundary condition (default: 1.0)
     """
     # Prolongate velocities (full grid)
     u_coarse_2d = level_coarse.u.reshape(level_coarse.shape_full)
@@ -391,10 +397,25 @@ def prolongate_solution(
         v_coarse_2d, level_fine.shape_full
     )
 
+    # Re-enforce boundary conditions after interpolation
+    # (spectral interpolation can introduce Gibbs oscillations at boundaries)
+    # Bottom: u=0, v=0
+    u_fine_2d[0, :] = 0.0
+    v_fine_2d[0, :] = 0.0
+    # Top: u=lid_velocity, v=0
+    u_fine_2d[-1, :] = lid_velocity
+    v_fine_2d[-1, :] = 0.0
+    # Left: u=0, v=0
+    u_fine_2d[:, 0] = 0.0
+    v_fine_2d[:, 0] = 0.0
+    # Right: u=0, v=0
+    u_fine_2d[:, -1] = 0.0
+    v_fine_2d[:, -1] = 0.0
+
     level_fine.u[:] = u_fine_2d.ravel()
     level_fine.v[:] = v_fine_2d.ravel()
 
-    # Prolongate pressure (inner grid)
+    # Prolongate pressure (inner grid - no boundary conditions needed)
     p_coarse_2d = level_coarse.p.reshape(level_coarse.shape_inner)
     p_fine_2d = transfer_ops.prolongation.prolongate_2d(
         p_coarse_2d, level_fine.shape_inner
@@ -829,9 +850,9 @@ class MultigridSmoother:
                 lvl.p[:] = lvl.p + alpha * dt * lvl.R_p
                 self._enforce_boundary_conditions(lvl.u, lvl.v)
 
-        # Compute residuals for convergence check
-        u_res = np.linalg.norm(lvl.u - lvl.u_prev)
-        v_res = np.linalg.norm(lvl.v - lvl.v_prev)
+        # Compute RELATIVE residuals for convergence check
+        u_res = np.linalg.norm(lvl.u - lvl.u_prev) / (np.linalg.norm(lvl.u_prev) + 1e-12)
+        v_res = np.linalg.norm(lvl.v - lvl.v_prev) / (np.linalg.norm(lvl.v_prev) + 1e-12)
 
         return u_res, v_res
 
@@ -903,15 +924,14 @@ def solve_fsg(
     corner_treatment: Optional[CornerTreatment] = None,
     Lx: float = 1.0,
     Ly: float = 1.0,
-    coarse_tolerance_factor: float = 1.0,  # Not used anymore, kept for API compat
+    coarse_tolerance_factor: float = 1.0,
 ) -> Tuple[SpectralLevel, int, bool]:
     """Solve using Full Single Grid (FSG) multigrid.
 
     Solves sequentially from coarsest to finest level, using the converged
     solution on each level as initial guess for the next finer level.
 
-    Per Zhang & Xi (2010): Each level converges to the SAME global tolerance
-    before prolongating to the next finer level.
+    Per Zhang & Xi (2010): Uses the SAME tolerance on ALL levels.
 
     For subtraction corner treatment: Uses smoothing on coarse levels (N<8) for
     stability, then transitions to full subtraction on finer levels. This hybrid
@@ -964,8 +984,10 @@ def solve_fsg(
     for level_idx, level in enumerate(levels):
         is_finest = level_idx == n_levels - 1
 
-        # Use same tolerance on ALL levels (per Zhang & Xi 2010)
-        level_tol = tolerance
+        # Use LOOSER tolerance on coarser levels for efficiency
+        # coarse_tolerance_factor=10 means: coarsest gets 100x looser (for 3 levels)
+        levels_from_finest = n_levels - 1 - level_idx
+        level_tol = tolerance * (coarse_tolerance_factor ** levels_from_finest)
 
         log.info(
             f"FSG Level {level_idx}/{n_levels - 1}: N={level.n}, "
@@ -980,7 +1002,7 @@ def solve_fsg(
             level.p[:] = 0.0
         else:
             # Prolongate from previous (coarser) level
-            prolongate_solution(levels[level_idx - 1], level, transfer_ops)
+            prolongate_solution(levels[level_idx - 1], level, transfer_ops, lid_velocity)
 
         # Select corner treatment for this level
         # For subtraction: use smoothing on coarse levels for stability

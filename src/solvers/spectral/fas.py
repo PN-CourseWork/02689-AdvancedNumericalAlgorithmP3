@@ -858,7 +858,7 @@ class FASSolver(SGSolver):
         Parameters
         ----------
         tolerance : float, optional
-            Convergence tolerance (E_RMS). Default from params.
+            Convergence tolerance (solution change norm, same as FSG). Default from params.
         max_iter : int, optional
             Maximum V-cycles. Default from params.
         """
@@ -887,6 +887,10 @@ class FASSolver(SGSolver):
         time_start = time.time()
         converged = False
 
+        # Track previous solution for convergence (same as FSG)
+        u_prev = finest.u.copy()
+        v_prev = finest.v.copy()
+
         for cycle in range(max_iter):
             # Perform one V-cycle
             fas_vcycle(
@@ -903,21 +907,30 @@ class FASSolver(SGSolver):
                 post_smooth=self.post_smooth,
             )
 
-            # Check convergence
+            # Check convergence using solution change norm (same as FSG!)
+            u_res = np.linalg.norm(finest.u - u_prev)
+            v_res = np.linalg.norm(finest.v - v_prev)
+            max_res = max(u_res, v_res)
+
+            # Update previous solution
+            u_prev[:] = finest.u
+            v_prev[:] = finest.v
+
+            # Also compute E_RMS for logging
             erms = compute_continuity_rms(finest)
 
-            log.debug(f"V-cycle {cycle + 1}: E_RMS = {erms:.6e}")
+            log.debug(f"V-cycle {cycle + 1}: max_res={max_res:.6e}, E_RMS={erms:.6e}")
 
-            if erms < tolerance:
+            if max_res < tolerance:
                 converged = True
-                log.info(f"FAS converged in {cycle + 1} V-cycles, E_RMS = {erms:.6e}")
+                log.info(f"FAS converged in {cycle + 1} V-cycles, max_res={max_res:.6e}")
                 break
 
         time_end = time.time()
         wall_time = time_end - time_start
 
         if not converged:
-            log.warning(f"FAS did not converge after {max_iter} V-cycles, E_RMS = {erms:.6e}")
+            log.warning(f"FAS did not converge after {max_iter} V-cycles, max_res={max_res:.6e}")
 
         # Copy solution to output arrays
         self.arrays.u[:] = finest.u
@@ -932,7 +945,7 @@ class FASSolver(SGSolver):
         final_residuals = self._compute_algebraic_residuals()
 
         residual_history = [{
-            "rel_iter": erms,
+            "rel_iter": max_res,  # Use solution change like FSG
             "u_eq": final_residuals["u_residual"],
             "v_eq": final_residuals["v_residual"],
             "continuity": final_residuals["continuity_residual"],

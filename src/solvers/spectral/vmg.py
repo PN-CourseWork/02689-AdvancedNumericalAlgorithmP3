@@ -41,6 +41,8 @@ def _vcycle_fas(
     pre_smooth: int,
     post_smooth: int,
     damping: float,
+    level_smoothing: Optional[List[int]] = None,
+    coarse_solve_iters: int = 1,
 ) -> None:
     """Perform one V-cycle using Full Approximation Storage (FAS).
 
@@ -77,8 +79,14 @@ def _vcycle_fas(
     level = levels[level_idx]
     smoother = smoothers[level_idx]
 
+    # Determine smoothing iterations for this level
+    if level_smoothing is not None:
+        n_smooth = level_smoothing[level_idx]
+    else:
+        n_smooth = pre_smooth
+
     # Pre-smoothing
-    for _ in range(pre_smooth):
+    for _ in range(n_smooth):
         smoother.step()
 
     if level_idx > 0:  # Not coarsest level
@@ -130,11 +138,17 @@ def _vcycle_fas(
         # Set tau correction for coarse solve
         coarse_smoother.set_tau_correction(tau_u, tau_v, tau_p)
 
-        # Recurse to coarser level
-        _vcycle_fas(
-            levels, smoothers, transfer_ops,
-            level_idx - 1, pre_smooth, post_smooth, damping
-        )
+        if level_idx == 1:
+            # Coarsest level: do coarse_solve_iters smoothing steps
+            for _ in range(coarse_solve_iters):
+                coarse_smoother.step()
+        else:
+            # Recurse to coarser level
+            _vcycle_fas(
+                levels, smoothers, transfer_ops,
+                level_idx - 1, pre_smooth, post_smooth, damping,
+                level_smoothing, coarse_solve_iters
+            )
 
         # Clear tau correction
         coarse_smoother.clear_tau_correction()
@@ -202,9 +216,11 @@ def solve_vmg(
     corner_treatment: Optional[CornerTreatment] = None,
     Lx: float = 1.0,
     Ly: float = 1.0,
-    pre_smooth: int = 2,
-    post_smooth: int = 2,
-    damping: float = 0.5,
+    pre_smooth: int = 1,
+    post_smooth: int = 1,
+    damping: float = 1.0,
+    level_smoothing: Optional[List[int]] = None,
+    coarse_solve_iters: int = 1,
 ) -> Tuple[SpectralLevel, int, bool]:
     """Solve using V-cycle Multigrid (VMG) with FAS.
 
@@ -290,7 +306,8 @@ def solve_vmg(
         # Perform one V-cycle starting from finest level
         _vcycle_fas(
             levels, smoothers, transfer_ops,
-            n_levels - 1, pre_smooth, post_smooth, damping
+            n_levels - 1, pre_smooth, post_smooth, damping,
+            level_smoothing, coarse_solve_iters
         )
         total_work += work_per_cycle
 
