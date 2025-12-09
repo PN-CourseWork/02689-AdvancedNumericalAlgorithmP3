@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import mlflow
 import matplotlib.pyplot as plt
 from hydra.experimental.callback import Callback
@@ -47,6 +48,14 @@ class MMSPlotCallback(Callback):
         if not results:
             print(f"No MMS results found in {multirun_dir}")
             return
+
+        # Save results to parquet
+        data_dir = Path("data/MMS")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame(results)
+        parquet_file = data_dir / "mms_results.parquet"
+        df.to_parquet(parquet_file, index=False)
+        print(f"Saved results to {parquet_file}")
 
         # Group by Reynolds number
         by_re = defaultdict(list)
