@@ -1,26 +1,30 @@
 # @package _global_
-# Benchmarking: Spectral Multigrid Methods Comparison
-# Compares different multigrid acceleration strategies for spectral solver
+# Benchmarking: Solver Timing Comparison
 #
-# Usage: uv run python run_solver.py -m +experiment=benchmarking/multigrid_comparison
+# For individual solver benchmarks, use:
+#   uv run python main.py +experiment=benchmarking/timings_fv -m    # Finite Volume
+#   uv run python main.py +experiment=benchmarking/timings_sg -m    # Spectral Single Grid
+#   uv run python main.py +experiment=benchmarking/timings_fsg -m   # Spectral FSG (n_levels=1,2,3)
+#
+# This config runs a quick comparison across all three solver types at fixed N:
+#   uv run python main.py +experiment=benchmarking/timings -m
 
 defaults:
-  - override /solver: spectral/sg
+  - override /hydra/launcher: joblib
 
 # MLflow experiment
 experiment_name: LDC-Benchmarking
-sweep_name: multigrid-comparison-Re${Re}
+sweep_name: timing-comparison-Re${Re}
 
-# Benchmarking parameters
+# Default problem parameters
 Re: 100
-N: 15
+N: 24
+tolerance: 1.0e-6
+max_iterations: 500000
 
 hydra:
   sweeper:
     params:
-      # Sweep over spectral solver variants
-      # sg: Single Grid (no multigrid)
-      # fsg: Full Single Grid
-      # vmg: V-cycle MultiGrid
-      # fmg: Full MultiGrid
-      solver: spectral/sg,spectral/fsg,spectral/vmg,spectral/fmg
+      solver: fv,spectral/sg,spectral/fsg
+  launcher:
+    n_jobs: 3

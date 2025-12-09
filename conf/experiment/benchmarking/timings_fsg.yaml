@@ -1,0 +1,28 @@
+# @package _global_
+# Benchmarking: Spectral FSG (Full Single Grid) Solver Timings
+# Sweeps over N and n_levels (1, 2, 3)
+#
+# Usage:
+#   uv run python main.py +experiment=benchmarking/timings_fsg -m
+#   uv run python main.py +experiment=benchmarking/timings_fsg -m Re=400
+
+defaults:
+  - override /solver: spectral/fsg
+  - override /hydra/launcher: joblib
+
+# MLflow experiment
+experiment_name: LDC-Benchmarking
+sweep_name: fsg-timing-Re${Re}
+
+# Default problem parameters
+Re: 100
+tolerance: 1.0e-6
+max_iterations: 500000
+
+hydra:
+  sweeper:
+    params:
+      N: 8,12,16,20,24,28,32
+      solver.n_levels: 1,2,3
+  launcher:
+    n_jobs: 4

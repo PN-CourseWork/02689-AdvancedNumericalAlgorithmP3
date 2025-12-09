@@ -1,0 +1,26 @@
+# @package _global_
+# Benchmarking: Finite Volume Solver Timings
+#
+# Usage:
+#   uv run python main.py +experiment=benchmarking/timings_fv -m
+#   uv run python main.py +experiment=benchmarking/timings_fv -m Re=400
+
+defaults:
+  - override /solver: fv
+  - override /hydra/launcher: joblib
+
+# MLflow experiment
+experiment_name: LDC-Benchmarking
+sweep_name: fv-timing-Re${Re}
+
+# Default problem parameters
+Re: 100
+tolerance: 1.0e-6
+max_iterations: 500000
+
+hydra:
+  sweeper:
+    params:
+      N: 16,24,32,48,64,96,128
+  launcher:
+    n_jobs: 4

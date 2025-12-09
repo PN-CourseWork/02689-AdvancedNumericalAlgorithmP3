@@ -1,0 +1,26 @@
+# @package _global_
+# Benchmarking: Spectral Single Grid Solver Timings
+#
+# Usage:
+#   uv run python main.py +experiment=benchmarking/timings_sg -m
+#   uv run python main.py +experiment=benchmarking/timings_sg -m Re=400
+
+defaults:
+  - override /solver: spectral/sg
+  - override /hydra/launcher: joblib
+
+# MLflow experiment
+experiment_name: LDC-Benchmarking
+sweep_name: sg-timing-Re${Re}
+
+# Default problem parameters
+Re: 100
+tolerance: 1.0e-6
+max_iterations: 500000
+
+hydra:
+  sweeper:
+    params:
+      N: 8,12,16,20,24,28,32
+  launcher:
+    n_jobs: 4
