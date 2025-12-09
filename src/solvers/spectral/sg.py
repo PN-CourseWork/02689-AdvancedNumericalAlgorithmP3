@@ -417,9 +417,9 @@ class SGSolver(LidDrivenCavitySolver):
         """
         a = self.arrays  # Shorthand
 
-        # Swap buffers at start (for residual calculation in solve())
-        a.u, a.u_prev = a.u_prev, a.u
-        a.v, a.v_prev = a.v_prev, a.v
+        # Save previous for convergence check (copy, don't swap!)
+        a.u_prev[:] = a.u
+        a.v_prev[:] = a.v
 
         # Compute adaptive timestep
         dt = self._compute_adaptive_timestep()

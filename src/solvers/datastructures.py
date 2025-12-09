@@ -265,7 +265,7 @@ class SpectralParameters(Parameters):
     corner_smoothing: float = 0.15  # smoothing width for smoothing method
 
     # Multigrid settings
-    multigrid: str = "none"  # "none", "fsg", "vmg", "fmg"
+    multigrid: str = "none"  # "none", "fsg"
     n_levels: int = 3
     coarse_tolerance_factor: float = 10.0
 

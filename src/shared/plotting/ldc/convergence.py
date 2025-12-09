@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +21,9 @@ def plot_convergence(
     if timeseries_df.empty:
         log.warning("No timeseries data available for convergence plot")
         return None
+
+    # Set seaborn darkgrid style
+    sns.set_style("darkgrid")
 
     fig, ax = plt.subplots()
 
@@ -41,10 +45,12 @@ def plot_convergence(
         rf"\textbf{{Convergence History}} --- {solver_label}, $N={N}$, $\mathrm{{Re}}={Re:.0f}$"
     )
     ax.legend(frameon=True)
-    ax.grid(True, alpha=0.3)
+
+    # Transparent figure, but keep darkgrid axes background
+    fig.patch.set_alpha(0.0)
 
     output_path = output_dir / "convergence.pdf"
-    fig.savefig(output_path)
+    fig.savefig(output_path, facecolor=(0, 0, 0, 0))
     plt.close(fig)
 
     return output_path
