@@ -1,6 +1,6 @@
 # @package _global_
 # Ghia validation - Spectral solvers
-# Sweeps over SG, FSG, VMG, FMG solvers at N=15
+# Sweeps over SG, FSG solvers
 
 defaults:
   - override /solver: spectral/sg
@@ -15,6 +15,6 @@ hydra:
   sweeper:
     params:
       # Sweep over spectral solver types
-      solver: spectral/fsg #,spectral/fsg
+      solver: spectral/fsg
       Re: 1000
       N: 80, 90, 100, 110, 120, 130, 140

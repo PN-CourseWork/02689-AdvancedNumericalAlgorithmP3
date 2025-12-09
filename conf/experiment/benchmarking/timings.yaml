@@ -21,6 +21,4 @@ hydra:
       # Sweep over spectral solver variants
       # sg: Single Grid (no multigrid)
       # fsg: Full Single Grid
-      # vmg: V-cycle MultiGrid
-      # fmg: Full MultiGrid
-      solver: spectral/sg,spectral/fsg,spectral/vmg,spectral/fmg
+      solver: spectral/sg,spectral/fsg

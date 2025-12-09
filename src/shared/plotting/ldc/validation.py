@@ -28,16 +28,15 @@ def _build_method_label(sibling: dict) -> str:
     - 'fv' -> 'FV'
     - 'spectral' -> 'Spectral'
     - 'spectral_fsg' -> 'Spectral-FSG'
-    - 'spectral_vmg' -> 'Spectral-VMG'
+    - 'spectral_fmg' -> 'Spectral-FMG'
     """
     solver = sibling.get("solver", "unknown")
 
     # Format known solver names
     label_map = {
-        "fv": "FV",
+        "fv": "FV-TVD",
         "spectral": "Spectral",
         "spectral_fsg": "Spectral-FSG",
-        "spectral_vmg": "Spectral-VMG",
         "spectral_fmg": "Spectral-FMG",
     }
 
@@ -191,60 +190,64 @@ def plot_ghia_comparison(
     u_df = pd.DataFrame(u_records)
     v_df = pd.DataFrame(v_records)
 
+    # Set seaborn darkgrid style with transparent figure background
+    sns.set_style("darkgrid")
+    sns.set(rc={"figure.facecolor": (0, 0, 0, 0)})
+
     # Create subplots with publication-quality sizing
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Left: u-velocity (vertical centerline)
+    # Left: u-velocity (vertical centerline) - dashed lines, no markers
     sns.lineplot(
         data=u_df,
         x="u",
         y="y",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axes[0],
         sort=False,
-        linewidth=2,
-        markersize=7,
-        markevery=15,
+        linewidth=1,
     )
+    # Ghia reference with markers
     sns.scatterplot(
         data=ghia_u,
         x="u",
         y="y",
         marker="o",
-        s=50,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
-        linewidths=1.2,
+        linewidths=1.0,
         label="Ghia et al. (1982)",
         ax=axes[0],
         zorder=10,
     )
-    axes[0].set_xlabel(r"$u$", fontsize=11)
-    axes[0].set_ylabel(r"$y$", fontsize=11)
-    axes[0].set_title(r"$u$-velocity (vertical centerline)", fontsize=11)
+    axes[0].set_xlabel(r"$u$", fontsize=12)
+    axes[0].set_ylabel(r"$y$", fontsize=12)
+    #axes[0].set_title(r"$u$ at $x = 0.5$", fontsize=12)
 
-    # Right: v-velocity (horizontal centerline)
+    # Right: v-velocity (horizontal centerline) - dashed lines, no markers
     sns.lineplot(
         data=v_df,
         x="x",
         y="v",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axes[1],
         sort=False,
-        linewidth=2,
-        markersize=7,
-        markevery=15,
+        linewidth=1,
     )
+    # Ghia reference with markers
     sns.scatterplot(
         data=ghia_v,
         x="x",
         y="v",
         marker="o",
-        s=50,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
         linewidths=1.2,
@@ -252,18 +255,21 @@ def plot_ghia_comparison(
         ax=axes[1],
         zorder=10,
     )
-    axes[1].set_xlabel(r"$x$", fontsize=11)
-    axes[1].set_ylabel(r"$v$", fontsize=11)
-    axes[1].set_title(r"$v$-velocity (horizontal centerline)", fontsize=11)
+    axes[1].set_xlabel(r"$x$", fontsize=12)
+    axes[1].set_ylabel(r"$v$", fontsize=12)
+    #axes[1].set_title(r"$v$ at $y = 0.5$", fontsize=12)
 
-    # Overall title
-    fig.suptitle(rf"Ghia Benchmark Comparison ($\mathrm{{Re}} = {int(Re)}$)", fontsize=13, y=1.00)
+    # Overall title with LaTeX formatting
+    fig.suptitle(rf"Centerline Velocities - $\mathrm{{Re}} = {int(Re)}$", fontsize=15, y=1.00)
 
     # Tight layout for better spacing
     plt.tight_layout()
 
+    # Transparent figure, but keep darkgrid axes background
+    fig.patch.set_alpha(0.0)
+
     output_path = output_dir / "ghia_comparison.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor=(0, 0, 0, 0))
     plt.close(fig)
 
     log.info(f"Saved comparison plot: {output_path.name}")
