@@ -1,0 +1,11 @@
+# Botella & Peyret (1998) - Benchmark spectral solution for lid-driven cavity
+# Reference: J. Comp. Phys. 179, 439-468 (2002) - Table II
+# Primary and secondary vortex characteristics at Re=100 with regularized lid velocity
+# N=128 polynomial order
+#
+# Primary vortex (PV): global minimum of streamfunction
+# BR (bottom-right): secondary vortex in bottom-right corner
+# BL (bottom-left): secondary vortex in bottom-left corner (very weak at Re=100)
+#
+Re,psi_min,psi_min_x,psi_min_y,omega_center,psi_BR,psi_BR_x,psi_BR_y,psi_BL,psi_BL_x,psi_BL_y
+100,-0.1034339,0.6188,0.7344,3.166577,1.4235e-8,0.9453,0.0625,0.0,0.0,0.0
