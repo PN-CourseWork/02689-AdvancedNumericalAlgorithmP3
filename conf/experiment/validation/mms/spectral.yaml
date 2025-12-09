@@ -1,0 +1,37 @@
+# MMS (Method of Manufactured Solutions) test for spectral solver
+#
+# Usage:
+#   uv run python scripts/test_sg_mms.py -m   # Uses default sweep N=6,8,10
+#   uv run python scripts/test_sg_mms.py -m N=6,8,10,12,14
+#   uv run python scripts/test_sg_mms.py N=10  # Single run
+
+defaults:
+  - override /hydra/launcher: joblib
+
+# MMS test parameters
+Re: 1  # Low Re for faster convergence (diffusion-dominated)
+tolerance: 1.0e-14
+max_iterations: 1000000
+
+# Grid size (use -m N=6,8,10 for sweep)
+N: 10
+
+# Solver-specific settings for MMS
+CFL: 0.2
+corner_treatment: smoothing
+corner_smoothing: 0.0  # No smoothing for MMS (exact BCs)
+
+# Hydra sweeper and parallel launcher
+hydra:
+  sweeper:
+    params:
+      N: 6,8,10,16,24,26,30,32,34,36
+      Re: 100
+  launcher:
+    n_jobs: 4
+  callbacks:
+    mms_plot:
+      _target_: callbacks.mms_callback.MMSPlotCallback
+
+# Output
+output_dir: outputs

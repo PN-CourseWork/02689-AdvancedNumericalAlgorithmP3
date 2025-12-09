@@ -44,8 +44,26 @@ class SGSolver(LidDrivenCavitySolver):
 
     Parameters = SpectralParameters
 
-    def __init__(self, **kwargs):
-        """Initialize single grid spectral solver."""
+    def __init__(self, forcing_u=None, forcing_v=None, bc_func=None, **kwargs):
+        """Initialize single grid spectral solver.
+
+        Parameters
+        ----------
+        forcing_u, forcing_v : callable or np.ndarray, optional
+            Source terms f_u(x, y) and f_v(x, y) added to momentum equations.
+            If callable, called with (x_2d, y_2d) mesh arrays.
+            If array, must match full grid shape (Nx+1, Ny+1).
+        bc_func : callable, optional
+            Custom boundary condition function bc_func(x, y) -> (u, v).
+            If provided, overrides lid-driven cavity BCs on ALL boundaries.
+        **kwargs : dict
+            Additional arguments passed to base solver.
+        """
+        # Store MMS parameters before parent init (which calls _setup_grids)
+        self._forcing_u_input = forcing_u
+        self._forcing_v_input = forcing_v
+        self._bc_func = bc_func
+
         super().__init__(**kwargs)
 
         # Create spectral basis based on params
@@ -123,6 +141,34 @@ class SGSolver(LidDrivenCavitySolver):
 
         # Setup quadrature weights for proper integration (energy, enstrophy, etc.)
         self._setup_quadrature_weights()
+
+        # Process MMS forcing terms (after grids are set up)
+        self._setup_forcing_terms()
+
+    def _setup_forcing_terms(self):
+        """Setup forcing terms for MMS testing.
+
+        Converts callable forcing functions to arrays evaluated on the grid.
+        """
+        self._forcing_u = None
+        self._forcing_v = None
+
+        if self._forcing_u_input is not None:
+            if callable(self._forcing_u_input):
+                self._forcing_u = self._forcing_u_input(self.x_full, self.y_full).ravel()
+            else:
+                self._forcing_u = np.asarray(self._forcing_u_input).ravel()
+            log.info("MMS forcing term f_u enabled")
+
+        if self._forcing_v_input is not None:
+            if callable(self._forcing_v_input):
+                self._forcing_v = self._forcing_v_input(self.x_full, self.y_full).ravel()
+            else:
+                self._forcing_v = np.asarray(self._forcing_v_input).ravel()
+            log.info("MMS forcing term f_v enabled")
+
+        if self._bc_func is not None:
+            log.info("Custom boundary conditions enabled (overriding lid-driven cavity BCs)")
 
     def _setup_grids(self):
         """Setup full and reduced grids using Legendre-Gauss-Lobatto nodes."""
@@ -381,6 +427,12 @@ class SGSolver(LidDrivenCavitySolver):
         self.arrays.R_u[:] = -conv_u - self.arrays.dp_dx + nu * self.arrays.lap_u
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
 
+        # Add MMS forcing terms if present
+        if self._forcing_u is not None:
+            self.arrays.R_u[:] += self._forcing_u
+        if self._forcing_v is not None:
+            self.arrays.R_v[:] += self._forcing_v
+
         # Continuity residual on INNER grid: R_p = -β²(∂u/∂x + ∂v/∂y)
         # Use the already-computed 2D derivatives directly
         divergence_2d = du_dx_2d + dv_dy_2d
@@ -394,6 +446,7 @@ class SGSolver(LidDrivenCavitySolver):
 
         For smoothing method: No-slip on walls, smoothed lid velocity on top.
         For subtraction method: u_c = -u_s on walls, u_c = V_lid - u_s on top.
+        For MMS testing: Custom bc_func(x, y) -> (u, v) on all boundaries.
 
         Parameters
         ----------
@@ -404,30 +457,53 @@ class SGSolver(LidDrivenCavitySolver):
         u_2d = u.reshape(self.shape_full)
         v_2d = v.reshape(self.shape_full)
 
-        # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
-        # West boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.x_full[0, :], self.y_full[0, :], self.params.Lx, self.params.Ly
-        )
-        u_2d[0, :] = u_wall
-        v_2d[0, :] = v_wall
+        if self._bc_func is not None:
+            # MMS mode: use custom boundary conditions on all boundaries
+            # West boundary
+            u_bc, v_bc = self._bc_func(self.x_full[0, :], self.y_full[0, :])
+            u_2d[0, :] = u_bc
+            v_2d[0, :] = v_bc
 
-        # East boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.x_full[-1, :], self.y_full[-1, :], self.params.Lx, self.params.Ly
-        )
-        u_2d[-1, :] = u_wall
-        v_2d[-1, :] = v_wall
+            # East boundary
+            u_bc, v_bc = self._bc_func(self.x_full[-1, :], self.y_full[-1, :])
+            u_2d[-1, :] = u_bc
+            v_2d[-1, :] = v_bc
 
-        # South boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.x_full[:, 0], self.y_full[:, 0], self.params.Lx, self.params.Ly
-        )
-        u_2d[:, 0] = u_wall
-        v_2d[:, 0] = v_wall
+            # South boundary
+            u_bc, v_bc = self._bc_func(self.x_full[:, 0], self.y_full[:, 0])
+            u_2d[:, 0] = u_bc
+            v_2d[:, 0] = v_bc
 
-        # North boundary (moving lid)
-        self._apply_lid_boundary(u_2d, v_2d)
+            # North boundary
+            u_bc, v_bc = self._bc_func(self.x_full[:, -1], self.y_full[:, -1])
+            u_2d[:, -1] = u_bc
+            v_2d[:, -1] = v_bc
+        else:
+            # Standard lid-driven cavity BCs
+            # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
+            # West boundary
+            u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+                self.x_full[0, :], self.y_full[0, :], self.params.Lx, self.params.Ly
+            )
+            u_2d[0, :] = u_wall
+            v_2d[0, :] = v_wall
+
+            # East boundary
+            u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+                self.x_full[-1, :], self.y_full[-1, :], self.params.Lx, self.params.Ly
+            )
+            u_2d[-1, :] = u_wall
+            v_2d[-1, :] = v_wall
+
+            # South boundary
+            u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+                self.x_full[:, 0], self.y_full[:, 0], self.params.Lx, self.params.Ly
+            )
+            u_2d[:, 0] = u_wall
+            v_2d[:, 0] = v_wall
+
+            # North boundary (moving lid)
+            self._apply_lid_boundary(u_2d, v_2d)
 
     def _compute_adaptive_timestep(self):
         """Compute adaptive pseudo-timestep based on CFL condition.
