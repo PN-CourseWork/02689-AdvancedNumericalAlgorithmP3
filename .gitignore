@@ -9,6 +9,7 @@ data/*
 !data/README.md
 !data/.gitkeep
 !data/validation/
+!data/MMS/
 hydra_outputs/
 outputs/
 TEMPLATE/
