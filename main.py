@@ -124,16 +124,19 @@ def generate_plots(cfg: DictConfig, run_id: str):
     """Generate plots for a completed run."""
     from shared.plotting.ldc import generate_plots_for_run
 
-    generate_plots_for_run(
-        run_id=run_id,
-        tracking_uri=cfg.mlflow.get("tracking_uri", "./mlruns"),
-        output_dir=Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir),
-        solver_name=cfg.solver.name,
-        N=cfg.N,
-        Re=cfg.Re,
-        parent_run_id=os.environ.get("MLFLOW_PARENT_RUN_ID"),
-        upload_to_mlflow=True,
-    )
+    try:
+        generate_plots_for_run(
+            run_id=run_id,
+            tracking_uri=cfg.mlflow.get("tracking_uri", "./mlruns"),
+            output_dir=Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir),
+            solver_name=cfg.solver.name,
+            N=cfg.N,
+            Re=cfg.Re,
+            parent_run_id=os.environ.get("MLFLOW_PARENT_RUN_ID"),
+            upload_to_mlflow=True,
+        )
+    except Exception as exc:
+        log.warning(f"Plotting failed (likely diverged run): {exc}")
 
 
 def compute_fv_l2_objective(validation_errors: dict) -> float:

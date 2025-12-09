@@ -1031,8 +1031,9 @@ class LidDrivenCavitySolver(ABC):
             # Evaluate computed solution at reference grid points
             curr_u_at_ref, curr_v_at_ref = self._evaluate_at_points(ref_x, ref_y)
 
-            # Only compute norm on interior points (exclude boundaries where BCs differ)
-            margin = 0.02
+            # Only compute norm on interior points (exclude exact boundary nodes)
+            # Use small epsilon to exclude boundary nodes but keep near-boundary interior
+            margin = 1e-10
             interior = (
                 (ref_x > margin) & (ref_x < self.params.Lx - margin) &
                 (ref_y > margin) & (ref_y < self.params.Ly - margin)

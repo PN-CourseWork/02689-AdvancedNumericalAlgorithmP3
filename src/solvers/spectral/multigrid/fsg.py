@@ -1062,6 +1062,7 @@ def solve_fsg(
         converged = False
         level_iters = 0
 
+        diverged = False
         for iteration in range(max_iterations):
             u_res, v_res = smoother.step()
             level_iters += 1
@@ -1078,6 +1079,14 @@ def solve_fsg(
                 )
                 break
 
+            # Early exit on NaN/Inf (diverged)
+            if not np.isfinite(max_res):
+                diverged = True
+                log.warning(
+                    f"  Level {level_idx} diverged (NaN/Inf) at iteration {level_iters}, exiting early"
+                )
+                break
+
             # Logging every 100 iterations
             if iteration > 0 and iteration % 100 == 0:
                 cont_res = smoother.get_continuity_residual()
@@ -1085,6 +1094,10 @@ def solve_fsg(
                     f"  Level {level_idx} iter {iteration}: "
                     f"u_res={u_res:.2e}, v_res={v_res:.2e}, cont={cont_res:.2e}"
                 )
+
+        # Exit early if diverged (NaN/Inf detected)
+        if diverged:
+            break
 
         if not converged and not is_finest:
             log.warning(
@@ -1097,7 +1110,7 @@ def solve_fsg(
             )
 
     finest_level = levels[-1]
-    final_converged = converged
+    final_converged = converged and not diverged
 
     log.info(
         f"FSG completed: {total_iterations} total iterations, converged={final_converged}"

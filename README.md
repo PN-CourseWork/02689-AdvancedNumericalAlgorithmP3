@@ -62,16 +62,22 @@ uv run mlflow ui
 Optimize `corner_smoothing` using [Optuna](https://optuna.org/) + Hydra:
 
 ```bash
-# FV L2 error (default)
+# Minimize L2 error vs FV reference (default objective)
 uv run python main.py -m +experiment/optimization=corner_smoothing \
-    'solver.corner_smoothing=interval(0.02,0.35)'
+    'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=30
 
-# Botella vortex metrics
+# Minimize vortex error vs Botella & Peyret reference
 uv run python main.py -m +experiment/optimization=corner_smoothing \
-    'solver.corner_smoothing=interval(0.02,0.35)' optuna.objective=botella_vortex
+    'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=30 \
+    optuna.objective=botella_vortex
+
+# Customize trials and parallelism
+uv run python main.py -m +experiment/optimization=corner_smoothing \
+    'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=30 \
+    hydra.sweeper.n_trials=20 hydra.sweeper.n_jobs=8
 ```
 
-See [docs/optuna_optimization.md](docs/optuna_optimization.md) for details.
+View results in MLflow under `Optuna-CornerSmoothing-{objective}`. See [docs/optuna_optimization.md](docs/optuna_optimization.md) for details.
 
 ## References
 

@@ -216,6 +216,103 @@ class MLflowSweepCallback(Callback):
         # Set env var so child run can find parent
         os.environ["MLFLOW_PARENT_RUN_ID"] = parent_id
 
+    def _log_optuna_results_to_parent(self, config: DictConfig) -> None:
+        """Log Optuna optimization results to parent MLflow run."""
+        import mlflow
+        import pandas as pd
+
+        # Check if this is an Optuna sweep
+        sweeper_cfg = config.get("hydra", {}).get("sweeper", {})
+        if "optuna" not in str(sweeper_cfg.get("_target_", "")).lower():
+            return
+
+        study_name = sweeper_cfg.get("study_name", "")
+        if not study_name:
+            return
+
+        # Get parent run ID
+        parent_run_ids = list(self._parent_runs.values())
+        if not parent_run_ids:
+            parent_run_ids = self._find_recent_parent_runs()
+
+        if not parent_run_ids:
+            log.warning("No parent run found for Optuna results logging")
+            return
+
+        parent_run_id = parent_run_ids[0]
+
+        # Try to get Optuna results from child runs in MLflow
+        try:
+            experiment = mlflow.get_experiment_by_name(self._full_experiment_name)
+            if not experiment:
+                return
+
+            # Get all child runs under this parent
+            child_runs = mlflow.search_runs(
+                experiment_ids=[experiment.experiment_id],
+                filter_string=f"tags.parent_run_id = '{parent_run_id}' AND attributes.status = 'FINISHED'",
+                order_by=["start_time ASC"],
+            )
+
+            if child_runs.empty:
+                log.warning("No completed child runs found for Optuna summary")
+                return
+
+            # Build trials table from child runs
+            trials_data = []
+            for _, run in child_runs.iterrows():
+                trial = {
+                    "run_id": run["run_id"][:8],
+                    "corner_smoothing": run.get("params.corner_smoothing"),
+                    "u_L2_error": run.get("metrics.u_L2_error"),
+                    "v_L2_error": run.get("metrics.v_L2_error"),
+                    "iterations": run.get("metrics.iterations"),
+                    "converged": run.get("metrics.converged"),
+                    "wall_time": run.get("metrics.wall_time_seconds"),
+                }
+                trials_data.append(trial)
+
+            trials_df = pd.DataFrame(trials_data)
+
+            # Find best trial (minimize L2 error)
+            if "u_L2_error" in trials_df.columns and "v_L2_error" in trials_df.columns:
+                trials_df["combined_L2"] = (
+                    trials_df["u_L2_error"].fillna(float("inf")) ** 2
+                    + trials_df["v_L2_error"].fillna(float("inf")) ** 2
+                ) ** 0.5
+                best_idx = trials_df["combined_L2"].idxmin()
+                best_trial = trials_df.loc[best_idx]
+            else:
+                best_trial = None
+
+            # Log to parent run
+            with mlflow.start_run(run_id=parent_run_id, nested=False):
+                # Log trials table as artifact
+                mlflow.log_table(trials_df, artifact_file="optuna_trials.json")
+
+                # Log best trial metrics
+                if best_trial is not None:
+                    mlflow.log_metrics({
+                        "best_corner_smoothing": float(best_trial.get("corner_smoothing", 0)),
+                        "best_u_L2_error": float(best_trial.get("u_L2_error", float("inf"))),
+                        "best_v_L2_error": float(best_trial.get("v_L2_error", float("inf"))),
+                        "best_combined_L2": float(best_trial.get("combined_L2", float("inf"))),
+                    })
+                    mlflow.set_tag("best_run_id", best_trial.get("run_id", ""))
+
+                # Log summary info
+                mlflow.log_metric("n_trials_completed", len(trials_df))
+                mlflow.log_metric("n_trials_converged", int(trials_df["converged"].sum()) if "converged" in trials_df.columns else 0)
+
+            log.info(f"Logged Optuna results to parent run {parent_run_id[:8]}")
+            if best_trial is not None:
+                log.info(f"  Best: corner_smoothing={best_trial.get('corner_smoothing')}, L2={best_trial.get('combined_L2'):.6f}")
+
+        except Exception as e:
+            log.warning(f"Failed to log Optuna results: {e}")
+            import traceback
+            log.debug(traceback.format_exc())
+
     def on_multirun_end(self, config: DictConfig, **kwargs) -> None:
         """Clean up after sweep completes and generate comparison plots."""
         if os.environ.get("MLFLOW_SWEEP_ACTIVE") != "1":
@@ -225,6 +322,9 @@ class MLflowSweepCallback(Callback):
         os.environ.pop("MLFLOW_SWEEP_ACTIVE", None)
 
         log.info("Multirun sweep completed")
+
+        # Log Optuna results to parent run
+        self._log_optuna_results_to_parent(config)
 
         # Generate comparison plots for all parent runs
         try:
