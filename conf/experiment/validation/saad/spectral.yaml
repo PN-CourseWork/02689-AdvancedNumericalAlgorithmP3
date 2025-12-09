@@ -12,7 +12,6 @@ sweep_name: regu-Re1000
 
 # Use Saad/polynomial corner treatment for regularized problem
 solver:
-  corner_treatment: smoothing
   corner_smoothing: 0.15   # smoothing width (fraction of domain) for smoothing method
 
 hydra:

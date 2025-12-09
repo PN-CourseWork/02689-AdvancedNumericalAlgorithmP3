@@ -21,4 +21,4 @@ hydra:
       # Sweep over spectral solver types
       solver: spectral/fsg #,spectral/vmg #, spectral/vmg
       Re: 1000
-      N: 16, 20, 24 
+      N: 16, 20, 32 

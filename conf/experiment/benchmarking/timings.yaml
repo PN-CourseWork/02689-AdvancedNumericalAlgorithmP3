@@ -9,7 +9,7 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Benchmarking
-sweep_name: multigrid-comparison-Re${Re}
+sweep_name: Benchmarking
 
 # Benchmarking parameters
 Re: 100

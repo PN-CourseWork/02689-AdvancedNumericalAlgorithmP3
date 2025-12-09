@@ -20,7 +20,7 @@ from .mlflow_utils import (
     upload_plots_to_mlflow,
 )
 from .pyvista_fields import generate_pyvista_field_plots
-from .validation import plot_ghia_comparison
+from .validation import plot_ghia_comparison, plot_l2_convergence
 
 log = logging.getLogger(__name__)
 
