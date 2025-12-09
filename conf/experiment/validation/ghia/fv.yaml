@@ -6,12 +6,13 @@ defaults:
   - override /solver: fv
 
 # MLflow experiment
-experiment_name: LDC-Validation
-sweep_name: ghia-Re${Re}
+experiment_name: LDC-GHIA-PLOTS
+
+sweep_name: ghia-plots
 
 hydra:
   sweeper:
     params:
       # Sweep over FV grid sizes
-      N: 64
-      Re: 100
+      N: 128
+      Re: 1000
