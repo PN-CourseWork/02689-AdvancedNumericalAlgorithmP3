@@ -120,15 +120,26 @@ def generate_comparison_plots_for_sweep(
         comparison_dir = output_dir / parent_name
         comparison_dir.mkdir(exist_ok=True)
 
+        # Generate Ghia comparison plot
         comparison_path = plot_ghia_comparison(siblings, tracking_uri, comparison_dir)
 
+        # Generate L2 convergence plots (4 separate PDFs)
+        l2_paths = plot_l2_convergence(siblings, tracking_uri, comparison_dir)
+
+        # Collect all generated plots
+        all_plots = []
         if comparison_path:
+            all_plots.append(comparison_path)
             results[parent_run_id] = comparison_path
             log.info(f"  Created comparison plot: {comparison_path.name}")
 
-            if upload_to_mlflow:
-                upload_plots_to_mlflow(parent_run_id, [comparison_path], tracking_uri)
-                log.info("  Uploaded to parent run")
+        if l2_paths:
+            all_plots.extend(l2_paths)
+            log.info(f"  Created {len(l2_paths)} L2 convergence plot(s)")
+
+        if all_plots and upload_to_mlflow:
+            upload_plots_to_mlflow(parent_run_id, all_plots, tracking_uri)
+            log.info("  Uploaded to parent run")
 
     log.info(f"Generated {len(results)} comparison plot(s)")
     return results

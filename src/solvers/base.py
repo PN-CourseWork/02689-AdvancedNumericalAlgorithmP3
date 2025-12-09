@@ -871,6 +871,108 @@ class LidDrivenCavitySolver(ABC):
         """
         mlflow.log_artifact(filepath)
 
+    def mlflow_log_validation_table(self, reference_csv: str = None):
+        """Log validation metrics comparison table to MLflow.
+
+        Creates a table comparing computed vortex metrics against Botella & Peyret
+        reference values, including energy/enstrophy/palinstrophy.
+
+        Parameters
+        ----------
+        reference_csv : str, optional
+            Path to reference CSV file. If None, uses default for current Re.
+        """
+        import pandas as pd
+
+        if not mlflow.active_run():
+            log.warning("No active MLflow run - skipping validation table")
+            return
+
+        # Load reference data
+        if reference_csv is None:
+            Re = int(self.params.Re)
+            reference_csv = f"data/validation/botella/botella_Re{Re}_vortex.csv"
+
+        ref_path = Path(reference_csv)
+        if not ref_path.exists():
+            log.warning(f"Reference file not found: {ref_path}")
+            return
+
+        ref_df = pd.read_csv(ref_path, comment="#")
+        ref = ref_df.iloc[0].to_dict()
+
+        # Build validation table rows
+        rows = []
+
+        def add_row(metric_name, computed, reference, unit="", use_abs=False):
+            """Add a row to the validation table."""
+            if reference != 0 and reference is not None:
+                # For vorticity, compare absolute values (sign convention may differ)
+                if use_abs:
+                    error_pct = abs(abs(computed) - abs(reference)) / abs(reference) * 100
+                else:
+                    error_pct = abs(computed - reference) / abs(reference) * 100
+            else:
+                error_pct = 0.0
+            rows.append({
+                "Metric": metric_name,
+                "Computed": f"{computed:.6f}",
+                "Reference": f"{reference:.6f}" if reference else "-",
+                "Error (%)": f"{error_pct:.2f}" if reference else "-",
+                "Unit": unit,
+            })
+
+        # Primary vortex metrics
+        add_row("ψ_min (Primary)", self.metrics.psi_min, ref.get("psi_min"))
+        add_row("x (Primary)", self.metrics.psi_min_x, ref.get("psi_min_x"))
+        add_row("y (Primary)", self.metrics.psi_min_y, ref.get("psi_min_y"))
+        add_row("ω_center (Primary)", self.metrics.omega_center, ref.get("omega_center"), use_abs=True)
+
+        # Secondary vortex - Bottom Right
+        add_row("ψ_BR", self.metrics.psi_BR, ref.get("psi_BR"))
+        add_row("x_BR", self.metrics.psi_BR_x, ref.get("psi_BR_x"))
+        add_row("y_BR", self.metrics.psi_BR_y, ref.get("psi_BR_y"))
+
+        # Secondary vortex - Bottom Left
+        add_row("ψ_BL", self.metrics.psi_BL, ref.get("psi_BL"))
+        add_row("x_BL", self.metrics.psi_BL_x, ref.get("psi_BL_x"))
+        add_row("y_BL", self.metrics.psi_BL_y, ref.get("psi_BL_y"))
+
+        # Global quantities (no reference for these typically)
+        rows.append({
+            "Metric": "--- Global Quantities ---",
+            "Computed": "",
+            "Reference": "",
+            "Error (%)": "",
+            "Unit": "",
+        })
+        rows.append({
+            "Metric": "Energy (E)",
+            "Computed": f"{self.metrics.final_energy:.6e}",
+            "Reference": "-",
+            "Error (%)": "-",
+            "Unit": "",
+        })
+        rows.append({
+            "Metric": "Enstrophy (Z)",
+            "Computed": f"{self.metrics.final_enstrophy:.6e}",
+            "Reference": "-",
+            "Error (%)": "-",
+            "Unit": "",
+        })
+        rows.append({
+            "Metric": "Palinstrophy (P)",
+            "Computed": f"{self.metrics.final_palinstrophy:.6e}",
+            "Reference": "-",
+            "Error (%)": "-",
+            "Unit": "",
+        })
+
+        # Create DataFrame and log to MLflow
+        table_df = pd.DataFrame(rows)
+        mlflow.log_table(table_df, artifact_file="validation_metrics.json")
+        log.info("Logged validation metrics table to MLflow")
+
     # =========================================================================
     # Validation against reference FV solutions
     # =========================================================================
@@ -878,10 +980,11 @@ class LidDrivenCavitySolver(ABC):
     def compute_validation_errors(
         self, reference_dir: str = "data/validation/fv", save_plots: bool = True
     ) -> dict:
-        """Compute L2 errors against reference FV solution.
+        """Compute L2 errors against reference FV solutions.
 
-        Loads the reference solution for the current Re, evaluates computed
-        solution at reference grid coordinates, and computes relative L2 errors.
+        Computes errors against both normal FV and regularized FV solutions:
+        - FV (normal): discontinuous lid velocity at corners
+        - FV-regu: regularized/smoothed lid velocity (matches spectral corner treatment)
 
         Parameters
         ----------
@@ -893,59 +996,72 @@ class LidDrivenCavitySolver(ABC):
         Returns
         -------
         dict
-            {'u_L2_error': float, 'v_L2_error': float} or empty dict if no reference
+            L2 errors: {u_L2_error, v_L2_error, u_L2_error_regu, v_L2_error_regu}
         """
-        ref_path = Path(reference_dir) / f"Re{int(self.params.Re)}" / "solution.vts"
+        results = {}
+        Re = int(self.params.Re)
 
-        if not ref_path.exists():
-            log.warning(f"No reference solution found at {ref_path}")
-            return {}
+        # Define reference directories to compare against
+        ref_dirs = [
+            ("data/validation/fv", ""),           # normal FV
+            ("data/validation/fv-regu", "_regu"), # regularized FV
+        ]
 
-        # Load reference solution
-        ref_mesh = pv.read(str(ref_path))
-        ref_u = ref_mesh.point_data["u"]
-        ref_v = ref_mesh.point_data["v"]
+        for ref_base_dir, suffix in ref_dirs:
+            ref_path = Path(ref_base_dir) / f"Re{Re}" / "solution.vts"
 
-        # Get reference grid coordinates
-        ref_points = ref_mesh.points
-        ref_x = ref_points[:, 0]
-        ref_y = ref_points[:, 1]
+            if not ref_path.exists():
+                log.debug(f"No reference solution at {ref_path}")
+                continue
 
-        # Evaluate computed solution at reference grid points
-        # Subclasses can override _evaluate_at_points for native interpolation (e.g., spectral)
-        curr_u_at_ref, curr_v_at_ref = self._evaluate_at_points(ref_x, ref_y)
+            # Load reference solution
+            ref_mesh = pv.read(str(ref_path))
+            ref_u = ref_mesh.point_data["u"]
+            ref_v = ref_mesh.point_data["v"]
 
-        # Only compute norm on interior points (exclude boundaries where BCs differ)
-        # Use small margin to exclude boundary points
-        margin = 0.02
-        interior = (
-            (ref_x > margin) & (ref_x < self.params.Lx - margin) &
-            (ref_y > margin) & (ref_y < self.params.Ly - margin)
-        )
-        valid = interior & ~(np.isnan(curr_u_at_ref) | np.isnan(curr_v_at_ref))
-        n_valid = np.sum(valid)
-        n_total = len(ref_u)
+            # Get reference grid coordinates
+            ref_points = ref_mesh.points
+            ref_x = ref_points[:, 0]
+            ref_y = ref_points[:, 1]
 
-        if n_valid < n_total * 0.5:
-            log.warning(f"Only {n_valid}/{n_total} valid points for validation")
+            # Evaluate computed solution at reference grid points
+            curr_u_at_ref, curr_v_at_ref = self._evaluate_at_points(ref_x, ref_y)
 
-        # Compute relative L2 errors on valid interior points
-        u_error = np.linalg.norm(curr_u_at_ref[valid] - ref_u[valid]) / (
-            np.linalg.norm(ref_u[valid]) + 1e-12
-        )
-        v_error = np.linalg.norm(curr_v_at_ref[valid] - ref_v[valid]) / (
-            np.linalg.norm(ref_v[valid]) + 1e-12
-        )
+            # Only compute norm on interior points (exclude exact boundary nodes)
+            # Use small epsilon to exclude boundary nodes but keep near-boundary interior
+            margin = 1e-10
+            interior = (
+                (ref_x > margin) & (ref_x < self.params.Lx - margin) &
+                (ref_y > margin) & (ref_y < self.params.Ly - margin)
+            )
+            valid = interior & ~(np.isnan(curr_u_at_ref) | np.isnan(curr_v_at_ref))
+            n_valid = np.sum(valid)
+            n_total = len(ref_u)
 
-        log.info(f"Validation errors vs FV reference ({n_valid}/{n_total} pts): u_L2={u_error:.6e}, v_L2={v_error:.6e}")
+            if n_valid < n_total * 0.5:
+                log.warning(f"Only {n_valid}/{n_total} valid points for {ref_base_dir}")
 
-        # Save error distribution plots
-        if save_plots:
-            self._save_validation_error_plots(
-                ref_x, ref_y, ref_u, ref_v, curr_u_at_ref, curr_v_at_ref, valid
+            # Compute relative L2 errors on valid interior points
+            u_error = np.linalg.norm(curr_u_at_ref[valid] - ref_u[valid]) / (
+                np.linalg.norm(ref_u[valid]) + 1e-12
+            )
+            v_error = np.linalg.norm(curr_v_at_ref[valid] - ref_v[valid]) / (
+                np.linalg.norm(ref_v[valid]) + 1e-12
             )
 
-        return {"u_L2_error": float(u_error), "v_L2_error": float(v_error)}
+            ref_label = "FV-regu" if suffix else "FV"
+            log.info(f"L2 errors vs {ref_label} ({n_valid}/{n_total} pts): u={u_error:.6e}, v={v_error:.6e}")
+
+            results[f"u_L2_error{suffix}"] = float(u_error)
+            results[f"v_L2_error{suffix}"] = float(v_error)
+
+            # Save error distribution plots (only for normal FV to avoid clutter)
+            if save_plots and not suffix:
+                self._save_validation_error_plots(
+                    ref_x, ref_y, ref_u, ref_v, curr_u_at_ref, curr_v_at_ref, valid
+                )
+
+        return results
 
     def _save_validation_error_plots(
         self, ref_x, ref_y, ref_u, ref_v, curr_u, curr_v, valid_mask

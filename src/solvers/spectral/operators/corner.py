@@ -48,6 +48,13 @@ class CornerTreatment(ABC):
         """Return (u, v) boundary condition on stationary walls."""
         pass
 
+    def uses_modified_convection(self) -> bool:
+        """Return True if this method requires modified convection terms.
+
+        Only the subtraction method (removed) required this.
+        """
+        return False
+
 
 # =============================================================================
 # Method 1: Smoothing (Cosine smoothing near corners)

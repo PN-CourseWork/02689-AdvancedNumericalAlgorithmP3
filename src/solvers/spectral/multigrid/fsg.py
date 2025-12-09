@@ -35,6 +35,44 @@ from solvers.spectral.operators.corner import (
 log = logging.getLogger(__name__)
 
 
+def _build_interpolation_matrix_1d(nodes_inner, nodes_full):
+    """Build interpolation matrix from inner grid to full grid.
+
+    Uses Chebyshev polynomial interpolation for spectral accuracy.
+    Given values f_inner at nodes_inner, computes f_full = Interp @ f_inner.
+
+    Parameters
+    ----------
+    nodes_inner : np.ndarray
+        Inner grid nodes (excludes boundary points)
+    nodes_full : np.ndarray
+        Full grid nodes (includes boundary points)
+
+    Returns
+    -------
+    Interp : np.ndarray
+        Interpolation matrix of shape (n_full, n_inner)
+    """
+    from numpy.polynomial.chebyshev import chebvander
+
+    n_inner = len(nodes_inner)
+
+    # Map physical domain to [-1, 1] for Chebyshev polynomials
+    a, b = nodes_full[0], nodes_full[-1]
+    xi_inner = 2 * (nodes_inner - a) / (b - a) - 1
+    xi_full = 2 * (nodes_full - a) / (b - a) - 1
+
+    # Vandermonde matrices: V[i,k] = T_k(xi[i])
+    V_inner = chebvander(xi_inner, n_inner - 1)  # (n_inner, n_inner)
+    V_full = chebvander(xi_full, n_inner - 1)    # (n_full, n_inner)
+
+    # Interpolation: f_full = V_full @ coeffs, where coeffs = V_inner^{-1} @ f_inner
+    # So: f_full = (V_full @ V_inner^{-1}) @ f_inner = Interp @ f_inner
+    Interp = V_full @ np.linalg.solve(V_inner, np.eye(n_inner))
+
+    return Interp
+
+
 # =============================================================================
 # Numba JIT-compiled kernels for performance-critical operations
 # =============================================================================
@@ -863,6 +901,14 @@ class MultigridSmoother:
         if self.tau_p is not None:
             lvl.R_p += self.tau_p
 
+        # Add FAS tau correction if set (for coarse grid solves in V-cycle)
+        if self.tau_u is not None:
+            lvl.R_u[:] += self.tau_u
+        if self.tau_v is not None:
+            lvl.R_v[:] += self.tau_v
+        if self.tau_p is not None:
+            lvl.R_p[:] += self.tau_p
+
     def _enforce_boundary_conditions(self, u: np.ndarray, v: np.ndarray):
         """Enforce boundary conditions using cached values."""
         u_2d = u.reshape(self.level.shape_full)
@@ -1060,6 +1106,13 @@ def solve_fsg(
     if corner_treatment is None:
         corner_treatment = create_corner_treatment(method="smoothing")
 
+    # Check if using subtraction method (needs fallback to smoothing on coarse grids)
+    uses_subtraction = corner_treatment.uses_modified_convection()
+    if uses_subtraction:
+        smoothing_treatment = create_corner_treatment(method="smoothing")
+        # Minimum N for subtraction method - use smoothing below this
+        min_n_for_subtraction = 8
+
     total_iterations = 0
     n_levels = len(levels)
 
@@ -1075,6 +1128,14 @@ def solve_fsg(
             f"FSG Level {level_idx}/{n_levels - 1}: N={level.n}, "
             f"tolerance={level_tol:.2e}"
         )
+
+        # Select corner treatment for this level
+        # For subtraction: use smoothing on coarse levels for stability
+        if uses_subtraction and level.n < min_n_for_subtraction:
+            level_corner_treatment = smoothing_treatment
+            log.debug(f"  Level {level_idx} (N={level.n}): using smoothing (N < {min_n_for_subtraction})")
+        else:
+            level_corner_treatment = corner_treatment
 
         # Initialize from previous level or zeros
         if level_idx == 0:
@@ -1103,6 +1164,7 @@ def solve_fsg(
         converged = False
         level_iters = 0
 
+        diverged = False
         for iteration in range(max_iterations):
             u_res, v_res = smoother.step()
             level_iters += 1
@@ -1119,6 +1181,14 @@ def solve_fsg(
                 )
                 break
 
+            # Early exit on NaN/Inf (diverged)
+            if not np.isfinite(max_res):
+                diverged = True
+                log.warning(
+                    f"  Level {level_idx} diverged (NaN/Inf) at iteration {level_iters}, exiting early"
+                )
+                break
+
             # Logging every 100 iterations
             if iteration > 0 and iteration % 100 == 0:
                 cont_res = smoother.get_continuity_residual()
@@ -1126,6 +1196,10 @@ def solve_fsg(
                     f"  Level {level_idx} iter {iteration}: "
                     f"u_res={u_res:.2e}, v_res={v_res:.2e}, cont={cont_res:.2e}"
                 )
+
+        # Exit early if diverged (NaN/Inf detected)
+        if diverged:
+            break
 
         if not converged and not is_finest:
             log.warning(
@@ -1138,7 +1212,7 @@ def solve_fsg(
             )
 
     finest_level = levels[-1]
-    final_converged = converged
+    final_converged = converged and not diverged
 
     log.info(
         f"FSG completed: {total_iterations} total iterations, converged={final_converged}"

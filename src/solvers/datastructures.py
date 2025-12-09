@@ -75,6 +75,7 @@ class Metrics:
     psi_min: float = 0.0  # Minimum streamfunction value
     psi_min_x: float = 0.0  # x-coordinate of minimum
     psi_min_y: float = 0.0  # y-coordinate of minimum
+    omega_center: float = 0.0  # Vorticity at primary vortex center
 
     # Maximum vorticity
     omega_max: float = 0.0  # Maximum vorticity value

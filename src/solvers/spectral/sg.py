@@ -286,6 +286,8 @@ class SGSolver(LidDrivenCavitySolver):
 
         Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
 
+        Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
+
         Parameters
         ----------
         u, v : np.ndarray
