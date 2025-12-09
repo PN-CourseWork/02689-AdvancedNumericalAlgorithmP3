@@ -8,7 +8,7 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Convergence
-sweep_name: regu-Re1000
+sweep_name: regu-Re1000-b
 
 # Use Saad/polynomial corner treatment for regularized problem
 solver:
@@ -18,4 +18,4 @@ hydra:
   sweeper:
     params:
       Re: 1000
-      N: 48, 64, 80, 96, 112, 128
+      N: 26, 28, 32, 36, 40, 44, 48, 64, 80, 96, 112, 128

@@ -71,6 +71,28 @@ class Metrics:
     final_enstrophy: float = 0.0
     final_palinstrophy: float = 0.0
 
+    # Primary vortex (global minimum of streamfunction)
+    psi_min: float = 0.0  # Minimum streamfunction value
+    psi_min_x: float = 0.0  # x-coordinate of minimum
+    psi_min_y: float = 0.0  # y-coordinate of minimum
+
+    # Maximum vorticity
+    omega_max: float = 0.0  # Maximum vorticity value
+    omega_max_x: float = 0.0  # x-coordinate of max vorticity
+    omega_max_y: float = 0.0  # y-coordinate of max vorticity
+
+    # Secondary corner vortices (BR=bottom-right, BL=bottom-left, TL=top-left)
+    # Each stores the local extremum of psi and its location
+    psi_BR: float = 0.0
+    psi_BR_x: float = 0.0
+    psi_BR_y: float = 0.0
+    psi_BL: float = 0.0
+    psi_BL_x: float = 0.0
+    psi_BL_y: float = 0.0
+    psi_TL: float = 0.0
+    psi_TL_x: float = 0.0
+    psi_TL_y: float = 0.0
+
     def to_mlflow(self) -> dict:
         """Convert to MLflow-compatible dict (bools as int, skip inf)."""
         return {

@@ -7,7 +7,7 @@ defaults:
 
 # MLflow experiment
 experiment_name: LDC-Validation
-sweep_name: ghia-Re${Re}
+sweep_name: ghia-HPC
 
 # Validation parameters
 
@@ -15,6 +15,6 @@ hydra:
   sweeper:
     params:
       # Sweep over spectral solver types
-      solver: spectral/fsg #,spectral/fsg
-      Re: 100
-      N: 12, 14, 16, 18, 20
+      solver: spectral/fsg #,spectral/vmg #, spectral/vmg
+      Re: 400, 1000
+      N: 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 46, 50, 56, 60, 64, 68, 74, 82, 86, 90

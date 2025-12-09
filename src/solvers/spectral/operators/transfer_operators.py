@@ -20,7 +20,35 @@ from enum import Enum
 from typing import Tuple
 
 import numpy as np
+from numba import njit
 from scipy.fft import dct
+
+
+# =============================================================================
+# Numba JIT-compiled kernels for transfer operators
+# =============================================================================
+
+
+@njit(cache=True, fastmath=True)
+def _evaluate_chebyshev_polynomial(coeffs: np.ndarray, n_fine: int) -> np.ndarray:
+    """JIT-compiled Chebyshev polynomial evaluation at fine grid points.
+
+    Evaluates: f(x_i) = sum_{k=0}^{N_c} c_k * T_k(x_i)
+    where x_i = cos(pi*i/N_f) are fine Chebyshev-Lobatto nodes
+    and T_k(x) = cos(k * arccos(x)) = cos(k * theta)
+    """
+    n_coarse = len(coeffs)
+    N_f = n_fine - 1
+    u_fine = np.zeros(n_fine)
+
+    for i in range(n_fine):
+        theta_fine = np.pi * i / N_f
+        total = 0.0
+        for k in range(n_coarse):
+            total += coeffs[k] * np.cos(k * theta_fine)
+        u_fine[i] = total
+
+    return u_fine
 
 
 class ProlongationMethod(Enum):
@@ -224,20 +252,8 @@ class FFTProlongation(Prolongation):
         coeffs[0] /= 2
         coeffs[-1] /= 2
 
-        # Step 2: Evaluate Chebyshev polynomial at fine grid points
-        # f(x_i) = sum_{k=0}^{N_c} c_k * T_k(x_i)
-        # where x_i = cos(pi*i/N_f) are fine Chebyshev-Lobatto nodes
-        N_f = n_fine - 1
-        u_fine = np.zeros(n_fine)
-
-        for i in range(n_fine):
-            # Chebyshev-Lobatto node on fine grid
-            theta_fine = np.pi * i / N_f
-            # Evaluate polynomial: sum of c_k * cos(k * theta)
-            for k in range(n_coarse):
-                u_fine[i] += coeffs[k] * np.cos(k * theta_fine)
-
-        return u_fine
+        # Step 2: Evaluate Chebyshev polynomial at fine grid points (JIT-compiled)
+        return _evaluate_chebyshev_polynomial(coeffs, n_fine)
 
 
 class FFTRestriction(Restriction):

@@ -5,11 +5,14 @@ method for incompressible Navier-Stokes equations"
 
 Implements:
 - FSG (Full Single Grid): Sequential solve from coarse to fine
-- VMG (V-cycle Multigrid with FAS): Coming in Phase 2
 - FMG (Full Multigrid): Coming in Phase 3
 
 Transfer operators (prolongation/restriction) are pluggable via Hydra config.
-Corner singularity treatment is also pluggable.
+
+Performance optimizations:
+- Numba JIT-compiled kernels for derivatives and residuals
+- Cached transposed matrices to avoid repeated transposition
+- Pre-computed boundary conditions
 """
 
 import logging
@@ -17,10 +20,12 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
 import numpy as np
+from numba import njit, prange
 
 from solvers.spectral.operators.transfer_operators import (
     TransferOperators,
     create_transfer_operators,
+    InjectionRestriction,
 )
 from solvers.spectral.operators.corner import (
     CornerTreatment,
@@ -28,6 +33,187 @@ from solvers.spectral.operators.corner import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Numba JIT-compiled kernels for performance-critical operations
+# =============================================================================
+
+
+@njit(cache=True, fastmath=True)
+def _compute_derivatives_and_laplacian(
+    u_2d: np.ndarray,
+    v_2d: np.ndarray,
+    Dx_1d: np.ndarray,
+    Dy_1d_T: np.ndarray,
+    Dxx_1d: np.ndarray,
+    Dyy_1d_T: np.ndarray,
+    du_dx: np.ndarray,
+    du_dy: np.ndarray,
+    dv_dx: np.ndarray,
+    dv_dy: np.ndarray,
+    lap_u: np.ndarray,
+    lap_v: np.ndarray,
+):
+    """JIT-compiled computation of all velocity derivatives and Laplacians.
+
+    Computes:
+    - du/dx, du/dy, dv/dx, dv/dy (first derivatives)
+    - lap_u = d²u/dx² + d²u/dy², lap_v = d²v/dx² + d²v/dy² (Laplacians)
+
+    All outputs are flattened 1D arrays.
+    """
+    n = u_2d.shape[0]
+
+    # Compute all matrix products
+    # du/dx = Dx @ u, du/dy = u @ Dy.T
+    du_dx_2d = Dx_1d @ u_2d
+    du_dy_2d = u_2d @ Dy_1d_T
+    dv_dx_2d = Dx_1d @ v_2d
+    dv_dy_2d = v_2d @ Dy_1d_T
+
+    # Laplacians: lap_u = Dxx @ u + u @ Dyy.T
+    lap_u_2d = Dxx_1d @ u_2d + u_2d @ Dyy_1d_T
+    lap_v_2d = Dxx_1d @ v_2d + v_2d @ Dyy_1d_T
+
+    # Flatten to output arrays
+    idx = 0
+    for i in range(n):
+        for j in range(n):
+            du_dx[idx] = du_dx_2d[i, j]
+            du_dy[idx] = du_dy_2d[i, j]
+            dv_dx[idx] = dv_dx_2d[i, j]
+            dv_dy[idx] = dv_dy_2d[i, j]
+            lap_u[idx] = lap_u_2d[i, j]
+            lap_v[idx] = lap_v_2d[i, j]
+            idx += 1
+
+    return du_dx_2d, dv_dy_2d  # Return these for divergence computation
+
+
+@njit(cache=True, fastmath=True)
+def _compute_momentum_residuals(
+    u: np.ndarray,
+    v: np.ndarray,
+    du_dx: np.ndarray,
+    du_dy: np.ndarray,
+    dv_dx: np.ndarray,
+    dv_dy: np.ndarray,
+    lap_u: np.ndarray,
+    lap_v: np.ndarray,
+    dp_dx: np.ndarray,
+    dp_dy: np.ndarray,
+    nu: float,
+    R_u: np.ndarray,
+    R_v: np.ndarray,
+):
+    """JIT-compiled momentum residual computation.
+
+    Computes: R_u = -conv_u - dp/dx + nu*lap_u
+              R_v = -conv_v - dp/dy + nu*lap_v
+    where conv_u = u*du/dx + v*du/dy, conv_v = u*dv/dx + v*dv/dy
+    """
+    n = u.shape[0]
+    for i in range(n):
+        conv_u = u[i] * du_dx[i] + v[i] * du_dy[i]
+        conv_v = u[i] * dv_dx[i] + v[i] * dv_dy[i]
+        R_u[i] = -conv_u - dp_dx[i] + nu * lap_u[i]
+        R_v[i] = -conv_v - dp_dy[i] + nu * lap_v[i]
+
+
+@njit(cache=True, fastmath=True)
+def _compute_continuity_residual(
+    du_dx_2d: np.ndarray,
+    dv_dy_2d: np.ndarray,
+    beta_squared: float,
+    R_p: np.ndarray,
+):
+    """JIT-compiled continuity residual on inner grid.
+
+    Computes: R_p = -beta² * (du/dx + dv/dy) on interior points only
+    """
+    n = du_dx_2d.shape[0]
+    idx = 0
+    for i in range(1, n - 1):
+        for j in range(1, n - 1):
+            R_p[idx] = -beta_squared * (du_dx_2d[i, j] + dv_dy_2d[i, j])
+            idx += 1
+
+
+@njit(cache=True, fastmath=True)
+def _interpolate_and_differentiate_pressure(
+    p_inner: np.ndarray,
+    Interp_x: np.ndarray,
+    Interp_y_T: np.ndarray,
+    Dx_1d: np.ndarray,
+    Dy_1d_T: np.ndarray,
+    dp_dx: np.ndarray,
+    dp_dy: np.ndarray,
+    shape_inner: tuple,
+):
+    """JIT-compiled pressure interpolation and gradient computation.
+
+    Combines:
+    1. Interpolation from inner to full grid: p_full = Interp_x @ p_inner @ Interp_y.T
+    2. Gradient computation: dp/dx = Dx @ p_full, dp/dy = p_full @ Dy.T
+    """
+    # Reshape to 2D
+    ni, nj = shape_inner
+    p_inner_2d = p_inner.reshape((ni, nj))
+
+    # Interpolate: p_full = Interp_x @ p_inner @ Interp_y.T
+    p_full_2d = Interp_x @ p_inner_2d @ Interp_y_T
+
+    # Compute gradients
+    dp_dx_2d = Dx_1d @ p_full_2d
+    dp_dy_2d = p_full_2d @ Dy_1d_T
+
+    # Flatten to output
+    n = dp_dx_2d.shape[0]
+    idx = 0
+    for i in range(n):
+        for j in range(n):
+            dp_dx[idx] = dp_dx_2d[i, j]
+            dp_dy[idx] = dp_dy_2d[i, j]
+            idx += 1
+
+
+def _build_interpolation_matrix_1d(nodes_inner, nodes_full):
+    """Build interpolation matrix from inner grid to full grid.
+
+    Uses Chebyshev polynomial interpolation for spectral accuracy.
+    Given values f_inner at nodes_inner, computes f_full = Interp @ f_inner.
+
+    Parameters
+    ----------
+    nodes_inner : np.ndarray
+        Inner grid nodes (excludes boundary points)
+    nodes_full : np.ndarray
+        Full grid nodes (includes boundary points)
+
+    Returns
+    -------
+    Interp : np.ndarray
+        Interpolation matrix of shape (n_full, n_inner)
+    """
+    from numpy.polynomial.chebyshev import chebvander
+
+    n_inner = len(nodes_inner)
+
+    # Map physical domain to [-1, 1] for Chebyshev polynomials
+    a, b = nodes_full[0], nodes_full[-1]
+    xi_inner = 2 * (nodes_inner - a) / (b - a) - 1
+    xi_full = 2 * (nodes_full - a) / (b - a) - 1
+
+    # Vandermonde matrices: V[i,k] = T_k(xi[i])
+    V_inner = chebvander(xi_inner, n_inner - 1)  # (n_inner, n_inner)
+    V_full = chebvander(xi_full, n_inner - 1)    # (n_full, n_inner)
+
+    # Interpolation: f_full = V_full @ coeffs, where coeffs = V_inner^{-1} @ f_inner
+    # So: f_full = (V_full @ V_inner^{-1}) @ f_inner = Interp @ f_inner
+    Interp = V_full @ np.linalg.solve(V_inner, np.eye(n_inner))
+
+    return Interp
 
 
 # =============================================================================
@@ -71,14 +257,24 @@ class SpectralLevel:
     dx_min: float
     dy_min: float
 
-    # Differentiation matrices (2D Kronecker form)
+    # 1D differentiation matrices (for O(N³) tensor product operations)
+    Dx_1d: np.ndarray  # 1D d/dx matrix (N+1) × (N+1)
+    Dy_1d: np.ndarray  # 1D d/dy matrix (N+1) × (N+1)
+    Dxx_1d: np.ndarray  # 1D d²/dx² matrix (N+1) × (N+1)
+    Dyy_1d: np.ndarray  # 1D d²/dy² matrix (N+1) × (N+1)
+
+    # 2D Kronecker form (kept for compatibility, but prefer 1D for performance)
     Dx: np.ndarray  # d/dx on full grid
     Dy: np.ndarray  # d/dy on full grid
     Dxx: np.ndarray  # d²/dx² on full grid
     Dyy: np.ndarray  # d²/dy² on full grid
     Laplacian: np.ndarray  # ∇² on full grid
-    Dx_inner: np.ndarray  # d/dx on inner grid
-    Dy_inner: np.ndarray  # d/dy on inner grid
+    Dx_inner: np.ndarray  # d/dx on inner grid (deprecated, kept for compatibility)
+    Dy_inner: np.ndarray  # d/dy on inner grid (deprecated, kept for compatibility)
+
+    # Interpolation matrices from inner to full grid (for pressure gradient)
+    Interp_x: np.ndarray  # 1D interpolation in x direction
+    Interp_y: np.ndarray  # 1D interpolation in y direction
 
     # Solution arrays (flattened)
     u: np.ndarray  # velocity u on full grid
@@ -166,28 +362,32 @@ def build_spectral_level(
     dx_min = np.min(np.diff(x_nodes))
     dy_min = np.min(np.diff(y_nodes))
 
-    # Build differentiation matrices
+    # Build 1D differentiation matrices (stored for O(N³) tensor product operations)
     Dx_1d = basis_x.diff_matrix(x_nodes)
     Dy_1d = basis_y.diff_matrix(y_nodes)
+    Dxx_1d = Dx_1d @ Dx_1d
+    Dyy_1d = Dy_1d @ Dy_1d
 
+    # Build 2D Kronecker matrices (kept for compatibility)
     Ix = np.eye(n + 1)
     Iy = np.eye(n + 1)
     Dx = np.kron(Dx_1d, Iy)
     Dy = np.kron(Ix, Dy_1d)
-
-    Dxx_1d = Dx_1d @ Dx_1d
-    Dyy_1d = Dy_1d @ Dy_1d
     Dxx = np.kron(Dxx_1d, Iy)
     Dyy = np.kron(Ix, Dyy_1d)
     Laplacian = Dxx + Dyy
 
-    # Inner grid diff matrices
+    # Inner grid diff matrices (deprecated, but kept for compatibility)
     Dx_inner_1d = basis_x.diff_matrix(x_inner)
     Dy_inner_1d = basis_y.diff_matrix(y_inner)
     Ix_inner = np.eye(n - 1)
     Iy_inner = np.eye(n - 1)
     Dx_inner = np.kron(Dx_inner_1d, Iy_inner)
     Dy_inner = np.kron(Ix_inner, Dy_inner_1d)
+
+    # Build interpolation matrices from inner to full grid (for pressure gradient)
+    Interp_x = _build_interpolation_matrix_1d(x_inner, x_nodes)
+    Interp_y = _build_interpolation_matrix_1d(y_inner, y_nodes)
 
     # Allocate solution and work arrays
     return SpectralLevel(
@@ -203,6 +403,12 @@ def build_spectral_level(
         shape_inner=shape_inner,
         dx_min=dx_min,
         dy_min=dy_min,
+        # 1D matrices for tensor product operations
+        Dx_1d=Dx_1d,
+        Dy_1d=Dy_1d,
+        Dxx_1d=Dxx_1d,
+        Dyy_1d=Dyy_1d,
+        # 2D Kronecker matrices (kept for compatibility)
         Dx=Dx,
         Dy=Dy,
         Dxx=Dxx,
@@ -210,6 +416,8 @@ def build_spectral_level(
         Laplacian=Laplacian,
         Dx_inner=Dx_inner,
         Dy_inner=Dy_inner,
+        Interp_x=Interp_x,
+        Interp_y=Interp_y,
         # Solution arrays
         u=np.zeros(n_full),
         v=np.zeros(n_full),
@@ -247,6 +455,7 @@ def build_hierarchy(
     basis_y,
     Lx: float = 1.0,
     Ly: float = 1.0,
+    coarsest_n: int = 12,
 ) -> List[SpectralLevel]:
     """Build multigrid hierarchy from fine to coarse.
 
@@ -255,9 +464,14 @@ def build_hierarchy(
     n_fine : int
         Polynomial order on finest grid
     n_levels : int
-        Number of multigrid levels
+        Maximum number of multigrid levels (may use fewer if coarsest_n limit reached)
     basis_x, basis_y : Basis objects
         Spectral basis objects
+    Lx, Ly : float
+        Domain dimensions
+    coarsest_n : int
+        Minimum polynomial order for coarsest grid (default 12).
+        Coarse grids need sufficient resolution to capture physics.
 
     Returns
     -------
@@ -265,13 +479,15 @@ def build_hierarchy(
         List of levels, index 0 = coarsest, index -1 = finest
     """
     # Compute polynomial orders for each level (full coarsening: N/2)
+    # Stop when next coarsening would go below coarsest_n
     orders = []
     n = n_fine
     for _ in range(n_levels):
         orders.append(n)
-        n = n // 2
-        if n < 3:  # Minimum usable grid
+        n_next = n // 2
+        if n_next < coarsest_n:
             break
+        n = n_next
 
     # Reverse so coarsest is first
     orders = orders[::-1]
@@ -298,10 +514,14 @@ def prolongate_solution(
     level_coarse: SpectralLevel,
     level_fine: SpectralLevel,
     transfer_ops: TransferOperators,
+    lid_velocity: float = 1.0,
 ) -> None:
     """Prolongate solution (u, v, p) from coarse level to fine level.
 
     Modifies level_fine.u, level_fine.v, level_fine.p in place.
+
+    IMPORTANT: After spectral interpolation, boundary conditions are
+    re-enforced explicitly to avoid Gibbs-type oscillations at boundaries.
 
     Parameters
     ----------
@@ -311,6 +531,8 @@ def prolongate_solution(
         Target (fine) level to receive interpolated solution
     transfer_ops : TransferOperators
         Configured transfer operators for prolongation
+    lid_velocity : float
+        Lid velocity for boundary condition (default: 1.0)
     """
     # Prolongate velocities (full grid)
     u_coarse_2d = level_coarse.u.reshape(level_coarse.shape_full)
@@ -323,10 +545,25 @@ def prolongate_solution(
         v_coarse_2d, level_fine.shape_full
     )
 
+    # Re-enforce boundary conditions after interpolation
+    # (spectral interpolation can introduce Gibbs oscillations at boundaries)
+    # Bottom: u=0, v=0
+    u_fine_2d[0, :] = 0.0
+    v_fine_2d[0, :] = 0.0
+    # Top: u=lid_velocity, v=0
+    u_fine_2d[-1, :] = lid_velocity
+    v_fine_2d[-1, :] = 0.0
+    # Left: u=0, v=0
+    u_fine_2d[:, 0] = 0.0
+    v_fine_2d[:, 0] = 0.0
+    # Right: u=0, v=0
+    u_fine_2d[:, -1] = 0.0
+    v_fine_2d[:, -1] = 0.0
+
     level_fine.u[:] = u_fine_2d.ravel()
     level_fine.v[:] = v_fine_2d.ravel()
 
-    # Prolongate pressure (inner grid)
+    # Prolongate pressure (inner grid - no boundary conditions needed)
     p_coarse_2d = level_coarse.p.reshape(level_coarse.shape_inner)
     p_fine_2d = transfer_ops.prolongation.prolongate_2d(
         p_coarse_2d, level_fine.shape_inner
@@ -340,6 +577,128 @@ def prolongate_solution(
 
 
 # =============================================================================
+# Restriction (Fine to Coarse)
+# =============================================================================
+
+
+def restrict_solution(
+    level_fine: SpectralLevel,
+    level_coarse: SpectralLevel,
+    transfer_ops: TransferOperators,
+) -> None:
+    """Restrict solution (u, v, p) from fine level to coarse level.
+
+    Uses direct injection for variables (FAS scheme requirement).
+    This is critical: coarse GLL points are subsets of fine GLL points,
+    so injection preserves the exact solution values.
+
+    Parameters
+    ----------
+    level_fine : SpectralLevel
+        Source (fine) level
+    level_coarse : SpectralLevel
+        Target (coarse) level
+    transfer_ops : TransferOperators
+        Configured transfer operators (not used - always uses injection)
+    """
+    # FAS requires direct injection for solution restriction
+    # (coarse GLL points are subsets of fine GLL points)
+    injection = InjectionRestriction()
+
+    # Restrict velocities (full grid)
+    u_fine_2d = level_fine.u.reshape(level_fine.shape_full)
+    v_fine_2d = level_fine.v.reshape(level_fine.shape_full)
+
+    u_coarse_2d = injection.restrict_2d(u_fine_2d, level_coarse.shape_full)
+    v_coarse_2d = injection.restrict_2d(v_fine_2d, level_coarse.shape_full)
+
+    level_coarse.u[:] = u_coarse_2d.ravel()
+    level_coarse.v[:] = v_coarse_2d.ravel()
+
+    # Restrict pressure (inner grid)
+    p_fine_2d = level_fine.p.reshape(level_fine.shape_inner)
+    p_coarse_2d = injection.restrict_2d(p_fine_2d, level_coarse.shape_inner)
+    level_coarse.p[:] = p_coarse_2d.ravel()
+
+    log.debug(
+        f"Restricted solution from level {level_fine.level_idx} "
+        f"(N={level_fine.n}) to level {level_coarse.level_idx} (N={level_coarse.n})"
+    )
+
+
+def restrict_residual(
+    level_fine: SpectralLevel,
+    level_coarse: SpectralLevel,
+    transfer_ops: TransferOperators,
+) -> None:
+    """Restrict residuals (R_u, R_v, R_p) from fine to coarse level.
+
+    Uses FFT-based restriction for residuals (spectral truncation).
+
+    Per Zhang & Xi (2010), Section 3.3:
+    "In the PN − PN−2 method, the boundary values are already known for
+    velocities and unnecessary for pressure, so the residuals and corrections
+    on the boundary points are all set to zero."
+
+    Parameters
+    ----------
+    level_fine : SpectralLevel
+        Source (fine) level with computed residuals
+    level_coarse : SpectralLevel
+        Target (coarse) level to receive restricted residuals
+    transfer_ops : TransferOperators
+        Configured transfer operators
+    """
+    # Restrict momentum residuals (full grid)
+    # Per paper Section 3.3: Use FFT-based restriction with high-frequency truncation
+    #
+    # IMPORTANT: Zero FINE grid boundaries BEFORE restriction!
+    # The residuals at boundary nodes are garbage (BCs are enforced separately).
+    # If we don't zero them before FFT restriction, they pollute interior values
+    # through spectral truncation.
+    R_u_fine_2d = level_fine.R_u.reshape(level_fine.shape_full).copy()
+    R_v_fine_2d = level_fine.R_v.reshape(level_fine.shape_full).copy()
+
+    # Zero fine grid boundaries BEFORE restriction
+    R_u_fine_2d[0, :] = 0.0
+    R_u_fine_2d[-1, :] = 0.0
+    R_u_fine_2d[:, 0] = 0.0
+    R_u_fine_2d[:, -1] = 0.0
+    R_v_fine_2d[0, :] = 0.0
+    R_v_fine_2d[-1, :] = 0.0
+    R_v_fine_2d[:, 0] = 0.0
+    R_v_fine_2d[:, -1] = 0.0
+
+    R_u_coarse_2d = transfer_ops.restriction.restrict_2d(
+        R_u_fine_2d, level_coarse.shape_full
+    )
+    R_v_coarse_2d = transfer_ops.restriction.restrict_2d(
+        R_v_fine_2d, level_coarse.shape_full
+    )
+
+    # Also zero coarse grid boundaries after restriction (belt and suspenders)
+    # "residuals and corrections on the boundary points are all set to zero"
+    R_u_coarse_2d[0, :] = 0.0
+    R_u_coarse_2d[-1, :] = 0.0
+    R_u_coarse_2d[:, 0] = 0.0
+    R_u_coarse_2d[:, -1] = 0.0
+    R_v_coarse_2d[0, :] = 0.0
+    R_v_coarse_2d[-1, :] = 0.0
+    R_v_coarse_2d[:, 0] = 0.0
+    R_v_coarse_2d[:, -1] = 0.0
+
+    level_coarse.R_u[:] = R_u_coarse_2d.ravel()
+    level_coarse.R_v[:] = R_v_coarse_2d.ravel()
+
+    # Restrict continuity residual (inner grid - already excludes boundaries)
+    R_p_fine_2d = level_fine.R_p.reshape(level_fine.shape_inner)
+    R_p_coarse_2d = transfer_ops.restriction.restrict_2d(
+        R_p_fine_2d, level_coarse.shape_inner
+    )
+    level_coarse.R_p[:] = R_p_coarse_2d.ravel()
+
+
+# =============================================================================
 # Level-Specific Solver Routines
 # =============================================================================
 
@@ -348,6 +707,7 @@ class MultigridSmoother:
     """Performs RK4 smoothing iterations on a single level.
 
     Encapsulates the time-stepping logic for one multigrid level.
+    Supports FAS scheme by allowing external forcing terms (tau correction).
     """
 
     def __init__(
@@ -363,73 +723,53 @@ class MultigridSmoother:
     ):
         self.level = level
         self.Re = Re
+        self.nu = 1.0 / Re  # Cache viscosity
         self.beta_squared = beta_squared
         self.lid_velocity = lid_velocity
         self.CFL = CFL
         self.Lx = Lx
         self.Ly = Ly
 
-        # Use subtraction method on all levels with corner exclusion for stability
+        # FAS forcing terms (tau correction from fine grid)
+        # These are ADDED to the computed residuals during coarse grid solve
+        self.tau_u = None
+        self.tau_v = None
+        self.tau_p = None
+
         self.corner_treatment = corner_treatment
-        self._uses_modified_convection = corner_treatment.uses_modified_convection()
 
-        if self._uses_modified_convection:
-            # Cache singular velocity and derivatives at this level's grid points
-            X_flat = level.X.ravel()
-            Y_flat = level.Y.ravel()
-
-            u_s, v_s = corner_treatment.get_singular_velocity(X_flat, Y_flat, Lx, Ly)
-            self._u_s = u_s.ravel()
-            self._v_s = v_s.ravel()
-
-            dus_dx, dus_dy, dvs_dx, dvs_dy = (
-                corner_treatment.get_singular_velocity_derivatives(
-                    X_flat, Y_flat, Lx, Ly
-                )
-            )
-
-            # Create corner exclusion mask: don't apply modified convection very close to corners
-            # The singular derivatives go like r^(λ-2) ≈ r^(-0.45) which blows up at corners
-            # Using a cutoff radius based on grid spacing ensures numerical stability
-            corner_radius = 2.5 * level.dx_min  # Exclude points within ~2.5 grid spacings
-
-            # Distance from each corner
-            r_left = np.sqrt(X_flat**2 + (Y_flat - Ly)**2)  # Distance from (0, Ly)
-            r_right = np.sqrt((X_flat - Lx)**2 + (Y_flat - Ly)**2)  # Distance from (Lx, Ly)
-
-            # Mask: 1.0 where we apply full terms, 0.0 near corners
-            corner_mask = np.ones_like(X_flat)
-            corner_mask = np.where(r_left < corner_radius, 0.0, corner_mask)
-            corner_mask = np.where(r_right < corner_radius, 0.0, corner_mask)
-            self._corner_mask = corner_mask.ravel()
-
-            # Apply mask to singular velocities and derivatives
-            self._u_s = self._u_s * self._corner_mask
-            self._v_s = self._v_s * self._corner_mask
-            self._dus_dx = dus_dx.ravel() * self._corner_mask
-            self._dus_dy = dus_dy.ravel() * self._corner_mask
-            self._dvs_dx = dvs_dx.ravel() * self._corner_mask
-            self._dvs_dy = dvs_dy.ravel() * self._corner_mask
-
-            # Precompute constant term: u_s·∇u_s (singular self-advection)
-            self._conv_us_us = self._u_s * self._dus_dx + self._v_s * self._dus_dy
-            self._conv_vs_vs = self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
-
-    def _apply_lid_boundary(self, u_2d: np.ndarray, v_2d: np.ndarray):
-        """Apply lid boundary condition using corner treatment."""
-        x_lid = self.level.X[:, -1]
-        y_lid = self.level.Y[:, -1]
-
-        u_lid, v_lid = self.corner_treatment.get_lid_velocity(
-            x_lid,
-            y_lid,
-            lid_velocity=self.lid_velocity,
-            Lx=self.Lx,
-            Ly=self.Ly,
+        # ========== OPTIMIZATION: Cache boundary conditions ==========
+        # Pre-compute and cache lid velocity (it never changes during solve)
+        x_lid = level.X[:, -1]
+        y_lid = level.Y[:, -1]
+        self._cached_u_lid, self._cached_v_lid = corner_treatment.get_lid_velocity(
+            x_lid, y_lid, lid_velocity=lid_velocity, Lx=Lx, Ly=Ly
         )
 
-        u_2d[:, -1] = u_lid
-        v_2d[:, -1] = v_lid
+        # Pre-compute wall velocities (zeros)
+        # West boundary
+        self._cached_u_west, self._cached_v_west = corner_treatment.get_wall_velocity(
+            level.X[0, :], level.Y[0, :], Lx, Ly
+        )
+        # East boundary
+        self._cached_u_east, self._cached_v_east = corner_treatment.get_wall_velocity(
+            level.X[-1, :], level.Y[-1, :], Lx, Ly
+        )
+        # South boundary
+        self._cached_u_south, self._cached_v_south = corner_treatment.get_wall_velocity(
+            level.X[:, 0], level.Y[:, 0], Lx, Ly
+        )
+
+        # ========== OPTIMIZATION: Cache transposed matrices ==========
+        self._Dy_1d_T = level.Dy_1d.T.copy()
+        self._Dyy_1d_T = level.Dyy_1d.T.copy()
+        self._Interp_y_T = level.Interp_y.T.copy()
+
+    def _apply_lid_boundary(self, u_2d: np.ndarray, v_2d: np.ndarray):
+        """Apply lid boundary condition using cached values."""
+        # OPTIMIZATION: Use pre-computed lid velocities instead of calling corner_treatment
+        u_2d[:, -1] = self._cached_u_lid
+        v_2d[:, -1] = self._cached_v_lid
 
     def _extrapolate_to_full_grid(self, inner_2d: np.ndarray) -> np.ndarray:
         """Extrapolate from inner grid to full grid."""
@@ -450,102 +790,100 @@ class MultigridSmoother:
 
         return full_2d
 
-    def _interpolate_pressure_gradient(self):
-        """Compute pressure gradient on inner grid and extrapolate to full."""
+    def _interpolate_pressure_gradient(self, p: np.ndarray):
+        """Compute pressure gradient on full grid from inner-grid pressure.
+
+        Uses spectral interpolation (Chebyshev polynomial fit) to extend
+        pressure from inner grid to full grid before differentiation.
+        OPTIMIZED: Uses JIT-compiled kernel for combined interpolation and differentiation.
+
+        Parameters
+        ----------
+        p : np.ndarray
+            Pressure array on inner grid (passed directly to avoid copy)
+        """
         lvl = self.level
 
-        # Compute on inner grid
-        lvl.dp_dx_inner[:] = lvl.Dx_inner @ lvl.p
-        lvl.dp_dy_inner[:] = lvl.Dy_inner @ lvl.p
-
-        # Extrapolate to full grid
-        dp_dx_inner_2d = lvl.dp_dx_inner.reshape(lvl.shape_inner)
-        dp_dy_inner_2d = lvl.dp_dy_inner.reshape(lvl.shape_inner)
-        dp_dx_2d = self._extrapolate_to_full_grid(dp_dx_inner_2d)
-        dp_dy_2d = self._extrapolate_to_full_grid(dp_dy_inner_2d)
-
-        lvl.dp_dx[:] = dp_dx_2d.ravel()
-        lvl.dp_dy[:] = dp_dy_2d.ravel()
+        # JIT-compiled combined interpolation and gradient computation
+        _interpolate_and_differentiate_pressure(
+            p,
+            lvl.Interp_x,
+            self._Interp_y_T,
+            lvl.Dx_1d,
+            self._Dy_1d_T,
+            lvl.dp_dx,
+            lvl.dp_dy,
+            lvl.shape_inner,
+        )
 
     def _compute_residuals(self, u: np.ndarray, v: np.ndarray, p: np.ndarray):
-        """Compute RHS residuals for RK4 pseudo time-stepping."""
+        """Compute RHS residuals for RK4 pseudo time-stepping.
+
+        Uses O(N³) tensor product operations instead of O(N⁴) Kronecker products.
+        OPTIMIZED: Uses Numba JIT-compiled kernels for performance.
+        """
         lvl = self.level
 
-        # Velocity derivatives
-        lvl.du_dx[:] = lvl.Dx @ u
-        lvl.du_dy[:] = lvl.Dy @ u
-        lvl.dv_dx[:] = lvl.Dx @ v
-        lvl.dv_dy[:] = lvl.Dy @ v
+        # Reshape to 2D for tensor product operations (views, no copy)
+        u_2d = u.reshape(lvl.shape_full)
+        v_2d = v.reshape(lvl.shape_full)
 
-        # Laplacians
-        lvl.lap_u[:] = lvl.Laplacian @ u
-        lvl.lap_v[:] = lvl.Laplacian @ v
+        # JIT-compiled: Compute all derivatives and Laplacians in one call
+        du_dx_2d, dv_dy_2d = _compute_derivatives_and_laplacian(
+            u_2d, v_2d,
+            lvl.Dx_1d, self._Dy_1d_T,
+            lvl.Dxx_1d, self._Dyy_1d_T,
+            lvl.du_dx, lvl.du_dy,
+            lvl.dv_dx, lvl.dv_dy,
+            lvl.lap_u, lvl.lap_v,
+        )
 
-        # Pressure gradient (needs p array set first)
-        old_p = lvl.p.copy()
-        lvl.p[:] = p
-        self._interpolate_pressure_gradient()
-        lvl.p[:] = old_p
+        # Compute pressure gradient
+        self._interpolate_pressure_gradient(p)
 
-        # Momentum residuals - convection terms
-        # Term 1: u_c·∇u_c (computational velocity advecting computational gradient)
-        conv_u = u * lvl.du_dx + v * lvl.du_dy
-        conv_v = u * lvl.dv_dx + v * lvl.dv_dy
+        # JIT-compiled: Compute momentum residuals
+        _compute_momentum_residuals(
+            u, v,
+            lvl.du_dx, lvl.du_dy,
+            lvl.dv_dx, lvl.dv_dy,
+            lvl.lap_u, lvl.lap_v,
+            lvl.dp_dx, lvl.dp_dy,
+            self.nu,
+            lvl.R_u, lvl.R_v,
+        )
 
-        if self._uses_modified_convection:
-            # Additional terms for subtraction method (Botella & Peyret 1998)
-            # Term 2: u_s·∇u_c (singular velocity advecting computational gradient)
-            conv_u = conv_u + self._u_s * lvl.du_dx + self._v_s * lvl.du_dy
-            conv_v = conv_v + self._u_s * lvl.dv_dx + self._v_s * lvl.dv_dy
+        # JIT-compiled: Continuity residual on inner grid
+        _compute_continuity_residual(du_dx_2d, dv_dy_2d, self.beta_squared, lvl.R_p)
 
-            # Term 3: u_c·∇u_s (computational velocity advecting singular gradient)
-            conv_u = conv_u + u * self._dus_dx + v * self._dus_dy
-            conv_v = conv_v + u * self._dvs_dx + v * self._dvs_dy
-
-            # Term 4: u_s·∇u_s (precomputed constant)
-            conv_u = conv_u + self._conv_us_us
-            conv_v = conv_v + self._conv_vs_vs
-
-        nu = 1.0 / self.Re
-
-        lvl.R_u[:] = -conv_u - lvl.dp_dx + nu * lvl.lap_u
-        lvl.R_v[:] = -conv_v - lvl.dp_dy + nu * lvl.lap_v
-
-        # Continuity residual (on inner grid)
-        divergence_full = lvl.du_dx + lvl.dv_dy
-        divergence_2d = divergence_full.reshape(lvl.shape_full)
-        divergence_inner = divergence_2d[1:-1, 1:-1].ravel()
-        lvl.R_p[:] = -self.beta_squared * divergence_inner
+        # Add FAS tau correction if set (for coarse grid solves in V-cycle)
+        if self.tau_u is not None:
+            lvl.R_u += self.tau_u
+        if self.tau_v is not None:
+            lvl.R_v += self.tau_v
+        if self.tau_p is not None:
+            lvl.R_p += self.tau_p
 
     def _enforce_boundary_conditions(self, u: np.ndarray, v: np.ndarray):
-        """Enforce boundary conditions using corner treatment."""
+        """Enforce boundary conditions using cached values."""
         u_2d = u.reshape(self.level.shape_full)
         v_2d = v.reshape(self.level.shape_full)
 
-        # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
+        # OPTIMIZATION: Use pre-computed wall velocities instead of calling corner_treatment
         # West boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.level.X[0, :], self.level.Y[0, :], self.Lx, self.Ly
-        )
-        u_2d[0, :] = u_wall
-        v_2d[0, :] = v_wall
+        u_2d[0, :] = self._cached_u_west
+        v_2d[0, :] = self._cached_v_west
 
         # East boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.level.X[-1, :], self.level.Y[-1, :], self.Lx, self.Ly
-        )
-        u_2d[-1, :] = u_wall
-        v_2d[-1, :] = v_wall
+        u_2d[-1, :] = self._cached_u_east
+        v_2d[-1, :] = self._cached_v_east
 
         # South boundary
-        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-            self.level.X[:, 0], self.level.Y[:, 0], self.Lx, self.Ly
-        )
-        u_2d[:, 0] = u_wall
-        v_2d[:, 0] = v_wall
+        u_2d[:, 0] = self._cached_u_south
+        v_2d[:, 0] = self._cached_v_south
 
-        # North boundary (moving lid)
-        self._apply_lid_boundary(u_2d, v_2d)
+        # North boundary (moving lid) - also uses cached values
+        u_2d[:, -1] = self._cached_u_lid
+        v_2d[:, -1] = self._cached_v_lid
 
     def _compute_adaptive_timestep(self) -> float:
         """Compute adaptive timestep based on CFL."""
@@ -604,9 +942,9 @@ class MultigridSmoother:
                 lvl.p[:] = lvl.p + alpha * dt * lvl.R_p
                 self._enforce_boundary_conditions(lvl.u, lvl.v)
 
-        # Compute residuals for convergence check
-        u_res = np.linalg.norm(lvl.u - lvl.u_prev)
-        v_res = np.linalg.norm(lvl.v - lvl.v_prev)
+        # Compute RELATIVE residuals for convergence check
+        u_res = np.linalg.norm(lvl.u - lvl.u_prev) / (np.linalg.norm(lvl.u_prev) + 1e-12)
+        v_res = np.linalg.norm(lvl.v - lvl.v_prev) / (np.linalg.norm(lvl.v_prev) + 1e-12)
 
         return u_res, v_res
 
@@ -632,6 +970,34 @@ class MultigridSmoother:
         """Get L2 norm of continuity residual."""
         return np.linalg.norm(self.level.R_p)
 
+    def set_tau_correction(
+        self,
+        tau_u: np.ndarray,
+        tau_v: np.ndarray,
+        tau_p: np.ndarray,
+    ):
+        """Set FAS tau correction terms for coarse grid solve.
+
+        These terms are added to the computed residuals during RK4 steps.
+        Call clear_tau_correction() after the coarse grid solve is complete.
+
+        Parameters
+        ----------
+        tau_u, tau_v : np.ndarray
+            Momentum tau corrections (full grid size)
+        tau_p : np.ndarray
+            Pressure tau correction (inner grid size)
+        """
+        self.tau_u = tau_u
+        self.tau_v = tau_v
+        self.tau_p = tau_p
+
+    def clear_tau_correction(self):
+        """Clear FAS tau correction terms."""
+        self.tau_u = None
+        self.tau_v = None
+        self.tau_p = None
+
 
 # =============================================================================
 # FSG Driver (Full Single Grid)
@@ -650,19 +1016,14 @@ def solve_fsg(
     corner_treatment: Optional[CornerTreatment] = None,
     Lx: float = 1.0,
     Ly: float = 1.0,
-    coarse_tolerance_factor: float = 1.0,  # Not used anymore, kept for API compat
+    coarse_tolerance_factor: float = 1.0,
 ) -> Tuple[SpectralLevel, int, bool]:
     """Solve using Full Single Grid (FSG) multigrid.
 
     Solves sequentially from coarsest to finest level, using the converged
     solution on each level as initial guess for the next finer level.
 
-    Per Zhang & Xi (2010): Each level converges to the SAME global tolerance
-    before prolongating to the next finer level.
-
-    For subtraction corner treatment: Uses smoothing on coarse levels (N<8) for
-    stability, then transitions to full subtraction on finer levels. This hybrid
-    approach avoids overflow from extreme singular derivatives on coarse grids.
+    Per Zhang & Xi (2010): Uses the SAME tolerance on ALL levels.
 
     Parameters
     ----------
@@ -677,9 +1038,11 @@ def solve_fsg(
     transfer_ops : TransferOperators, optional
         Configured transfer operators. If None, uses default FFT operators.
     corner_treatment : CornerTreatment, optional
-        Corner singularity treatment handler. If None, uses default smoothing.
+        Corner treatment handler. If None, uses default smoothing.
     Lx, Ly : float
         Domain dimensions
+    coarse_tolerance_factor : float
+        Factor to loosen tolerance on coarser levels
 
     Returns
     -------
@@ -697,22 +1060,16 @@ def solve_fsg(
     if corner_treatment is None:
         corner_treatment = create_corner_treatment(method="smoothing")
 
-    # For subtraction method, also create smoothing treatment for coarse levels
-    # This avoids numerical instability from extreme singular derivatives on coarse grids
-    uses_subtraction = corner_treatment.uses_modified_convection()
-    if uses_subtraction:
-        smoothing_treatment = create_corner_treatment(method="smoothing")
-        # Minimum N for subtraction method (below this, use smoothing)
-        min_n_for_subtraction = 8
-
     total_iterations = 0
     n_levels = len(levels)
 
     for level_idx, level in enumerate(levels):
         is_finest = level_idx == n_levels - 1
 
-        # Use same tolerance on ALL levels (per Zhang & Xi 2010)
-        level_tol = tolerance
+        # Use LOOSER tolerance on coarser levels for efficiency
+        # coarse_tolerance_factor=10 means: coarsest gets 100x looser (for 3 levels)
+        levels_from_finest = n_levels - 1 - level_idx
+        level_tol = tolerance * (coarse_tolerance_factor ** levels_from_finest)
 
         log.info(
             f"FSG Level {level_idx}/{n_levels - 1}: N={level.n}, "
@@ -727,15 +1084,7 @@ def solve_fsg(
             level.p[:] = 0.0
         else:
             # Prolongate from previous (coarser) level
-            prolongate_solution(levels[level_idx - 1], level, transfer_ops)
-
-        # Select corner treatment for this level
-        # For subtraction: use smoothing on coarse levels for stability
-        if uses_subtraction and level.n < min_n_for_subtraction:
-            level_corner_treatment = smoothing_treatment
-            log.debug(f"  Level {level_idx} (N={level.n}): using smoothing (N < {min_n_for_subtraction})")
-        else:
-            level_corner_treatment = corner_treatment
+            prolongate_solution(levels[level_idx - 1], level, transfer_ops, lid_velocity)
 
         # Create smoother for this level
         smoother = MultigridSmoother(
@@ -744,7 +1093,7 @@ def solve_fsg(
             beta_squared=beta_squared,
             lid_velocity=lid_velocity,
             CFL=CFL,
-            corner_treatment=level_corner_treatment,
+            corner_treatment=corner_treatment,
             Lx=Lx,
             Ly=Ly,
         )
@@ -796,3 +1145,5 @@ def solve_fsg(
     )
 
     return finest_level, total_iterations, final_converged
+
+

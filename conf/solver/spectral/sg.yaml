@@ -17,7 +17,7 @@ max_iterations: ${max_iterations}
 
 # Spectral-specific parameters
 basis_type: chebyshev    # "chebyshev" or "legendre"
-CFL: 2.5
+CFL: 2.0
 beta_squared: 5.0        # artificial compressibility parameter
 
 # Corner singularity treatment

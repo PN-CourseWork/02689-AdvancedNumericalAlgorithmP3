@@ -8,6 +8,7 @@ import numpy as np
 
 from .polynomial import (
     legendre_gauss_lobatto_nodes,
+    legendre_gauss_lobatto_weights,
     vandermonde,
     vandermonde_normalized,
     vandermonde_x,
@@ -387,6 +388,87 @@ class LegendreLobattoBasis(SpectralBasis):
         a, b = self.domain
         return 0.5 * (b - a) * M
 
+    def quadrature_weights(self, num_points: int) -> np.ndarray:
+        """
+        Return Legendre-Gauss-Lobatto quadrature weights scaled to the physical domain.
+
+        Parameters
+        ----------
+        num_points : int
+            Number of Legendre-Gauss-Lobatto nodes
+
+        Returns
+        -------
+        np.ndarray
+            Quadrature weights scaled to the physical domain
+        """
+        w_ref = legendre_gauss_lobatto_weights(num_points)
+        a, b = self.domain
+        # Scale from [-1, 1] to [a, b]: multiply by (b-a)/2
+        return w_ref * (b - a) / 2
+
+
+def clenshaw_curtis_weights(num_points: int) -> np.ndarray:
+    """
+    Compute Clenshaw-Curtis quadrature weights for Chebyshev-Gauss-Lobatto nodes.
+
+    For nodes x_j = cos(πj/N), j=0,...,N, these weights provide exact integration
+    for polynomials up to degree N on [-1, 1].
+
+    Parameters
+    ----------
+    num_points : int
+        Number of Chebyshev-Gauss-Lobatto nodes (N+1)
+
+    Returns
+    -------
+    np.ndarray
+        Quadrature weights of length N+1, summing to 2 (length of [-1, 1])
+
+    Notes
+    -----
+    Implementation uses the explicit formula:
+        w_j = (c_j / N) * sum_{k=0}^{floor(N/2)} b_k * cos(2*k*pi*j/N)
+    where c_j = 1 for interior points, 1/2 for endpoints,
+    and b_k = 2/(1-4k²) with b_0=1 and b_{N/2} halved if N even.
+
+    References
+    ----------
+    Trefethen (2000), "Spectral Methods in MATLAB", Chapter 12
+    Waldvogel (2006), "Fast construction of the Fejér and Clenshaw-Curtis
+    quadrature rules", BIT Numerical Mathematics.
+    """
+    N = num_points - 1
+    if N == 0:
+        return np.array([2.0])
+    if N == 1:
+        return np.array([1.0, 1.0])
+
+    # Weights for j=0,...,N at nodes theta_j = pi*j/N
+    w = np.zeros(num_points)
+
+    for j in range(num_points):
+        # Sum over even modes k=0,2,4,...
+        s = 0.0
+        for k in range(N // 2 + 1):
+            # b_k coefficient
+            if k == 0:
+                b_k = 1.0
+            else:
+                b_k = 2.0 / (1 - 4 * k * k)
+            # Halve last term if N is even
+            if k == N // 2 and N % 2 == 0:
+                b_k *= 0.5
+            s += b_k * np.cos(2 * np.pi * k * j / N)
+
+        w[j] = 2.0 * s / N
+
+    # Halve endpoint weights
+    w[0] *= 0.5
+    w[N] *= 0.5
+
+    return w
+
 
 class ChebyshevLobattoBasis(SpectralBasis):
     """Chebyshev-Gauss-Lobatto nodal polynomial basis.
@@ -438,6 +520,25 @@ class ChebyshevLobattoBasis(SpectralBasis):
         a, b = self.domain
         scale = 2.0 / (b - a)
         return scale * D_xi
+
+    def quadrature_weights(self, num_points: int) -> np.ndarray:
+        """
+        Return Clenshaw-Curtis quadrature weights scaled to the physical domain.
+
+        Parameters
+        ----------
+        num_points : int
+            Number of Chebyshev-Gauss-Lobatto nodes
+
+        Returns
+        -------
+        np.ndarray
+            Quadrature weights scaled to the physical domain
+        """
+        w_ref = clenshaw_curtis_weights(num_points)
+        a, b = self.domain
+        # Scale from [-1, 1] to [a, b]: multiply by (b-a)/2
+        return w_ref * (b - a) / 2
 
 
 class FourierEquispacedBasis(SpectralBasis):

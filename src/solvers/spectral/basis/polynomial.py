@@ -195,6 +195,53 @@ def legendre_gauss_lobatto_nodes(num_nodes: int) -> np.ndarray:
     return np.sort(nodes)
 
 
+def legendre_gauss_lobatto_weights(num_nodes: int) -> np.ndarray:
+    r"""
+    Compute Legendre-Gauss-Lobatto (LGL) quadrature weights.
+
+    LGL weights are computed using the formula:
+
+    .. math::
+
+        w_j = \frac{2}{N(N+1) [P_N(x_j)]^2}
+
+    where :math:`P_N` is the Legendre polynomial of degree :math:`N = num\_nodes - 1`.
+
+    Parameters
+    ----------
+    num_nodes : int
+        Number of quadrature nodes (N+1)
+
+    Returns
+    -------
+    np.ndarray
+        LGL quadrature weights on [-1, 1]
+
+    Notes
+    -----
+    LGL quadrature integrates polynomials of degree up to :math:`2N-1` exactly.
+    The weights satisfy :math:`\sum_j w_j = 2` (the length of [-1, 1]).
+
+    References
+    ----------
+    Kopriva (2009), "Implementing Spectral Methods for PDEs", Eq. (3.44)
+    Canuto et al. (2006), "Spectral Methods: Fundamentals", Section 2.3
+    """
+    N = num_nodes - 1
+    if N == 0:
+        return np.array([2.0])
+
+    nodes = legendre_gauss_lobatto_nodes(num_nodes)
+
+    # Evaluate Legendre polynomial P_N at nodes
+    P_N = jacobi_poly(nodes, 0.0, 0.0, N)
+
+    # LGL weights formula: w_j = 2 / (N(N+1) * P_N(x_j)^2)
+    weights = 2.0 / (N * (N + 1) * P_N**2)
+
+    return weights
+
+
 # =============================================================================
 # Vandermonde Matrices
 # =============================================================================
