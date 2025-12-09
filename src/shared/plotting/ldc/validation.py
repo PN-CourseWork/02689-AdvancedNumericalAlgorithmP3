@@ -390,8 +390,6 @@ def plot_ghia_comparison(
     axes[0].set_xlabel(r"$u$", fontsize=11)
     axes[0].set_ylabel(r"$y$", fontsize=11)
     axes[0].set_title(r"$u$-velocity (vertical centerline)", fontsize=11)
-    axes[0].set_xlim(-0.5, 1.1)
-    axes[0].set_ylim(-0.1, 1.1)
 
     # Right: v-velocity (horizontal centerline)
     sns.lineplot(
@@ -423,8 +421,6 @@ def plot_ghia_comparison(
     axes[1].set_xlabel(r"$x$", fontsize=11)
     axes[1].set_ylabel(r"$v$", fontsize=11)
     axes[1].set_title(r"$v$-velocity (horizontal centerline)", fontsize=11)
-    axes[1].set_xlim(-0.1, 1.1)
-    axes[1].set_ylim(-0.5, 0.5)
 
     # Add zoomed inset for v-velocity (right plot) - focus on peak region
     # Find interesting region: near the maximum v value
@@ -433,13 +429,24 @@ def plot_ghia_comparison(
     v_max_val = ghia_v.loc[v_max_idx, "v"]
 
     # Create inset axes for v-velocity zoom
-    # Place inset in lower-left area of subplot, avoiding data and axis overlap
-    # Size: ~42% of axes (5-10% smaller than 50%)
     ax1 = axes[1]
 
-    # Position inset in lower-left corner with some padding
+    # Get the actual axis limits after autoscaling to compute aspect ratio
+    x_lim = ax1.get_xlim()
+    y_lim = ax1.get_ylim()
+    x_range = x_lim[1] - x_lim[0]
+    y_range = y_lim[1] - y_lim[0]
+    aspect_ratio = x_range / y_range
+
+    # Position inset in lower-left corner with aspect ratio matching main plot
     # [left, bottom, width, height] in axes fraction
-    axins_v = ax1.inset_axes([0.05, 0.05, 0.42, 0.42])
+    inset_height = 0.40
+    inset_width = inset_height * aspect_ratio
+    # Ensure inset stays within subplot (max width ~0.5 to leave room)
+    if inset_width > 0.50:
+        inset_width = 0.50
+        inset_height = inset_width / aspect_ratio
+    axins_v = ax1.inset_axes([0.05, 0.05, inset_width, inset_height])
 
     # Replot data in inset
     sns.lineplot(
@@ -469,9 +476,36 @@ def plot_ghia_comparison(
         legend=False,
     )
 
-    # Set zoom region around maximum v (2.5x larger: 0.06*2.5=0.15, 0.03*2.5=0.075)
-    axins_v.set_xlim(v_max_x - 0.15, v_max_x + 0.15)
-    axins_v.set_ylim(v_max_val - 0.075, v_max_val + 0.075)
+    # Set zoom region around maximum v with aspect ratio matching main plot
+    zoom_y_half = 0.15  # Half-height of zoom region
+    zoom_x_half = zoom_y_half * aspect_ratio  # Half-width scaled by aspect ratio
+
+    # Clamp zoom region to stay within axis bounds
+    zoom_x_min = max(x_lim[0], v_max_x - zoom_x_half)
+    zoom_x_max = min(x_lim[1], v_max_x + zoom_x_half)
+    zoom_y_min = max(y_lim[0], v_max_val - zoom_y_half)
+    zoom_y_max = min(y_lim[1], v_max_val + zoom_y_half)
+
+    # Adjust to maintain aspect ratio if clamped
+    actual_x_range = zoom_x_max - zoom_x_min
+    actual_y_range = zoom_y_max - zoom_y_min
+    actual_aspect = actual_x_range / actual_y_range
+
+    if actual_aspect > aspect_ratio:
+        # x range too wide, shrink it
+        new_x_range = actual_y_range * aspect_ratio
+        x_center = (zoom_x_min + zoom_x_max) / 2
+        zoom_x_min = x_center - new_x_range / 2
+        zoom_x_max = x_center + new_x_range / 2
+    elif actual_aspect < aspect_ratio:
+        # y range too tall, shrink it
+        new_y_range = actual_x_range / aspect_ratio
+        y_center = (zoom_y_min + zoom_y_max) / 2
+        zoom_y_min = y_center - new_y_range / 2
+        zoom_y_max = y_center + new_y_range / 2
+
+    axins_v.set_xlim(zoom_x_min, zoom_x_max)
+    axins_v.set_ylim(zoom_y_min, zoom_y_max)
     axins_v.set_xlabel("")
     axins_v.set_ylabel("")
     axins_v.set_xticks([])
