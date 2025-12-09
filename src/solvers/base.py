@@ -181,16 +181,20 @@ class LidDrivenCavitySolver(ABC):
             psi_min=vortex_metrics.get("psi_min", 0.0),
             psi_min_x=vortex_metrics.get("psi_min_x", 0.0),
             psi_min_y=vortex_metrics.get("psi_min_y", 0.0),
+            omega_center=vortex_metrics.get("omega_center", 0.0),
             omega_max=vortex_metrics.get("omega_max", 0.0),
             omega_max_x=vortex_metrics.get("omega_max_x", 0.0),
             omega_max_y=vortex_metrics.get("omega_max_y", 0.0),
             psi_BR=vortex_metrics.get("psi_BR", 0.0),
+            omega_BR=vortex_metrics.get("omega_BR", 0.0),
             psi_BR_x=vortex_metrics.get("psi_BR_x", 0.0),
             psi_BR_y=vortex_metrics.get("psi_BR_y", 0.0),
             psi_BL=vortex_metrics.get("psi_BL", 0.0),
+            omega_BL=vortex_metrics.get("omega_BL", 0.0),
             psi_BL_x=vortex_metrics.get("psi_BL_x", 0.0),
             psi_BL_y=vortex_metrics.get("psi_BL_y", 0.0),
             psi_TL=vortex_metrics.get("psi_TL", 0.0),
+            omega_TL=vortex_metrics.get("omega_TL", 0.0),
             psi_TL_x=vortex_metrics.get("psi_TL_x", 0.0),
             psi_TL_y=vortex_metrics.get("psi_TL_y", 0.0),
         )
@@ -638,7 +642,7 @@ class LidDrivenCavitySolver(ABC):
         Returns
         -------
         dict
-            {'psi_min': float, 'x': float, 'y': float}
+            {'psi_min': float, 'x': float, 'y': float, 'omega_center': float}
         """
         psi_2d, x_unique, y_unique = self._compute_streamfunction()
 
@@ -648,7 +652,18 @@ class LidDrivenCavitySolver(ABC):
         x_min = x_unique[min_idx[1]]
         y_min = y_unique[min_idx[0]]
 
-        return {"psi_min": float(psi_min), "x": float(x_min), "y": float(y_min)}
+        # Get vorticity at the primary vortex center
+        omega = self._compute_vorticity()
+        shape = getattr(self, "shape_full", (self.params.nx, self.params.ny))
+        omega_2d = omega.reshape(shape)
+        omega_center = omega_2d[min_idx]
+
+        return {
+            "psi_min": float(psi_min),
+            "x": float(x_min),
+            "y": float(y_min),
+            "omega_center": float(omega_center),
+        }
 
     def _find_corner_vortices(self) -> dict:
         """Find secondary corner vortices (BR, BL, TL).
@@ -743,6 +758,7 @@ class LidDrivenCavitySolver(ABC):
             "psi_min": primary["psi_min"],
             "psi_min_x": primary["x"],
             "psi_min_y": primary["y"],
+            "omega_center": primary["omega_center"],
             "omega_max": max_omega["omega_max"],
             "omega_max_x": max_omega["x"],
             "omega_max_y": max_omega["y"],
@@ -901,72 +917,46 @@ class LidDrivenCavitySolver(ABC):
         ref_df = pd.read_csv(ref_path, comment="#")
         ref = ref_df.iloc[0].to_dict()
 
-        # Build validation table rows
+        # Build validation table in standard literature format
+        # Separate tables for primary vortex and secondary vortices
         rows = []
 
-        def add_row(metric_name, computed, reference, unit="", use_abs=False):
+        def add_row(vortex, metric, computed, reference, fmt=".6f"):
             """Add a row to the validation table."""
-            if reference != 0 and reference is not None:
-                # For vorticity, compare absolute values (sign convention may differ)
-                if use_abs:
-                    error_pct = abs(abs(computed) - abs(reference)) / abs(reference) * 100
-                else:
-                    error_pct = abs(computed - reference) / abs(reference) * 100
+            if reference and reference != 0:
+                error_pct = abs(abs(computed) - abs(reference)) / abs(reference) * 100
+                ref_str = f"{reference:{fmt}}" if abs(reference) >= 1e-3 else f"{reference:.4e}"
             else:
-                error_pct = 0.0
+                error_pct = None
+                ref_str = "-"
+
+            comp_str = f"{computed:{fmt}}" if abs(computed) >= 1e-3 else f"{computed:.4e}"
+
             rows.append({
-                "Metric": metric_name,
-                "Computed": f"{computed:.6f}",
-                "Reference": f"{reference:.6f}" if reference else "-",
-                "Error (%)": f"{error_pct:.2f}" if reference else "-",
-                "Unit": unit,
+                "Vortex": vortex,
+                "Metric": metric,
+                "Computed": comp_str,
+                "Botella": ref_str,
+                "Error (%)": f"{error_pct:.2f}" if error_pct is not None else "-",
             })
 
-        # Primary vortex metrics
-        add_row("ψ_min (Primary)", self.metrics.psi_min, ref.get("psi_min"))
-        add_row("x (Primary)", self.metrics.psi_min_x, ref.get("psi_min_x"))
-        add_row("y (Primary)", self.metrics.psi_min_y, ref.get("psi_min_y"))
-        add_row("ω_center (Primary)", self.metrics.omega_center, ref.get("omega_center"), use_abs=True)
+        # Primary vortex metrics (use absolute values for comparison)
+        add_row("Primary", "|ψ|", abs(self.metrics.psi_min), ref.get("psi_primary"))
+        add_row("Primary", "|ω|", abs(self.metrics.omega_center), ref.get("omega_primary"))
+        add_row("Primary", "x", self.metrics.psi_min_x, ref.get("x_primary"))
+        add_row("Primary", "y", self.metrics.psi_min_y, ref.get("y_primary"))
 
-        # Secondary vortex - Bottom Right
-        add_row("ψ_BR", self.metrics.psi_BR, ref.get("psi_BR"))
-        add_row("x_BR", self.metrics.psi_BR_x, ref.get("psi_BR_x"))
-        add_row("y_BR", self.metrics.psi_BR_y, ref.get("psi_BR_y"))
+        # Secondary vortex - Bottom Left (BL)
+        add_row("BL", "|ψ|", abs(self.metrics.psi_BL), ref.get("psi_BL"))
+        add_row("BL", "|ω|", abs(self.metrics.omega_BL) if hasattr(self.metrics, 'omega_BL') else 0.0, ref.get("omega_BL"))
+        add_row("BL", "x", self.metrics.psi_BL_x, ref.get("x_BL"))
+        add_row("BL", "y", self.metrics.psi_BL_y, ref.get("y_BL"))
 
-        # Secondary vortex - Bottom Left
-        add_row("ψ_BL", self.metrics.psi_BL, ref.get("psi_BL"))
-        add_row("x_BL", self.metrics.psi_BL_x, ref.get("psi_BL_x"))
-        add_row("y_BL", self.metrics.psi_BL_y, ref.get("psi_BL_y"))
-
-        # Global quantities (no reference for these typically)
-        rows.append({
-            "Metric": "--- Global Quantities ---",
-            "Computed": "",
-            "Reference": "",
-            "Error (%)": "",
-            "Unit": "",
-        })
-        rows.append({
-            "Metric": "Energy (E)",
-            "Computed": f"{self.metrics.final_energy:.6e}",
-            "Reference": "-",
-            "Error (%)": "-",
-            "Unit": "",
-        })
-        rows.append({
-            "Metric": "Enstrophy (Z)",
-            "Computed": f"{self.metrics.final_enstrophy:.6e}",
-            "Reference": "-",
-            "Error (%)": "-",
-            "Unit": "",
-        })
-        rows.append({
-            "Metric": "Palinstrophy (P)",
-            "Computed": f"{self.metrics.final_palinstrophy:.6e}",
-            "Reference": "-",
-            "Error (%)": "-",
-            "Unit": "",
-        })
+        # Secondary vortex - Bottom Right (BR)
+        add_row("BR", "|ψ|", abs(self.metrics.psi_BR), ref.get("psi_BR"))
+        add_row("BR", "|ω|", abs(self.metrics.omega_BR) if hasattr(self.metrics, 'omega_BR') else 0.0, ref.get("omega_BR"))
+        add_row("BR", "x", self.metrics.psi_BR_x, ref.get("x_BR"))
+        add_row("BR", "y", self.metrics.psi_BR_y, ref.get("y_BR"))
 
         # Create DataFrame and log to MLflow
         table_df = pd.DataFrame(rows)

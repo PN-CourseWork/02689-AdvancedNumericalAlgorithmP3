@@ -83,14 +83,17 @@ class Metrics:
     omega_max_y: float = 0.0  # y-coordinate of max vorticity
 
     # Secondary corner vortices (BR=bottom-right, BL=bottom-left, TL=top-left)
-    # Each stores the local extremum of psi and its location
+    # Each stores the local extremum of psi, vorticity at center, and location
     psi_BR: float = 0.0
+    omega_BR: float = 0.0
     psi_BR_x: float = 0.0
     psi_BR_y: float = 0.0
     psi_BL: float = 0.0
+    omega_BL: float = 0.0
     psi_BL_x: float = 0.0
     psi_BL_y: float = 0.0
     psi_TL: float = 0.0
+    omega_TL: float = 0.0
     psi_TL_x: float = 0.0
     psi_TL_y: float = 0.0
 

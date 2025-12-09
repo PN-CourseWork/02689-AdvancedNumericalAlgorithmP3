@@ -554,21 +554,22 @@ class SGSolver(LidDrivenCavitySolver):
     # =========================================================================
 
     def _compute_streamfunction(self) -> tuple:
-        """Compute streamfunction ψ by solving ∇²ψ = -ω using FFT-based solver.
+        """Compute streamfunction ψ by solving ∇²ψ = -ω.
 
-        Uses DST (Discrete Sine Transform) for O(N² log N) Poisson solve with
-        homogeneous Dirichlet BCs (ψ=0 on walls).
+        Uses spectral Laplacian with sparse linear solver for non-uniform
+        Chebyshev grids. Homogeneous Dirichlet BCs (ψ=0 on walls).
 
         Returns
         -------
         psi_2d : np.ndarray
-            Streamfunction on 2D grid (Nx+1, Ny+1)
+            Streamfunction on 2D grid (Nx, Ny)
         x_2d : np.ndarray
             X coordinates 2D grid
         y_2d : np.ndarray
             Y coordinates 2D grid
         """
-        from scipy.fft import dstn, idstn
+        from scipy.sparse import kron, eye, csr_matrix
+        from scipy.sparse.linalg import spsolve
 
         # Get vorticity using spectral differentiation
         omega = self._compute_vorticity()
@@ -576,44 +577,44 @@ class SGSolver(LidDrivenCavitySolver):
 
         Nx, Ny = self.shape_full
 
-        # Extract interior points (excluding boundaries where ψ=0)
-        # Interior is (Nx-2) x (Ny-2)
-        rhs_interior = -omega_2d[1:-1, 1:-1]
+        # Build 2D Laplacian using Kronecker products of spectral matrices
+        # L = Dxx ⊗ Iy + Ix ⊗ Dyy
+        Dxx_sparse = csr_matrix(self.Dxx_1d)
+        Dyy_sparse = csr_matrix(self.Dyy_1d)
+        Ix = eye(Nx, format='csr')
+        Iy = eye(Ny, format='csr')
 
-        nx_int, ny_int = rhs_interior.shape
+        # Full 2D Laplacian (operates on flattened psi with 'C' order)
+        # For 'C' order: psi[i,j] -> psi_flat[i*Ny + j]
+        # Dxx acts on first index (x), Dyy acts on second index (y)
+        L = kron(Dxx_sparse, Iy) + kron(Ix, Dyy_sparse)
 
-        # DST-I (Type 1) eigenvalues for Laplacian with Dirichlet BCs
-        # For domain [0, Lx] x [0, Ly] with N interior points:
-        # λ_k = -( (k*π/Lx)² + (l*π/Ly)² )
-        # With our normalized domain [0,1] x [0,1]:
-        k = np.arange(1, nx_int + 1)
-        l = np.arange(1, ny_int + 1)
+        # Right-hand side: -omega (flattened)
+        rhs = -omega_2d.ravel()
 
-        # Eigenvalues: λ_{kl} = -π²(k²/Lx² + l²/Ly²)
-        # For unit domain: λ_{kl} = -π²(k² + l²) but we need to account for
-        # the effective grid spacing in the DST
-        lambda_k = -((k * np.pi / (nx_int + 1)) ** 2)
-        lambda_l = -((l * np.pi / (ny_int + 1)) ** 2)
+        # Apply homogeneous Dirichlet BCs: psi = 0 on all boundaries
+        # Identify boundary DOFs
+        n_dof = Nx * Ny
+        boundary_mask = np.zeros((Nx, Ny), dtype=bool)
+        boundary_mask[0, :] = True   # x = 0 (left)
+        boundary_mask[-1, :] = True  # x = Lx (right)
+        boundary_mask[:, 0] = True   # y = 0 (bottom)
+        boundary_mask[:, -1] = True  # y = Ly (top)
+        boundary_idx = np.where(boundary_mask.ravel())[0]
+        interior_idx = np.where(~boundary_mask.ravel())[0]
 
-        # 2D eigenvalue matrix
-        Lambda_kl = lambda_k[:, np.newaxis] + lambda_l[np.newaxis, :]
+        # Modify system to enforce Dirichlet BCs
+        # Set boundary rows to identity, rhs to 0
+        L_bc = L.tolil()
+        for idx in boundary_idx:
+            L_bc[idx, :] = 0
+            L_bc[idx, idx] = 1.0
+            rhs[idx] = 0.0
+        L_bc = L_bc.tocsr()
 
-        # Scale for physical domain size
-        Lambda_kl = Lambda_kl * ((nx_int + 1) ** 2)
-
-        # Forward DST (Type I)
-        rhs_hat = dstn(rhs_interior, type=1)
-
-        # Solve in spectral space: psi_hat = rhs_hat / Lambda
-        # Avoid division by zero (shouldn't happen for Dirichlet problem)
-        psi_hat = rhs_hat / Lambda_kl
-
-        # Inverse DST (Type I) - note: DST-I is its own inverse up to scaling
-        psi_interior = idstn(psi_hat, type=1)
-
-        # Assemble full solution with boundary conditions (ψ=0 on boundaries)
-        psi_2d = np.zeros((Nx, Ny))
-        psi_2d[1:-1, 1:-1] = psi_interior
+        # Solve the linear system
+        psi_flat = spsolve(L_bc, rhs)
+        psi_2d = psi_flat.reshape((Nx, Ny))
 
         return psi_2d, self.x_full, self.y_full
 
@@ -623,7 +624,7 @@ class SGSolver(LidDrivenCavitySolver):
         Returns
         -------
         dict
-            {'psi_min': float, 'x': float, 'y': float}
+            {'psi_min': float, 'x': float, 'y': float, 'omega_center': float}
         """
         psi_2d, x_2d, y_2d = self._compute_streamfunction()
 
@@ -633,7 +634,16 @@ class SGSolver(LidDrivenCavitySolver):
         x_min = x_2d[min_idx]
         y_min = y_2d[min_idx]
 
-        return {"psi_min": float(psi_min), "x": float(x_min), "y": float(y_min)}
+        # Get vorticity at the primary vortex center
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
+        omega_center = omega_2d[min_idx]
+
+        return {
+            "psi_min": float(psi_min),
+            "x": float(x_min),
+            "y": float(y_min),
+            "omega_center": float(omega_center),
+        }
 
     def _find_corner_vortices(self) -> dict:
         """Find secondary corner vortices (BR, BL, TL).
@@ -645,9 +655,10 @@ class SGSolver(LidDrivenCavitySolver):
         Returns
         -------
         dict
-            {'BR': {'psi': float, 'x': float, 'y': float}, 'BL': {...}, 'TL': {...}}
+            {'BR': {'psi': float, 'omega': float, 'x': float, 'y': float}, ...}
         """
         psi_2d, x_2d, y_2d = self._compute_streamfunction()
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
 
         results = {}
 
@@ -668,11 +679,12 @@ class SGSolver(LidDrivenCavitySolver):
             if psi_val > 0:
                 results[name] = {
                     "psi": float(psi_val),
+                    "omega": float(omega_2d[max_idx]),
                     "x": float(x_2d[max_idx]),
                     "y": float(y_2d[max_idx]),
                 }
             else:
-                results[name] = {"psi": 0.0, "x": 0.0, "y": 0.0}
+                results[name] = {"psi": 0.0, "omega": 0.0, "x": 0.0, "y": 0.0}
 
         return results
 
@@ -712,16 +724,20 @@ class SGSolver(LidDrivenCavitySolver):
             "psi_min": primary["psi_min"],
             "psi_min_x": primary["x"],
             "psi_min_y": primary["y"],
+            "omega_center": primary["omega_center"],
             "omega_max": max_omega["omega_max"],
             "omega_max_x": max_omega["x"],
             "omega_max_y": max_omega["y"],
             "psi_BR": corners["BR"]["psi"],
+            "omega_BR": corners["BR"]["omega"],
             "psi_BR_x": corners["BR"]["x"],
             "psi_BR_y": corners["BR"]["y"],
             "psi_BL": corners["BL"]["psi"],
+            "omega_BL": corners["BL"]["omega"],
             "psi_BL_x": corners["BL"]["x"],
             "psi_BL_y": corners["BL"]["y"],
             "psi_TL": corners["TL"]["psi"],
+            "omega_TL": corners["TL"]["omega"],
             "psi_TL_x": corners["TL"]["x"],
             "psi_TL_y": corners["TL"]["y"],
         }
