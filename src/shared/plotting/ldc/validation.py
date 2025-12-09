@@ -28,7 +28,7 @@ def _build_method_label(sibling: dict) -> str:
     - 'fv' -> 'FV'
     - 'spectral' -> 'Spectral'
     - 'spectral_fsg' -> 'Spectral-FSG'
-    - 'spectral_vmg' -> 'Spectral-VMG'
+    - 'spectral_fmg' -> 'Spectral-FMG'
     """
     solver = sibling.get("solver", "unknown")
 
@@ -37,7 +37,6 @@ def _build_method_label(sibling: dict) -> str:
         "fv": "FV",
         "spectral": "Spectral",
         "spectral_fsg": "Spectral-FSG",
-        "spectral_vmg": "Spectral-VMG",
         "spectral_fmg": "Spectral-FMG",
     }
 
