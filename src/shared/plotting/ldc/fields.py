@@ -11,6 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from scipy.interpolate import RectBivariateSpline
 
 log = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def plot_fields(
     plt.tight_layout()
 
     output_path = output_dir / "fields.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", transparent=True)
     plt.close(fig)
 
     return output_path
@@ -144,7 +145,7 @@ def plot_streamlines(
     plt.tight_layout()
 
     output_path = output_dir / "streamlines.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", transparent=True)
     plt.close(fig)
 
     return output_path
@@ -174,6 +175,9 @@ def plot_vorticity(
     dudy = U_spline(y_fine, x_fine, dy=1)
     vorticity = dvdx - dudy
 
+    # Set seaborn darkgrid style
+    sns.set_style("darkgrid")
+
     fig, ax = plt.subplots(figsize=(7, 6))
 
     vmax = np.max(np.abs(vorticity))
@@ -196,8 +200,11 @@ def plot_vorticity(
 
     plt.tight_layout()
 
+    # Transparent figure, but keep darkgrid axes background
+    fig.patch.set_alpha(0.0)
+
     output_path = output_dir / "vorticity.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor=(0, 0, 0, 0))
     plt.close(fig)
 
     return output_path
