@@ -30,8 +30,8 @@ experiment_name: Optuna-CornerSmoothing-${optuna.objective}
 sweep_name: corner-smoothing-${optuna.objective}-Re${Re}
 
 # Grid and physics
-N: 24
-Re: 400
+N: 40
+Re: 1000
 
 # Solver settings (strict convergence)
 # Note: Early NaN/Inf detection exits diverging runs quickly
@@ -52,6 +52,6 @@ hydra:
   sweeper:
     study_name: corner_smoothing_${optuna.objective}_Re${Re}_N${N}
     n_trials: 20
-    n_jobs: 4
+    n_jobs: 5
     params:
       solver.corner_smoothing: range(0.02, 0.2)
