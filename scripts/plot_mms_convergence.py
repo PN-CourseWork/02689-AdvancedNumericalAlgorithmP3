@@ -7,25 +7,20 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 
-# Enable LaTeX rendering
+# Enable LaTeX rendering first
 plt.rcParams.update({
     'text.usetex': True,
     'font.family': 'serif',
     'font.serif': ['Computer Modern Roman'],
-    'font.size': 11,
     'axes.labelsize': 12,
-    'axes.titlesize': 14,
+    'font.size': 11,
     'legend.fontsize': 10,
     'xtick.labelsize': 10,
     'ytick.labelsize': 10,
 })
 
-# Set seaborn style with darkgrid
-sns.set_style("darkgrid", {
-    'axes.facecolor': 'none',
-    'figure.facecolor': 'none',
-    'savefig.facecolor': 'none',
-})
+# Use seaborn darkgrid theme (after rcParams to preserve LaTeX settings)
+sns.set_theme(style="darkgrid", rc={"text.usetex": True})
 
 
 def plot_mms_convergence(parquet_path: Path, output_dir: Path):
@@ -34,10 +29,8 @@ def plot_mms_convergence(parquet_path: Path, output_dir: Path):
     df = pd.read_parquet(parquet_path)
     df = df.sort_values('N')
 
-    # Create figure with transparent background
+    # Create figure
     fig, ax = plt.subplots(figsize=(8, 6))
-    fig.patch.set_alpha(0.0)
-    ax.patch.set_alpha(0.0)
 
     # Plot u and v errors
     ax.semilogy(df['N'], df['u_error'], 'o-', color='#1f77b4',
@@ -52,35 +45,23 @@ def plot_mms_convergence(parquet_path: Path, output_dir: Path):
                    marker='x', s=150, c='red', zorder=5, linewidths=2,
                    label=r'Did not converge')
 
-    # Add theoretical spectral convergence reference line
-    N_ref = np.array([6, 16])
-    # Spectral convergence: error ~ C * exp(-alpha * N)
-    # Fit from the data roughly
-    c0 = df[df['N'] == 6]['u_error'].values[0]
-    alpha = 2.0  # approximate spectral decay rate
-    spectral_ref = c0 * np.exp(-alpha * (N_ref - 6))
-    ax.semilogy(N_ref, spectral_ref, 'k:', linewidth=1.5, alpha=0.7,
-                label=r'Spectral: $\mathcal{O}(e^{-\alpha N})$')
-
     # Labels and title
-    ax.set_xlabel(r'$N$ (polynomial degree)', fontsize=12)
-    ax.set_ylabel(r'Relative $L^2$ Error', fontsize=12)
+    ax.set_xlabel(r'$N$ (grid points)')
+    ax.set_ylabel(r'$L^2$ Error')
 
     # Get Re value from data
     Re = int(df['Re'].iloc[0])
-    ax.set_title(r'\textbf{MMS Spectral Convergence} ($\mathrm{Re} = ' + str(Re) + r'$)',
-                 fontsize=14, pad=10)
+    ax.set_title(rf'\textbf{{MMS Spectral Convergence}} --- $\mathrm{{Re}}={Re}$')
 
-    # Legend with transparent background
-    legend = ax.legend(loc='upper right', framealpha=0.0, edgecolor='none')
-    legend.get_frame().set_facecolor('none')
+    # Legend
+    ax.legend(loc='upper right', frameon=True)
 
     # Set x-axis ticks to show all N values
     ax.set_xticks(df['N'].values)
     ax.set_xticklabels([str(n) for n in df['N'].values])
 
-    # Grid styling (already set by darkgrid, but ensure visibility)
-    ax.grid(True, alpha=0.4, linestyle='-', linewidth=0.5)
+    # Transparent figure background, but keep darkgrid axes background
+    fig.patch.set_alpha(0.0)
 
     # Tight layout
     plt.tight_layout()
@@ -88,12 +69,12 @@ def plot_mms_convergence(parquet_path: Path, output_dir: Path):
     # Save with transparent background
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / f'mms_convergence_Re{Re}_styled.pdf'
-    plt.savefig(output_file, transparent=True, bbox_inches='tight', dpi=300)
+    fig.savefig(output_file, facecolor=(0, 0, 0, 0), bbox_inches='tight', dpi=300)
     print(f"Saved: {output_file}")
 
     # Also save PNG for quick viewing
     output_png = output_dir / f'mms_convergence_Re{Re}_styled.png'
-    plt.savefig(output_png, transparent=True, bbox_inches='tight', dpi=300)
+    fig.savefig(output_png, facecolor=(0, 0, 0, 0), bbox_inches='tight', dpi=300)
     print(f"Saved: {output_png}")
 
     plt.close()

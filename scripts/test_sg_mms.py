@@ -1,18 +1,10 @@
-#!/usr/bin/env python
 """Method of Manufactured Solutions (MMS) Test for SGSolver.
-
-This test verifies spectral convergence by running the full solver with
-forcing terms and custom BCs to verify it converges to the manufactured solution.
 
 Manufactured solution (satisfies div(u) = 0):
   u = sin(pi*x) * cos(pi*y)
   v = -cos(pi*x) * sin(pi*y)
   p = sin(pi*x) * sin(pi*y)
 
-Usage:
-  uv run python scripts/test_sg_mms.py -m   # Uses default sweep N=6,8,10, Re=1,10
-  uv run python scripts/test_sg_mms.py -m N=6,8,10,12,14
-  uv run python scripts/test_sg_mms.py N=10  # Single run
 """
 
 import json
@@ -159,11 +151,9 @@ def run_mms_test(cfg: DictConfig, output_dir: Path = None) -> dict:
     u_diff = u_computed - u_exact
     v_diff = v_computed - v_exact
 
-    u_norm = np.sqrt(np.sum(W * u_exact**2))
-    v_norm = np.sqrt(np.sum(W * v_exact**2))
-
-    u_L2 = np.sqrt(np.sum(W * u_diff**2)) / u_norm
-    v_L2 = np.sqrt(np.sum(W * v_diff**2)) / v_norm
+    # Compute absolute L2 errors (not relative)
+    u_L2 = np.sqrt(np.sum(W * u_diff**2))
+    v_L2 = np.sqrt(np.sum(W * v_diff**2))
 
     # Create solution field plots if output directory specified
     field_plot = None
@@ -182,11 +172,7 @@ def run_mms_test(cfg: DictConfig, output_dir: Path = None) -> dict:
 
 
 def get_or_create_parent_run(experiment_name: str, parent_run_name: str):
-    """Get existing RUNNING parent run or create a new one.
 
-    Only reuses a parent run if it's still running (not yet terminated by callback).
-    This ensures each multirun sweep gets its own parent run.
-    """
     global _PARENT_RUN_ID
 
     # Check if we already have a parent run ID (within same process)
@@ -226,15 +212,11 @@ def main(cfg: DictConfig):
     experiment_name = "MMS-Validation"
     mlflow.set_experiment(experiment_name)
 
-    # Create a unique parent run name based on timestamp (for multirun)
-    # Use environment variable to share parent run ID across jobs
     parent_run_name = os.environ.get("MMS_PARENT_RUN", "MMS_Sweep")
 
-    # Get or create parent run (stays open until callback ends it)
+    # Get or create parent run 
     parent_run_id = get_or_create_parent_run(experiment_name, parent_run_name)
 
-    # Create child run with parent reference using MlflowClient
-    # This avoids start_run/end_run issues with parent run state
     client = mlflow.tracking.MlflowClient()
     experiment = mlflow.get_experiment_by_name(experiment_name)
 
@@ -258,12 +240,10 @@ def main(cfg: DictConfig):
             'corner_smoothing': cfg.corner_smoothing,
         })
 
-        # Tag with LSF job ID if running on HPC
         job_id = os.environ.get("LSB_JOBID")
         if job_id:
             mlflow.set_tag("lsf.job_id", job_id)
 
-        # Run MMS test with field plot generation
         figures_dir = Path("figures")
         result = run_mms_test(cfg, output_dir=figures_dir)
 
@@ -289,7 +269,7 @@ def main(cfg: DictConfig):
             mlflow.log_artifact(str(result['field_plot']))
             print(f"  Field plot:  {result['field_plot']}")
 
-        # Save result to JSON for post-multirun aggregation
+        # Save result to JSON for post-multirun a
         result_json = {
             'N': int(result['N']),
             'Re': float(cfg.Re),
@@ -298,7 +278,6 @@ def main(cfg: DictConfig):
             'converged': bool(result['converged']),
             'iterations': int(result['iterations']),
         }
-        # Write to Hydra's output directory for this job
         hydra_output_dir = HydraConfig.get().runtime.output_dir
         with open(f'{hydra_output_dir}/mms_result.json', 'w') as f:
             json.dump(result_json, f)
