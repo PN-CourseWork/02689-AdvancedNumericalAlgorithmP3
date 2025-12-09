@@ -17,8 +17,8 @@ defaults:
 N: 32
 
 # Solver control
-tolerance: 1.0e-6
-max_iterations: 1000000
+tolerance: 1.0e-7
+max_iterations: 10000000
 
 # Experiment naming
 experiment_name: LDC-Dev
