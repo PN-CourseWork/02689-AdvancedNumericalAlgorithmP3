@@ -1,0 +1,502 @@
+[2025-12-09 13:31:31,258][root][WARNING] - Malformed experiment 'LDC-Convergence'. Detailed error Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+Traceback (most recent call last):
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 378, in search_experiments
+    exp = self._get_experiment(exp_id, view_type)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 476, in _get_experiment
+    meta = FileStore._read_yaml(experiment_dir, FileStore.META_DATA_FILE_NAME)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1646, in _read_yaml
+    return _read_helper(root, file_name, attempts_remaining=retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1639, in _read_helper
+    result = read_yaml(root, file_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/utils/yaml_utils.py", line 104, in read_yaml
+    raise MissingConfigException(f"Yaml file '{file_path}' does not exist.")
+mlflow.exceptions.MissingConfigException: Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+[2025-12-09 13:31:31,263][root][WARNING] - Malformed experiment 'LDC-Convergence'. Detailed error Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+Traceback (most recent call last):
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 378, in search_experiments
+    exp = self._get_experiment(exp_id, view_type)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 476, in _get_experiment
+    meta = FileStore._read_yaml(experiment_dir, FileStore.META_DATA_FILE_NAME)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1646, in _read_yaml
+    return _read_helper(root, file_name, attempts_remaining=retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1639, in _read_helper
+    result = read_yaml(root, file_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/utils/yaml_utils.py", line 104, in read_yaml
+    raise MissingConfigException(f"Yaml file '{file_path}' does not exist.")
+mlflow.exceptions.MissingConfigException: Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+[2025-12-09 13:31:31,265][root][WARNING] - Malformed experiment 'LDC-Convergence'. Detailed error Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+Traceback (most recent call last):
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 378, in search_experiments
+    exp = self._get_experiment(exp_id, view_type)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 476, in _get_experiment
+    meta = FileStore._read_yaml(experiment_dir, FileStore.META_DATA_FILE_NAME)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1646, in _read_yaml
+    return _read_helper(root, file_name, attempts_remaining=retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1639, in _read_helper
+    result = read_yaml(root, file_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/utils/yaml_utils.py", line 104, in read_yaml
+    raise MissingConfigException(f"Yaml file '{file_path}' does not exist.")
+mlflow.exceptions.MissingConfigException: Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+[2025-12-09 13:31:31,322][root][WARNING] - Malformed experiment 'LDC-Convergence'. Detailed error Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+Traceback (most recent call last):
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 378, in search_experiments
+    exp = self._get_experiment(exp_id, view_type)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 476, in _get_experiment
+    meta = FileStore._read_yaml(experiment_dir, FileStore.META_DATA_FILE_NAME)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1646, in _read_yaml
+    return _read_helper(root, file_name, attempts_remaining=retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/store/tracking/file_store.py", line 1639, in _read_helper
+    result = read_yaml(root, file_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/.venv/lib/python3.11/site-packages/mlflow/utils/yaml_utils.py", line 104, in read_yaml
+    raise MissingConfigException(f"Yaml file '{file_path}' does not exist.")
+mlflow.exceptions.MissingConfigException: Yaml file '/Users/philipnickel/Documents/GitHub/DTU_Courses/02689-AdvancedNumericalAlgorithms/ANA-P3/mlruns/LDC-Convergence/meta.yaml' does not exist.
+[2025-12-09 13:31:31,332][solvers.spectral.sg][INFO] - Using Legendre-Gauss-Lobatto basis
+[2025-12-09 13:31:31,333][solvers.spectral.sg][INFO] - Using corner treatment: smoothing
+[2025-12-09 13:31:31,333][solvers.spectral.sg][INFO] - MMS forcing term f_u enabled
+[2025-12-09 13:31:31,333][solvers.spectral.sg][INFO] - MMS forcing term f_v enabled
+[2025-12-09 13:31:31,333][solvers.spectral.sg][INFO] - Custom boundary conditions enabled (overriding lid-driven cavity BCs)
+[2025-12-09 13:31:31,333][solvers.base][INFO] - Iteration 0: u_res=1.581812e+00, v_res=2.120704e+12
+[2025-12-09 13:31:31,342][solvers.base][INFO] - Iteration 50: u_res=1.110315e-02, v_res=1.110321e-02
+[2025-12-09 13:31:31,350][solvers.base][INFO] - Iteration 100: u_res=4.756703e-03, v_res=4.756706e-03
+[2025-12-09 13:31:31,359][solvers.base][INFO] - Iteration 150: u_res=2.271389e-03, v_res=2.271390e-03
+[2025-12-09 13:31:31,367][solvers.base][INFO] - Iteration 200: u_res=1.119961e-03, v_res=1.119961e-03
+[2025-12-09 13:31:31,375][solvers.base][INFO] - Iteration 250: u_res=5.649112e-04, v_res=5.649115e-04
+[2025-12-09 13:31:31,384][solvers.base][INFO] - Iteration 300: u_res=2.930025e-04, v_res=2.930026e-04
+[2025-12-09 13:31:31,393][solvers.base][INFO] - Iteration 350: u_res=1.591594e-04, v_res=1.591595e-04
+[2025-12-09 13:31:31,402][solvers.base][INFO] - Iteration 400: u_res=9.321573e-05, v_res=9.321576e-05
+[2025-12-09 13:31:31,412][solvers.base][INFO] - Iteration 450: u_res=6.029017e-05, v_res=6.029018e-05
+[2025-12-09 13:31:31,420][solvers.base][INFO] - Iteration 500: u_res=4.296423e-05, v_res=4.296423e-05
+[2025-12-09 13:31:31,429][solvers.base][INFO] - Iteration 550: u_res=3.290081e-05, v_res=3.290082e-05
+[2025-12-09 13:31:31,438][solvers.base][INFO] - Iteration 600: u_res=2.637142e-05, v_res=2.637142e-05
+[2025-12-09 13:31:31,447][solvers.base][INFO] - Iteration 650: u_res=2.175056e-05, v_res=2.175056e-05
+[2025-12-09 13:31:31,455][solvers.base][INFO] - Iteration 700: u_res=1.828872e-05, v_res=1.828872e-05
+[2025-12-09 13:31:31,464][solvers.base][INFO] - Iteration 750: u_res=1.559809e-05, v_res=1.559809e-05
+[2025-12-09 13:31:31,473][solvers.base][INFO] - Iteration 800: u_res=1.345229e-05, v_res=1.345229e-05
+[2025-12-09 13:31:31,482][solvers.base][INFO] - Iteration 850: u_res=1.170680e-05, v_res=1.170680e-05
+[2025-12-09 13:31:31,490][solvers.base][INFO] - Iteration 900: u_res=1.026396e-05, v_res=1.026396e-05
+[2025-12-09 13:31:31,499][solvers.base][INFO] - Iteration 950: u_res=9.055290e-06, v_res=9.055290e-06
+[2025-12-09 13:31:31,508][solvers.base][INFO] - Iteration 1000: u_res=8.031463e-06, v_res=8.031463e-06
+[2025-12-09 13:31:31,516][solvers.base][INFO] - Iteration 1050: u_res=7.156089e-06, v_res=7.156089e-06
+[2025-12-09 13:31:31,525][solvers.base][INFO] - Iteration 1100: u_res=6.401743e-06, v_res=6.401743e-06
+[2025-12-09 13:31:31,534][solvers.base][INFO] - Iteration 1150: u_res=5.747340e-06, v_res=5.747340e-06
+[2025-12-09 13:31:31,543][solvers.base][INFO] - Iteration 1200: u_res=5.176372e-06, v_res=5.176371e-06
+[2025-12-09 13:31:31,551][solvers.base][INFO] - Iteration 1250: u_res=4.675706e-06, v_res=4.675706e-06
+[2025-12-09 13:31:31,560][solvers.base][INFO] - Iteration 1300: u_res=4.234752e-06, v_res=4.234752e-06
+[2025-12-09 13:31:31,569][solvers.base][INFO] - Iteration 1350: u_res=3.844868e-06, v_res=3.844868e-06
+[2025-12-09 13:31:31,577][solvers.base][INFO] - Iteration 1400: u_res=3.498927e-06, v_res=3.498927e-06
+[2025-12-09 13:31:31,586][solvers.base][INFO] - Iteration 1450: u_res=3.191004e-06, v_res=3.191004e-06
+[2025-12-09 13:31:31,595][solvers.base][INFO] - Iteration 1500: u_res=2.916130e-06, v_res=2.916130e-06
+[2025-12-09 13:31:31,603][solvers.base][INFO] - Iteration 1550: u_res=2.670111e-06, v_res=2.670111e-06
+[2025-12-09 13:31:31,612][solvers.base][INFO] - Iteration 1600: u_res=2.449384e-06, v_res=2.449384e-06
+[2025-12-09 13:31:31,621][solvers.base][INFO] - Iteration 1650: u_res=2.250906e-06, v_res=2.250906e-06
+[2025-12-09 13:31:31,629][solvers.base][INFO] - Iteration 1700: u_res=2.072061e-06, v_res=2.072061e-06
+[2025-12-09 13:31:31,638][solvers.base][INFO] - Iteration 1750: u_res=1.910590e-06, v_res=1.910590e-06
+[2025-12-09 13:31:31,647][solvers.base][INFO] - Iteration 1800: u_res=1.764535e-06, v_res=1.764535e-06
+[2025-12-09 13:31:31,656][solvers.base][INFO] - Iteration 1850: u_res=1.632190e-06, v_res=1.632190e-06
+[2025-12-09 13:31:31,665][solvers.base][INFO] - Iteration 1900: u_res=1.512062e-06, v_res=1.512062e-06
+[2025-12-09 13:31:31,674][solvers.base][INFO] - Iteration 1950: u_res=1.402844e-06, v_res=1.402844e-06
+[2025-12-09 13:31:31,683][solvers.base][INFO] - Iteration 2000: u_res=1.303384e-06, v_res=1.303384e-06
+[2025-12-09 13:31:31,692][solvers.base][INFO] - Iteration 2050: u_res=1.212666e-06, v_res=1.212666e-06
+[2025-12-09 13:31:31,701][solvers.base][INFO] - Iteration 2100: u_res=1.129790e-06, v_res=1.129790e-06
+[2025-12-09 13:31:31,709][solvers.base][INFO] - Iteration 2150: u_res=1.053960e-06, v_res=1.053960e-06
+[2025-12-09 13:31:31,718][solvers.base][INFO] - Iteration 2200: u_res=9.844683e-07, v_res=9.844683e-07
+[2025-12-09 13:31:31,727][solvers.base][INFO] - Iteration 2250: u_res=9.206866e-07, v_res=9.206866e-07
+[2025-12-09 13:31:31,735][solvers.base][INFO] - Iteration 2300: u_res=8.620544e-07, v_res=8.620544e-07
+[2025-12-09 13:31:31,744][solvers.base][INFO] - Iteration 2350: u_res=8.080721e-07, v_res=8.080722e-07
+[2025-12-09 13:31:31,753][solvers.base][INFO] - Iteration 2400: u_res=7.582943e-07, v_res=7.582943e-07
+[2025-12-09 13:31:31,762][solvers.base][INFO] - Iteration 2450: u_res=7.123228e-07, v_res=7.123228e-07
+[2025-12-09 13:31:31,770][solvers.base][INFO] - Iteration 2500: u_res=6.698018e-07, v_res=6.698018e-07
+[2025-12-09 13:31:31,779][solvers.base][INFO] - Iteration 2550: u_res=6.304128e-07, v_res=6.304128e-07
+[2025-12-09 13:31:31,788][solvers.base][INFO] - Iteration 2600: u_res=5.938709e-07, v_res=5.938709e-07
+[2025-12-09 13:31:31,796][solvers.base][INFO] - Iteration 2650: u_res=5.599206e-07, v_res=5.599206e-07
+[2025-12-09 13:31:31,805][solvers.base][INFO] - Iteration 2700: u_res=5.283331e-07, v_res=5.283331e-07
+[2025-12-09 13:31:31,814][solvers.base][INFO] - Iteration 2750: u_res=4.989027e-07, v_res=4.989027e-07
+[2025-12-09 13:31:31,822][solvers.base][INFO] - Iteration 2800: u_res=4.714450e-07, v_res=4.714450e-07
+[2025-12-09 13:31:31,831][solvers.base][INFO] - Iteration 2850: u_res=4.457940e-07, v_res=4.457940e-07
+[2025-12-09 13:31:31,840][solvers.base][INFO] - Iteration 2900: u_res=4.218006e-07, v_res=4.218006e-07
+[2025-12-09 13:31:31,848][solvers.base][INFO] - Iteration 2950: u_res=3.993302e-07, v_res=3.993302e-07
+[2025-12-09 13:31:31,857][solvers.base][INFO] - Iteration 3000: u_res=3.782616e-07, v_res=3.782616e-07
+[2025-12-09 13:31:31,866][solvers.base][INFO] - Iteration 3050: u_res=3.584854e-07, v_res=3.584854e-07
+[2025-12-09 13:31:31,875][solvers.base][INFO] - Iteration 3100: u_res=3.399025e-07, v_res=3.399025e-07
+[2025-12-09 13:31:31,883][solvers.base][INFO] - Iteration 3150: u_res=3.224235e-07, v_res=3.224235e-07
+[2025-12-09 13:31:31,892][solvers.base][INFO] - Iteration 3200: u_res=3.059670e-07, v_res=3.059670e-07
+[2025-12-09 13:31:31,901][solvers.base][INFO] - Iteration 3250: u_res=2.904593e-07, v_res=2.904593e-07
+[2025-12-09 13:31:31,909][solvers.base][INFO] - Iteration 3300: u_res=2.758333e-07, v_res=2.758333e-07
+[2025-12-09 13:31:31,918][solvers.base][INFO] - Iteration 3350: u_res=2.620279e-07, v_res=2.620279e-07
+[2025-12-09 13:31:31,927][solvers.base][INFO] - Iteration 3400: u_res=2.489874e-07, v_res=2.489874e-07
+[2025-12-09 13:31:31,936][solvers.base][INFO] - Iteration 3450: u_res=2.366608e-07, v_res=2.366608e-07
+[2025-12-09 13:31:31,945][solvers.base][INFO] - Iteration 3500: u_res=2.250015e-07, v_res=2.250015e-07
+[2025-12-09 13:31:31,954][solvers.base][INFO] - Iteration 3550: u_res=2.139665e-07, v_res=2.139665e-07
+[2025-12-09 13:31:31,963][solvers.base][INFO] - Iteration 3600: u_res=2.035166e-07, v_res=2.035166e-07
+[2025-12-09 13:31:31,971][solvers.base][INFO] - Iteration 3650: u_res=1.936155e-07, v_res=1.936155e-07
+[2025-12-09 13:31:31,980][solvers.base][INFO] - Iteration 3700: u_res=1.842299e-07, v_res=1.842299e-07
+[2025-12-09 13:31:31,988][solvers.base][INFO] - Iteration 3750: u_res=1.753288e-07, v_res=1.753288e-07
+[2025-12-09 13:31:31,997][solvers.base][INFO] - Iteration 3800: u_res=1.668837e-07, v_res=1.668837e-07
+[2025-12-09 13:31:32,006][solvers.base][INFO] - Iteration 3850: u_res=1.588682e-07, v_res=1.588682e-07
+[2025-12-09 13:31:32,015][solvers.base][INFO] - Iteration 3900: u_res=1.512576e-07, v_res=1.512576e-07
+[2025-12-09 13:31:32,024][solvers.base][INFO] - Iteration 3950: u_res=1.440291e-07, v_res=1.440291e-07
+[2025-12-09 13:31:32,032][solvers.base][INFO] - Iteration 4000: u_res=1.371614e-07, v_res=1.371614e-07
+[2025-12-09 13:31:32,041][solvers.base][INFO] - Iteration 4050: u_res=1.306347e-07, v_res=1.306347e-07
+[2025-12-09 13:31:32,050][solvers.base][INFO] - Iteration 4100: u_res=1.244303e-07, v_res=1.244303e-07
+[2025-12-09 13:31:32,058][solvers.base][INFO] - Iteration 4150: u_res=1.185310e-07, v_res=1.185310e-07
+[2025-12-09 13:31:32,067][solvers.base][INFO] - Iteration 4200: u_res=1.129205e-07, v_res=1.129205e-07
+[2025-12-09 13:31:32,076][solvers.base][INFO] - Iteration 4250: u_res=1.075836e-07, v_res=1.075836e-07
+[2025-12-09 13:31:32,085][solvers.base][INFO] - Iteration 4300: u_res=1.025060e-07, v_res=1.025060e-07
+[2025-12-09 13:31:32,094][solvers.base][INFO] - Iteration 4350: u_res=9.767415e-08, v_res=9.767415e-08
+[2025-12-09 13:31:32,103][solvers.base][INFO] - Iteration 4400: u_res=9.307552e-08, v_res=9.307553e-08
+[2025-12-09 13:31:32,111][solvers.base][INFO] - Iteration 4450: u_res=8.869819e-08, v_res=8.869819e-08
+[2025-12-09 13:31:32,120][solvers.base][INFO] - Iteration 4500: u_res=8.453093e-08, v_res=8.453093e-08
+[2025-12-09 13:31:32,128][solvers.base][INFO] - Iteration 4550: u_res=8.056315e-08, v_res=8.056315e-08
+[2025-12-09 13:31:32,137][solvers.base][INFO] - Iteration 4600: u_res=7.678488e-08, v_res=7.678488e-08
+[2025-12-09 13:31:32,146][solvers.base][INFO] - Iteration 4650: u_res=7.318668e-08, v_res=7.318668e-08
+[2025-12-09 13:31:32,155][solvers.base][INFO] - Iteration 4700: u_res=6.975962e-08, v_res=6.975962e-08
+[2025-12-09 13:31:32,163][solvers.base][INFO] - Iteration 4750: u_res=6.649527e-08, v_res=6.649527e-08
+[2025-12-09 13:31:32,172][solvers.base][INFO] - Iteration 4800: u_res=6.338565e-08, v_res=6.338565e-08
+[2025-12-09 13:31:32,181][solvers.base][INFO] - Iteration 4850: u_res=6.042318e-08, v_res=6.042318e-08
+[2025-12-09 13:31:32,189][solvers.base][INFO] - Iteration 4900: u_res=5.760071e-08, v_res=5.760071e-08
+[2025-12-09 13:31:32,198][solvers.base][INFO] - Iteration 4950: u_res=5.491143e-08, v_res=5.491143e-08
+[2025-12-09 13:31:32,207][solvers.base][INFO] - Iteration 5000: u_res=5.234892e-08, v_res=5.234892e-08
+[2025-12-09 13:31:32,215][solvers.base][INFO] - Iteration 5050: u_res=4.990704e-08, v_res=4.990704e-08
+[2025-12-09 13:31:32,224][solvers.base][INFO] - Iteration 5100: u_res=4.758001e-08, v_res=4.758001e-08
+[2025-12-09 13:31:32,232][solvers.base][INFO] - Iteration 5150: u_res=4.536232e-08, v_res=4.536232e-08
+[2025-12-09 13:31:32,241][solvers.base][INFO] - Iteration 5200: u_res=4.324873e-08, v_res=4.324873e-08
+[2025-12-09 13:31:32,250][solvers.base][INFO] - Iteration 5250: u_res=4.123427e-08, v_res=4.123427e-08
+[2025-12-09 13:31:32,258][solvers.base][INFO] - Iteration 5300: u_res=3.931422e-08, v_res=3.931422e-08
+[2025-12-09 13:31:32,267][solvers.base][INFO] - Iteration 5350: u_res=3.748409e-08, v_res=3.748409e-08
+[2025-12-09 13:31:32,276][solvers.base][INFO] - Iteration 5400: u_res=3.573962e-08, v_res=3.573962e-08
+[2025-12-09 13:31:32,286][solvers.base][INFO] - Iteration 5450: u_res=3.407673e-08, v_res=3.407673e-08
+[2025-12-09 13:31:32,294][solvers.base][INFO] - Iteration 5500: u_res=3.249158e-08, v_res=3.249158e-08
+[2025-12-09 13:31:32,303][solvers.base][INFO] - Iteration 5550: u_res=3.098048e-08, v_res=3.098048e-08
+[2025-12-09 13:31:32,312][solvers.base][INFO] - Iteration 5600: u_res=2.953995e-08, v_res=2.953995e-08
+[2025-12-09 13:31:32,321][solvers.base][INFO] - Iteration 5650: u_res=2.816665e-08, v_res=2.816665e-08
+[2025-12-09 13:31:32,330][solvers.base][INFO] - Iteration 5700: u_res=2.685743e-08, v_res=2.685743e-08
+[2025-12-09 13:31:32,338][solvers.base][INFO] - Iteration 5750: u_res=2.560926e-08, v_res=2.560926e-08
+[2025-12-09 13:31:32,347][solvers.base][INFO] - Iteration 5800: u_res=2.441927e-08, v_res=2.441927e-08
+[2025-12-09 13:31:32,356][solvers.base][INFO] - Iteration 5850: u_res=2.328475e-08, v_res=2.328475e-08
+[2025-12-09 13:31:32,365][solvers.base][INFO] - Iteration 5900: u_res=2.220307e-08, v_res=2.220307e-08
+[2025-12-09 13:31:32,374][solvers.base][INFO] - Iteration 5950: u_res=2.117178e-08, v_res=2.117178e-08
+[2025-12-09 13:31:32,384][solvers.base][INFO] - Iteration 6000: u_res=2.018850e-08, v_res=2.018850e-08
+[2025-12-09 13:31:32,393][solvers.base][INFO] - Iteration 6050: u_res=1.925098e-08, v_res=1.925098e-08
+[2025-12-09 13:31:32,403][solvers.base][INFO] - Iteration 6100: u_res=1.835710e-08, v_res=1.835710e-08
+[2025-12-09 13:31:32,414][solvers.base][INFO] - Iteration 6150: u_res=1.750480e-08, v_res=1.750480e-08
+[2025-12-09 13:31:32,424][solvers.base][INFO] - Iteration 6200: u_res=1.669215e-08, v_res=1.669215e-08
+[2025-12-09 13:31:32,434][solvers.base][INFO] - Iteration 6250: u_res=1.591729e-08, v_res=1.591729e-08
+[2025-12-09 13:31:32,445][solvers.base][INFO] - Iteration 6300: u_res=1.517846e-08, v_res=1.517846e-08
+[2025-12-09 13:31:32,455][solvers.base][INFO] - Iteration 6350: u_res=1.447398e-08, v_res=1.447398e-08
+[2025-12-09 13:31:32,470][solvers.base][INFO] - Iteration 6400: u_res=1.380224e-08, v_res=1.380224e-08
+[2025-12-09 13:31:32,485][solvers.base][INFO] - Iteration 6450: u_res=1.316172e-08, v_res=1.316172e-08
+[2025-12-09 13:31:32,499][solvers.base][INFO] - Iteration 6500: u_res=1.255096e-08, v_res=1.255096e-08
+[2025-12-09 13:31:32,511][solvers.base][INFO] - Iteration 6550: u_res=1.196858e-08, v_res=1.196858e-08
+[2025-12-09 13:31:32,521][solvers.base][INFO] - Iteration 6600: u_res=1.141325e-08, v_res=1.141325e-08
+[2025-12-09 13:31:32,530][solvers.base][INFO] - Iteration 6650: u_res=1.088372e-08, v_res=1.088372e-08
+[2025-12-09 13:31:32,540][solvers.base][INFO] - Iteration 6700: u_res=1.037878e-08, v_res=1.037878e-08
+[2025-12-09 13:31:32,549][solvers.base][INFO] - Iteration 6750: u_res=9.897285e-09, v_res=9.897285e-09
+[2025-12-09 13:31:32,558][solvers.base][INFO] - Iteration 6800: u_res=9.438151e-09, v_res=9.438151e-09
+[2025-12-09 13:31:32,567][solvers.base][INFO] - Iteration 6850: u_res=9.000334e-09, v_res=9.000334e-09
+[2025-12-09 13:31:32,576][solvers.base][INFO] - Iteration 6900: u_res=8.582843e-09, v_res=8.582843e-09
+[2025-12-09 13:31:32,585][solvers.base][INFO] - Iteration 6950: u_res=8.184732e-09, v_res=8.184732e-09
+[2025-12-09 13:31:32,594][solvers.base][INFO] - Iteration 7000: u_res=7.805100e-09, v_res=7.805101e-09
+[2025-12-09 13:31:32,603][solvers.base][INFO] - Iteration 7050: u_res=7.443089e-09, v_res=7.443089e-09
+[2025-12-09 13:31:32,612][solvers.base][INFO] - Iteration 7100: u_res=7.097880e-09, v_res=7.097880e-09
+[2025-12-09 13:31:32,621][solvers.base][INFO] - Iteration 7150: u_res=6.768690e-09, v_res=6.768690e-09
+[2025-12-09 13:31:32,630][solvers.base][INFO] - Iteration 7200: u_res=6.454777e-09, v_res=6.454777e-09
+[2025-12-09 13:31:32,639][solvers.base][INFO] - Iteration 7250: u_res=6.155430e-09, v_res=6.155430e-09
+[2025-12-09 13:31:32,648][solvers.base][INFO] - Iteration 7300: u_res=5.869973e-09, v_res=5.869973e-09
+[2025-12-09 13:31:32,657][solvers.base][INFO] - Iteration 7350: u_res=5.597760e-09, v_res=5.597760e-09
+[2025-12-09 13:31:32,667][solvers.base][INFO] - Iteration 7400: u_res=5.338176e-09, v_res=5.338176e-09
+[2025-12-09 13:31:32,676][solvers.base][INFO] - Iteration 7450: u_res=5.090635e-09, v_res=5.090635e-09
+[2025-12-09 13:31:32,684][solvers.base][INFO] - Iteration 7500: u_res=4.854578e-09, v_res=4.854578e-09
+[2025-12-09 13:31:32,693][solvers.base][INFO] - Iteration 7550: u_res=4.629472e-09, v_res=4.629472e-09
+[2025-12-09 13:31:32,702][solvers.base][INFO] - Iteration 7600: u_res=4.414807e-09, v_res=4.414807e-09
+[2025-12-09 13:31:32,711][solvers.base][INFO] - Iteration 7650: u_res=4.210100e-09, v_res=4.210100e-09
+[2025-12-09 13:31:32,720][solvers.base][INFO] - Iteration 7700: u_res=4.014887e-09, v_res=4.014887e-09
+[2025-12-09 13:31:32,729][solvers.base][INFO] - Iteration 7750: u_res=3.828729e-09, v_res=3.828729e-09
+[2025-12-09 13:31:32,738][solvers.base][INFO] - Iteration 7800: u_res=3.651206e-09, v_res=3.651206e-09
+[2025-12-09 13:31:32,747][solvers.base][INFO] - Iteration 7850: u_res=3.481915e-09, v_res=3.481915e-09
+[2025-12-09 13:31:32,756][solvers.base][INFO] - Iteration 7900: u_res=3.320476e-09, v_res=3.320476e-09
+[2025-12-09 13:31:32,764][solvers.base][INFO] - Iteration 7950: u_res=3.166524e-09, v_res=3.166524e-09
+[2025-12-09 13:31:32,773][solvers.base][INFO] - Iteration 8000: u_res=3.019712e-09, v_res=3.019712e-09
+[2025-12-09 13:31:32,782][solvers.base][INFO] - Iteration 8050: u_res=2.879708e-09, v_res=2.879708e-09
+[2025-12-09 13:31:32,791][solvers.base][INFO] - Iteration 8100: u_res=2.746196e-09, v_res=2.746196e-09
+[2025-12-09 13:31:32,800][solvers.base][INFO] - Iteration 8150: u_res=2.618876e-09, v_res=2.618876e-09
+[2025-12-09 13:31:32,809][solvers.base][INFO] - Iteration 8200: u_res=2.497460e-09, v_res=2.497460e-09
+[2025-12-09 13:31:32,818][solvers.base][INFO] - Iteration 8250: u_res=2.381673e-09, v_res=2.381673e-09
+[2025-12-09 13:31:32,827][solvers.base][INFO] - Iteration 8300: u_res=2.271256e-09, v_res=2.271256e-09
+[2025-12-09 13:31:32,836][solvers.base][INFO] - Iteration 8350: u_res=2.165959e-09, v_res=2.165959e-09
+[2025-12-09 13:31:32,846][solvers.base][INFO] - Iteration 8400: u_res=2.065544e-09, v_res=2.065544e-09
+[2025-12-09 13:31:32,856][solvers.base][INFO] - Iteration 8450: u_res=1.969785e-09, v_res=1.969785e-09
+[2025-12-09 13:31:32,866][solvers.base][INFO] - Iteration 8500: u_res=1.878466e-09, v_res=1.878466e-09
+[2025-12-09 13:31:32,876][solvers.base][INFO] - Iteration 8550: u_res=1.791382e-09, v_res=1.791382e-09
+[2025-12-09 13:31:32,886][solvers.base][INFO] - Iteration 8600: u_res=1.708335e-09, v_res=1.708335e-09
+[2025-12-09 13:31:32,896][solvers.base][INFO] - Iteration 8650: u_res=1.629138e-09, v_res=1.629138e-09
+[2025-12-09 13:31:32,906][solvers.base][INFO] - Iteration 8700: u_res=1.553613e-09, v_res=1.553613e-09
+[2025-12-09 13:31:32,915][solvers.base][INFO] - Iteration 8750: u_res=1.481590e-09, v_res=1.481590e-09
+[2025-12-09 13:31:32,925][solvers.base][INFO] - Iteration 8800: u_res=1.412907e-09, v_res=1.412907e-09
+[2025-12-09 13:31:32,934][solvers.base][INFO] - Iteration 8850: u_res=1.347407e-09, v_res=1.347407e-09
+[2025-12-09 13:31:32,944][solvers.base][INFO] - Iteration 8900: u_res=1.284944e-09, v_res=1.284944e-09
+[2025-12-09 13:31:32,953][solvers.base][INFO] - Iteration 8950: u_res=1.225378e-09, v_res=1.225377e-09
+[2025-12-09 13:31:32,963][solvers.base][INFO] - Iteration 9000: u_res=1.168572e-09, v_res=1.168572e-09
+[2025-12-09 13:31:32,972][solvers.base][INFO] - Iteration 9050: u_res=1.114400e-09, v_res=1.114400e-09
+[2025-12-09 13:31:32,981][solvers.base][INFO] - Iteration 9100: u_res=1.062740e-09, v_res=1.062740e-09
+[2025-12-09 13:31:32,990][solvers.base][INFO] - Iteration 9150: u_res=1.013475e-09, v_res=1.013475e-09
+[2025-12-09 13:31:33,000][solvers.base][INFO] - Iteration 9200: u_res=9.664937e-10, v_res=9.664937e-10
+[2025-12-09 13:31:33,009][solvers.base][INFO] - Iteration 9250: u_res=9.216904e-10, v_res=9.216903e-10
+[2025-12-09 13:31:33,018][solvers.base][INFO] - Iteration 9300: u_res=8.789641e-10, v_res=8.789641e-10
+[2025-12-09 13:31:33,027][solvers.base][INFO] - Iteration 9350: u_res=8.382187e-10, v_res=8.382187e-10
+[2025-12-09 13:31:33,038][solvers.base][INFO] - Iteration 9400: u_res=7.993621e-10, v_res=7.993621e-10
+[2025-12-09 13:31:33,047][solvers.base][INFO] - Iteration 9450: u_res=7.623068e-10, v_res=7.623069e-10
+[2025-12-09 13:31:33,056][solvers.base][INFO] - Iteration 9500: u_res=7.269695e-10, v_res=7.269695e-10
+[2025-12-09 13:31:33,065][solvers.base][INFO] - Iteration 9550: u_res=6.932702e-10, v_res=6.932702e-10
+[2025-12-09 13:31:33,074][solvers.base][INFO] - Iteration 9600: u_res=6.611332e-10, v_res=6.611332e-10
+[2025-12-09 13:31:33,083][solvers.base][INFO] - Iteration 9650: u_res=6.304860e-10, v_res=6.304859e-10
+[2025-12-09 13:31:33,092][solvers.base][INFO] - Iteration 9700: u_res=6.012595e-10, v_res=6.012595e-10
+[2025-12-09 13:31:33,101][solvers.base][INFO] - Iteration 9750: u_res=5.733878e-10, v_res=5.733879e-10
+[2025-12-09 13:31:33,110][solvers.base][INFO] - Iteration 9800: u_res=5.468083e-10, v_res=5.468083e-10
+[2025-12-09 13:31:33,119][solvers.base][INFO] - Iteration 9850: u_res=5.214609e-10, v_res=5.214608e-10
+[2025-12-09 13:31:33,127][solvers.base][INFO] - Iteration 9900: u_res=4.972885e-10, v_res=4.972885e-10
+[2025-12-09 13:31:33,136][solvers.base][INFO] - Iteration 9950: u_res=4.742367e-10, v_res=4.742366e-10
+[2025-12-09 13:31:33,145][solvers.base][INFO] - Iteration 10000: u_res=4.522533e-10, v_res=4.522535e-10
+[2025-12-09 13:31:33,154][solvers.base][INFO] - Iteration 10050: u_res=4.312891e-10, v_res=4.312893e-10
+[2025-12-09 13:31:33,163][solvers.base][INFO] - Iteration 10100: u_res=4.112969e-10, v_res=4.112969e-10
+[2025-12-09 13:31:33,172][solvers.base][INFO] - Iteration 10150: u_res=3.922313e-10, v_res=3.922313e-10
+[2025-12-09 13:31:33,180][solvers.base][INFO] - Iteration 10200: u_res=3.740495e-10, v_res=3.740495e-10
+[2025-12-09 13:31:33,189][solvers.base][INFO] - Iteration 10250: u_res=3.567105e-10, v_res=3.567105e-10
+[2025-12-09 13:31:33,198][solvers.base][INFO] - Iteration 10300: u_res=3.401753e-10, v_res=3.401753e-10
+[2025-12-09 13:31:33,207][solvers.base][INFO] - Iteration 10350: u_res=3.244066e-10, v_res=3.244067e-10
+[2025-12-09 13:31:33,215][solvers.base][INFO] - Iteration 10400: u_res=3.093689e-10, v_res=3.093690e-10
+[2025-12-09 13:31:33,224][solvers.base][INFO] - Iteration 10450: u_res=2.950282e-10, v_res=2.950282e-10
+[2025-12-09 13:31:33,233][solvers.base][INFO] - Iteration 10500: u_res=2.813524e-10, v_res=2.813524e-10
+[2025-12-09 13:31:33,242][solvers.base][INFO] - Iteration 10550: u_res=2.683104e-10, v_res=2.683105e-10
+[2025-12-09 13:31:33,251][solvers.base][INFO] - Iteration 10600: u_res=2.558731e-10, v_res=2.558731e-10
+[2025-12-09 13:31:33,259][solvers.base][INFO] - Iteration 10650: u_res=2.440122e-10, v_res=2.440122e-10
+[2025-12-09 13:31:33,268][solvers.base][INFO] - Iteration 10700: u_res=2.327012e-10, v_res=2.327012e-10
+[2025-12-09 13:31:33,277][solvers.base][INFO] - Iteration 10750: u_res=2.219145e-10, v_res=2.219145e-10
+[2025-12-09 13:31:33,285][solvers.base][INFO] - Iteration 10800: u_res=2.116279e-10, v_res=2.116278e-10
+[2025-12-09 13:31:33,294][solvers.base][INFO] - Iteration 10850: u_res=2.018180e-10, v_res=2.018179e-10
+[2025-12-09 13:31:33,303][solvers.base][INFO] - Iteration 10900: u_res=1.924629e-10, v_res=1.924628e-10
+[2025-12-09 13:31:33,312][solvers.base][INFO] - Iteration 10950: u_res=1.835414e-10, v_res=1.835414e-10
+[2025-12-09 13:31:33,320][solvers.base][INFO] - Iteration 11000: u_res=1.750336e-10, v_res=1.750334e-10
+[2025-12-09 13:31:33,329][solvers.base][INFO] - Iteration 11050: u_res=1.669200e-10, v_res=1.669200e-10
+[2025-12-09 13:31:33,338][solvers.base][INFO] - Iteration 11100: u_res=1.591826e-10, v_res=1.591825e-10
+[2025-12-09 13:31:33,347][solvers.base][INFO] - Iteration 11150: u_res=1.518038e-10, v_res=1.518038e-10
+[2025-12-09 13:31:33,355][solvers.base][INFO] - Iteration 11200: u_res=1.447671e-10, v_res=1.447671e-10
+[2025-12-09 13:31:33,364][solvers.base][INFO] - Iteration 11250: u_res=1.380566e-10, v_res=1.380565e-10
+[2025-12-09 13:31:33,373][solvers.base][INFO] - Iteration 11300: u_res=1.316571e-10, v_res=1.316570e-10
+[2025-12-09 13:31:33,381][solvers.base][INFO] - Iteration 11350: u_res=1.255542e-10, v_res=1.255542e-10
+[2025-12-09 13:31:33,390][solvers.base][INFO] - Iteration 11400: u_res=1.197343e-10, v_res=1.197343e-10
+[2025-12-09 13:31:33,399][solvers.base][INFO] - Iteration 11450: u_res=1.141841e-10, v_res=1.141841e-10
+[2025-12-09 13:31:33,408][solvers.base][INFO] - Iteration 11500: u_res=1.088912e-10, v_res=1.088913e-10
+[2025-12-09 13:31:33,417][solvers.base][INFO] - Iteration 11550: u_res=1.038437e-10, v_res=1.038438e-10
+[2025-12-09 13:31:33,426][solvers.base][INFO] - Iteration 11600: u_res=9.903014e-11, v_res=9.903014e-11
+[2025-12-09 13:31:33,435][solvers.base][INFO] - Iteration 11650: u_res=9.443968e-11, v_res=9.443975e-11
+[2025-12-09 13:31:33,444][solvers.base][INFO] - Iteration 11700: u_res=9.006209e-11, v_res=9.006206e-11
+[2025-12-09 13:31:33,453][solvers.base][INFO] - Iteration 11750: u_res=8.588733e-11, v_res=8.588731e-11
+[2025-12-09 13:31:33,462][solvers.base][INFO] - Iteration 11800: u_res=8.190610e-11, v_res=8.190612e-11
+[2025-12-09 13:31:33,471][solvers.base][INFO] - Iteration 11850: u_res=7.810947e-11, v_res=7.810943e-11
+[2025-12-09 13:31:33,479][solvers.base][INFO] - Iteration 11900: u_res=7.448875e-11, v_res=7.448874e-11
+[2025-12-09 13:31:33,488][solvers.base][INFO] - Iteration 11950: u_res=7.103594e-11, v_res=7.103591e-11
+[2025-12-09 13:31:33,497][solvers.base][INFO] - Iteration 12000: u_res=6.774315e-11, v_res=6.774309e-11
+[2025-12-09 13:31:33,505][solvers.base][INFO] - Iteration 12050: u_res=6.460297e-11, v_res=6.460303e-11
+[2025-12-09 13:31:33,514][solvers.base][INFO] - Iteration 12100: u_res=6.160839e-11, v_res=6.160842e-11
+[2025-12-09 13:31:33,523][solvers.base][INFO] - Iteration 12150: u_res=5.875260e-11, v_res=5.875262e-11
+[2025-12-09 13:31:33,532][solvers.base][INFO] - Iteration 12200: u_res=5.602920e-11, v_res=5.602919e-11
+[2025-12-09 13:31:33,541][solvers.base][INFO] - Iteration 12250: u_res=5.343202e-11, v_res=5.343209e-11
+[2025-12-09 13:31:33,550][solvers.base][INFO] - Iteration 12300: u_res=5.095525e-11, v_res=5.095532e-11
+[2025-12-09 13:31:33,559][solvers.base][INFO] - Iteration 12350: u_res=4.859325e-11, v_res=4.859328e-11
+[2025-12-09 13:31:33,568][solvers.base][INFO] - Iteration 12400: u_res=4.634079e-11, v_res=4.634079e-11
+[2025-12-09 13:31:33,577][solvers.base][INFO] - Iteration 12450: u_res=4.419270e-11, v_res=4.419274e-11
+[2025-12-09 13:31:33,586][solvers.base][INFO] - Iteration 12500: u_res=4.214426e-11, v_res=4.214428e-11
+[2025-12-09 13:31:33,595][solvers.base][INFO] - Iteration 12550: u_res=4.019073e-11, v_res=4.019071e-11
+[2025-12-09 13:31:33,604][solvers.base][INFO] - Iteration 12600: u_res=3.832775e-11, v_res=3.832770e-11
+[2025-12-09 13:31:33,613][solvers.base][INFO] - Iteration 12650: u_res=3.655106e-11, v_res=3.655107e-11
+[2025-12-09 13:31:33,622][solvers.base][INFO] - Iteration 12700: u_res=3.485680e-11, v_res=3.485673e-11
+[2025-12-09 13:31:33,631][solvers.base][INFO] - Iteration 12750: u_res=3.324102e-11, v_res=3.324103e-11
+[2025-12-09 13:31:33,640][solvers.base][INFO] - Iteration 12800: u_res=3.170020e-11, v_res=3.170020e-11
+[2025-12-09 13:31:33,649][solvers.base][INFO] - Iteration 12850: u_res=3.023081e-11, v_res=3.023076e-11
+[2025-12-09 13:31:33,658][solvers.base][INFO] - Iteration 12900: u_res=2.882944e-11, v_res=2.882941e-11
+[2025-12-09 13:31:33,667][solvers.base][INFO] - Iteration 12950: u_res=2.749309e-11, v_res=2.749311e-11
+[2025-12-09 13:31:33,676][solvers.base][INFO] - Iteration 13000: u_res=2.621871e-11, v_res=2.621871e-11
+[2025-12-09 13:31:33,685][solvers.base][INFO] - Iteration 13050: u_res=2.500334e-11, v_res=2.500340e-11
+[2025-12-09 13:31:33,694][solvers.base][INFO] - Iteration 13100: u_res=2.384437e-11, v_res=2.384435e-11
+[2025-12-09 13:31:33,703][solvers.base][INFO] - Iteration 13150: u_res=2.273914e-11, v_res=2.273911e-11
+[2025-12-09 13:31:33,712][solvers.base][INFO] - Iteration 13200: u_res=2.168509e-11, v_res=2.168503e-11
+[2025-12-09 13:31:33,721][solvers.base][INFO] - Iteration 13250: u_res=2.067989e-11, v_res=2.067987e-11
+[2025-12-09 13:31:33,730][solvers.base][INFO] - Iteration 13300: u_res=1.972130e-11, v_res=1.972128e-11
+[2025-12-09 13:31:33,739][solvers.base][INFO] - Iteration 13350: u_res=1.880713e-11, v_res=1.880706e-11
+[2025-12-09 13:31:33,748][solvers.base][INFO] - Iteration 13400: u_res=1.793531e-11, v_res=1.793532e-11
+[2025-12-09 13:31:33,757][solvers.base][INFO] - Iteration 13450: u_res=1.710401e-11, v_res=1.710404e-11
+[2025-12-09 13:31:33,765][solvers.base][INFO] - Iteration 13500: u_res=1.631116e-11, v_res=1.631116e-11
+[2025-12-09 13:31:33,774][solvers.base][INFO] - Iteration 13550: u_res=1.555511e-11, v_res=1.555506e-11
+[2025-12-09 13:31:33,783][solvers.base][INFO] - Iteration 13600: u_res=1.483409e-11, v_res=1.483409e-11
+[2025-12-09 13:31:33,792][solvers.base][INFO] - Iteration 13650: u_res=1.414642e-11, v_res=1.414643e-11
+[2025-12-09 13:31:33,801][solvers.base][INFO] - Iteration 13700: u_res=1.349068e-11, v_res=1.349061e-11
+[2025-12-09 13:31:33,809][solvers.base][INFO] - Iteration 13750: u_res=1.286537e-11, v_res=1.286531e-11
+[2025-12-09 13:31:33,818][solvers.base][INFO] - Iteration 13800: u_res=1.226900e-11, v_res=1.226901e-11
+[2025-12-09 13:31:33,827][solvers.base][INFO] - Iteration 13850: u_res=1.170028e-11, v_res=1.170030e-11
+[2025-12-09 13:31:33,835][solvers.base][INFO] - Iteration 13900: u_res=1.115792e-11, v_res=1.115788e-11
+[2025-12-09 13:31:33,844][solvers.base][INFO] - Iteration 13950: u_res=1.064067e-11, v_res=1.064071e-11
+[2025-12-09 13:31:33,853][solvers.base][INFO] - Iteration 14000: u_res=1.014745e-11, v_res=1.014745e-11
+[2025-12-09 13:31:33,861][solvers.base][INFO] - Iteration 14050: u_res=9.677059e-12, v_res=9.677099e-12
+[2025-12-09 13:31:33,870][solvers.base][INFO] - Iteration 14100: u_res=9.228488e-12, v_res=9.228464e-12
+[2025-12-09 13:31:33,879][solvers.base][INFO] - Iteration 14150: u_res=8.800729e-12, v_res=8.800750e-12
+[2025-12-09 13:31:33,887][solvers.base][INFO] - Iteration 14200: u_res=8.392755e-12, v_res=8.392791e-12
+[2025-12-09 13:31:33,896][solvers.base][INFO] - Iteration 14250: u_res=8.003756e-12, v_res=8.003755e-12
+[2025-12-09 13:31:33,904][solvers.base][INFO] - Iteration 14300: u_res=7.632800e-12, v_res=7.632790e-12
+[2025-12-09 13:31:33,913][solvers.base][INFO] - Iteration 14350: u_res=7.278941e-12, v_res=7.278970e-12
+[2025-12-09 13:31:33,922][solvers.base][INFO] - Iteration 14400: u_res=6.941499e-12, v_res=6.941548e-12
+[2025-12-09 13:31:33,931][solvers.base][INFO] - Iteration 14450: u_res=6.619794e-12, v_res=6.619813e-12
+[2025-12-09 13:31:33,939][solvers.base][INFO] - Iteration 14500: u_res=6.312939e-12, v_res=6.312967e-12
+[2025-12-09 13:31:33,948][solvers.base][INFO] - Iteration 14550: u_res=6.020298e-12, v_res=6.020328e-12
+[2025-12-09 13:31:33,957][solvers.base][INFO] - Iteration 14600: u_res=5.741254e-12, v_res=5.741226e-12
+[2025-12-09 13:31:33,966][solvers.base][INFO] - Iteration 14650: u_res=5.475119e-12, v_res=5.475102e-12
+[2025-12-09 13:31:33,974][solvers.base][INFO] - Iteration 14700: u_res=5.221285e-12, v_res=5.221327e-12
+[2025-12-09 13:31:33,983][solvers.base][INFO] - Iteration 14750: u_res=4.979231e-12, v_res=4.979303e-12
+[2025-12-09 13:31:33,991][solvers.base][INFO] - Iteration 14800: u_res=4.748501e-12, v_res=4.748525e-12
+[2025-12-09 13:31:34,000][solvers.base][INFO] - Iteration 14850: u_res=4.528385e-12, v_res=4.528369e-12
+[2025-12-09 13:31:34,009][solvers.base][INFO] - Iteration 14900: u_res=4.318488e-12, v_res=4.318468e-12
+[2025-12-09 13:31:34,018][solvers.base][INFO] - Iteration 14950: u_res=4.118323e-12, v_res=4.118341e-12
+[2025-12-09 13:31:34,027][solvers.base][INFO] - Iteration 15000: u_res=3.927363e-12, v_res=3.927366e-12
+[2025-12-09 13:31:34,036][solvers.base][INFO] - Iteration 15050: u_res=3.745301e-12, v_res=3.745268e-12
+[2025-12-09 13:31:34,044][solvers.base][INFO] - Iteration 15100: u_res=3.571694e-12, v_res=3.571644e-12
+[2025-12-09 13:31:34,053][solvers.base][INFO] - Iteration 15150: u_res=3.406120e-12, v_res=3.406092e-12
+[2025-12-09 13:31:34,062][solvers.base][INFO] - Iteration 15200: u_res=3.248261e-12, v_res=3.248212e-12
+[2025-12-09 13:31:34,071][solvers.base][INFO] - Iteration 15250: u_res=3.097724e-12, v_res=3.097695e-12
+[2025-12-09 13:31:34,080][solvers.base][INFO] - Iteration 15300: u_res=2.954118e-12, v_res=2.954099e-12
+[2025-12-09 13:31:34,089][solvers.base][INFO] - Iteration 15350: u_res=2.817229e-12, v_res=2.817227e-12
+[2025-12-09 13:31:34,098][solvers.base][INFO] - Iteration 15400: u_res=2.686610e-12, v_res=2.686587e-12
+[2025-12-09 13:31:34,107][solvers.base][INFO] - Iteration 15450: u_res=2.562097e-12, v_res=2.562130e-12
+[2025-12-09 13:31:34,115][solvers.base][INFO] - Iteration 15500: u_res=2.443338e-12, v_res=2.443353e-12
+[2025-12-09 13:31:34,124][solvers.base][INFO] - Iteration 15550: u_res=2.330087e-12, v_res=2.330042e-12
+[2025-12-09 13:31:34,132][solvers.base][INFO] - Iteration 15600: u_res=2.222035e-12, v_res=2.222035e-12
+[2025-12-09 13:31:34,141][solvers.base][INFO] - Iteration 15650: u_res=2.119052e-12, v_res=2.119026e-12
+[2025-12-09 13:31:34,150][solvers.base][INFO] - Iteration 15700: u_res=2.020842e-12, v_res=2.020826e-12
+[2025-12-09 13:31:34,158][solvers.base][INFO] - Iteration 15750: u_res=1.927039e-12, v_res=1.927056e-12
+[2025-12-09 13:31:34,167][solvers.base][INFO] - Iteration 15800: u_res=1.837801e-12, v_res=1.837752e-12
+[2025-12-09 13:31:34,175][solvers.base][INFO] - Iteration 15850: u_res=1.752619e-12, v_res=1.752632e-12
+[2025-12-09 13:31:34,184][solvers.base][INFO] - Iteration 15900: u_res=1.671373e-12, v_res=1.671364e-12
+[2025-12-09 13:31:34,193][solvers.base][INFO] - Iteration 15950: u_res=1.593938e-12, v_res=1.593968e-12
+[2025-12-09 13:31:34,201][solvers.base][INFO] - Iteration 16000: u_res=1.520028e-12, v_res=1.520050e-12
+[2025-12-09 13:31:34,210][solvers.base][INFO] - Iteration 16050: u_res=1.449563e-12, v_res=1.449578e-12
+[2025-12-09 13:31:34,218][solvers.base][INFO] - Iteration 16100: u_res=1.382345e-12, v_res=1.382344e-12
+[2025-12-09 13:31:34,227][solvers.base][INFO] - Iteration 16150: u_res=1.318391e-12, v_res=1.318382e-12
+[2025-12-09 13:31:34,236][solvers.base][INFO] - Iteration 16200: u_res=1.257200e-12, v_res=1.257186e-12
+[2025-12-09 13:31:34,245][solvers.base][INFO] - Iteration 16250: u_res=1.198952e-12, v_res=1.198930e-12
+[2025-12-09 13:31:34,253][solvers.base][INFO] - Iteration 16300: u_res=1.143336e-12, v_res=1.143288e-12
+[2025-12-09 13:31:34,262][solvers.base][INFO] - Iteration 16350: u_res=1.090325e-12, v_res=1.090311e-12
+[2025-12-09 13:31:34,271][solvers.base][INFO] - Iteration 16400: u_res=1.039821e-12, v_res=1.039800e-12
+[2025-12-09 13:31:34,279][solvers.base][INFO] - Iteration 16450: u_res=9.916445e-13, v_res=9.915849e-13
+[2025-12-09 13:31:34,288][solvers.base][INFO] - Iteration 16500: u_res=9.456232e-13, v_res=9.456382e-13
+[2025-12-09 13:31:34,297][solvers.base][INFO] - Iteration 16550: u_res=9.018355e-13, v_res=9.018088e-13
+[2025-12-09 13:31:34,305][solvers.base][INFO] - Iteration 16600: u_res=8.600302e-13, v_res=8.600197e-13
+[2025-12-09 13:31:34,314][solvers.base][INFO] - Iteration 16650: u_res=8.201576e-13, v_res=8.201303e-13
+[2025-12-09 13:31:34,323][solvers.base][INFO] - Iteration 16700: u_res=7.821362e-13, v_res=7.821047e-13
+[2025-12-09 13:31:34,332][solvers.base][INFO] - Iteration 16750: u_res=7.458787e-13, v_res=7.458903e-13
+[2025-12-09 13:31:34,341][solvers.base][INFO] - Iteration 16800: u_res=7.113054e-13, v_res=7.112976e-13
+[2025-12-09 13:31:34,350][solvers.base][INFO] - Iteration 16850: u_res=6.782966e-13, v_res=6.782596e-13
+[2025-12-09 13:31:34,359][solvers.base][INFO] - Iteration 16900: u_res=6.468359e-13, v_res=6.468120e-13
+[2025-12-09 13:31:34,369][solvers.base][INFO] - Iteration 16950: u_res=6.168096e-13, v_res=6.168241e-13
+[2025-12-09 13:31:34,378][solvers.base][INFO] - Iteration 17000: u_res=5.883216e-13, v_res=5.883283e-13
+[2025-12-09 13:31:34,387][solvers.base][INFO] - Iteration 17050: u_res=5.610199e-13, v_res=5.609921e-13
+[2025-12-09 13:31:34,396][solvers.base][INFO] - Iteration 17100: u_res=5.350136e-13, v_res=5.350274e-13
+[2025-12-09 13:31:34,405][solvers.base][INFO] - Iteration 17150: u_res=5.102209e-13, v_res=5.102337e-13
+[2025-12-09 13:31:34,414][solvers.base][INFO] - Iteration 17200: u_res=4.865766e-13, v_res=4.865751e-13
+[2025-12-09 13:31:34,423][solvers.base][INFO] - Iteration 17250: u_res=4.640304e-13, v_res=4.640320e-13
+[2025-12-09 13:31:34,433][solvers.base][INFO] - Iteration 17300: u_res=4.425124e-13, v_res=4.425119e-13
+[2025-12-09 13:31:34,442][solvers.base][INFO] - Iteration 17350: u_res=4.219409e-13, v_res=4.219512e-13
+[2025-12-09 13:31:34,452][solvers.base][INFO] - Iteration 17400: u_res=4.024216e-13, v_res=4.024218e-13
+[2025-12-09 13:31:34,462][solvers.base][INFO] - Iteration 17450: u_res=3.837903e-13, v_res=3.837908e-13
+[2025-12-09 13:31:34,471][solvers.base][INFO] - Iteration 17500: u_res=3.660050e-13, v_res=3.659749e-13
+[2025-12-09 13:31:34,480][solvers.base][INFO] - Iteration 17550: u_res=3.490178e-13, v_res=3.490112e-13
+[2025-12-09 13:31:34,489][solvers.base][INFO] - Iteration 17600: u_res=3.328165e-13, v_res=3.328549e-13
+[2025-12-09 13:31:34,498][solvers.base][INFO] - Iteration 17650: u_res=3.173750e-13, v_res=3.173862e-13
+[2025-12-09 13:31:34,507][solvers.base][INFO] - Iteration 17700: u_res=3.026534e-13, v_res=3.026353e-13
+[2025-12-09 13:31:34,517][solvers.base][INFO] - Iteration 17750: u_res=2.886839e-13, v_res=2.886604e-13
+[2025-12-09 13:31:34,526][solvers.base][INFO] - Iteration 17800: u_res=2.753074e-13, v_res=2.752742e-13
+[2025-12-09 13:31:34,535][solvers.base][INFO] - Iteration 17850: u_res=2.625636e-13, v_res=2.625450e-13
+[2025-12-09 13:31:34,544][solvers.base][INFO] - Iteration 17900: u_res=2.504330e-13, v_res=2.504554e-13
+[2025-12-09 13:31:34,553][solvers.base][INFO] - Iteration 17950: u_res=2.387535e-13, v_res=2.387498e-13
+[2025-12-09 13:31:34,562][solvers.base][INFO] - Iteration 18000: u_res=2.276555e-13, v_res=2.276748e-13
+[2025-12-09 13:31:34,572][solvers.base][INFO] - Iteration 18050: u_res=2.170930e-13, v_res=2.170737e-13
+[2025-12-09 13:31:34,581][solvers.base][INFO] - Iteration 18100: u_res=2.070811e-13, v_res=2.071163e-13
+[2025-12-09 13:31:34,590][solvers.base][INFO] - Iteration 18150: u_res=1.974287e-13, v_res=1.974190e-13
+[2025-12-09 13:31:34,599][solvers.base][INFO] - Iteration 18200: u_res=1.883043e-13, v_res=1.882731e-13
+[2025-12-09 13:31:34,608][solvers.base][INFO] - Iteration 18250: u_res=1.796098e-13, v_res=1.796108e-13
+[2025-12-09 13:31:34,617][solvers.base][INFO] - Iteration 18300: u_res=1.712889e-13, v_res=1.712816e-13
+[2025-12-09 13:31:34,626][solvers.base][INFO] - Iteration 18350: u_res=1.633484e-13, v_res=1.633407e-13
+[2025-12-09 13:31:34,635][solvers.base][INFO] - Iteration 18400: u_res=1.557308e-13, v_res=1.557056e-13
+[2025-12-09 13:31:34,645][solvers.base][INFO] - Iteration 18450: u_res=1.485514e-13, v_res=1.485469e-13
+[2025-12-09 13:31:34,654][solvers.base][INFO] - Iteration 18500: u_res=1.416110e-13, v_res=1.415937e-13
+[2025-12-09 13:31:34,663][solvers.base][INFO] - Iteration 18550: u_res=1.350502e-13, v_res=1.350344e-13
+[2025-12-09 13:31:34,672][solvers.base][INFO] - Iteration 18600: u_res=1.288109e-13, v_res=1.288263e-13
+[2025-12-09 13:31:34,682][solvers.base][INFO] - Iteration 18650: u_res=1.228249e-13, v_res=1.228694e-13
+[2025-12-09 13:31:34,691][solvers.base][INFO] - Iteration 18700: u_res=1.171444e-13, v_res=1.171610e-13
+[2025-12-09 13:31:34,700][solvers.base][INFO] - Iteration 18750: u_res=1.116908e-13, v_res=1.117109e-13
+[2025-12-09 13:31:34,709][solvers.base][INFO] - Iteration 18800: u_res=1.065392e-13, v_res=1.065266e-13
+[2025-12-09 13:31:34,719][solvers.base][INFO] - Iteration 18850: u_res=1.016047e-13, v_res=1.016521e-13
+[2025-12-09 13:31:34,728][solvers.base][INFO] - Iteration 18900: u_res=9.681239e-14, v_res=9.684844e-14
+[2025-12-09 13:31:34,737][solvers.base][INFO] - Iteration 18950: u_res=9.241123e-14, v_res=9.238533e-14
+[2025-12-09 13:31:34,746][solvers.base][INFO] - Iteration 19000: u_res=8.817817e-14, v_res=8.819045e-14
+[2025-12-09 13:31:34,755][solvers.base][INFO] - Iteration 19050: u_res=8.405369e-14, v_res=8.407315e-14
+[2025-12-09 13:31:34,764][solvers.base][INFO] - Iteration 19100: u_res=8.015180e-14, v_res=8.012383e-14
+[2025-12-09 13:31:34,773][solvers.base][INFO] - Iteration 19150: u_res=7.646673e-14, v_res=7.646882e-14
+[2025-12-09 13:31:34,782][solvers.base][INFO] - Iteration 19200: u_res=7.287704e-14, v_res=7.287918e-14
+[2025-12-09 13:31:34,791][solvers.base][INFO] - Iteration 19250: u_res=6.944572e-14, v_res=6.947886e-14
+[2025-12-09 13:31:34,800][solvers.base][INFO] - Iteration 19300: u_res=6.628419e-14, v_res=6.628061e-14
+[2025-12-09 13:31:34,809][solvers.base][INFO] - Iteration 19350: u_res=6.323991e-14, v_res=6.320784e-14
+[2025-12-09 13:31:34,818][solvers.base][INFO] - Iteration 19400: u_res=6.029712e-14, v_res=6.028329e-14
+[2025-12-09 13:31:34,827][solvers.base][INFO] - Iteration 19450: u_res=5.745965e-14, v_res=5.747639e-14
+[2025-12-09 13:31:34,836][solvers.base][INFO] - Iteration 19500: u_res=5.480856e-14, v_res=5.479032e-14
+[2025-12-09 13:31:34,845][solvers.base][INFO] - Iteration 19550: u_res=5.228160e-14, v_res=5.227804e-14
+[2025-12-09 13:31:34,853][solvers.base][INFO] - Iteration 19600: u_res=4.982756e-14, v_res=4.982293e-14
+[2025-12-09 13:31:34,862][solvers.base][INFO] - Iteration 19650: u_res=4.752350e-14, v_res=4.753844e-14
+[2025-12-09 13:31:34,871][solvers.base][INFO] - Iteration 19700: u_res=4.531047e-14, v_res=4.534307e-14
+[2025-12-09 13:31:34,880][solvers.base][INFO] - Iteration 19750: u_res=4.326185e-14, v_res=4.327222e-14
+[2025-12-09 13:31:34,889][solvers.base][INFO] - Iteration 19800: u_res=4.126081e-14, v_res=4.126761e-14
+[2025-12-09 13:31:34,898][solvers.base][INFO] - Iteration 19850: u_res=3.938088e-14, v_res=3.935197e-14
+[2025-12-09 13:31:34,907][solvers.base][INFO] - Iteration 19900: u_res=3.750987e-14, v_res=3.750397e-14
+[2025-12-09 13:31:34,916][solvers.base][INFO] - Iteration 19950: u_res=3.574417e-14, v_res=3.575504e-14
+[2025-12-09 13:31:34,926][solvers.base][INFO] - Iteration 20000: u_res=3.411081e-14, v_res=3.410513e-14
+[2025-12-09 13:31:34,935][solvers.base][INFO] - Iteration 20050: u_res=3.256804e-14, v_res=3.251985e-14
+[2025-12-09 13:31:34,945][solvers.base][INFO] - Iteration 20100: u_res=3.101552e-14, v_res=3.101764e-14
+[2025-12-09 13:31:34,954][solvers.base][INFO] - Iteration 20150: u_res=2.967052e-14, v_res=2.970866e-14
+[2025-12-09 13:31:34,963][solvers.base][INFO] - Iteration 20200: u_res=2.820031e-14, v_res=2.818438e-14
+[2025-12-09 13:31:34,972][solvers.base][INFO] - Iteration 20250: u_res=2.685726e-14, v_res=2.685278e-14
+[2025-12-09 13:31:34,981][solvers.base][INFO] - Iteration 20300: u_res=2.563179e-14, v_res=2.565628e-14
+[2025-12-09 13:31:34,990][solvers.base][INFO] - Iteration 20350: u_res=2.449517e-14, v_res=2.452244e-14
+[2025-12-09 13:31:34,999][solvers.base][INFO] - Iteration 20400: u_res=2.331212e-14, v_res=2.335751e-14
+[2025-12-09 13:31:35,008][solvers.base][INFO] - Iteration 20450: u_res=2.222027e-14, v_res=2.222755e-14
+[2025-12-09 13:31:35,017][solvers.base][INFO] - Iteration 20500: u_res=2.119227e-14, v_res=2.117395e-14
+[2025-12-09 13:31:35,026][solvers.base][INFO] - Iteration 20550: u_res=2.025389e-14, v_res=2.024417e-14
+[2025-12-09 13:31:35,035][solvers.base][INFO] - Iteration 20600: u_res=1.934570e-14, v_res=1.935512e-14
+[2025-12-09 13:31:35,044][solvers.base][INFO] - Iteration 20650: u_res=1.843075e-14, v_res=1.842538e-14
+[2025-12-09 13:31:35,053][solvers.base][INFO] - Iteration 20700: u_res=1.754992e-14, v_res=1.751694e-14
+[2025-12-09 13:31:35,062][solvers.base][INFO] - Iteration 20750: u_res=1.672740e-14, v_res=1.675753e-14
+[2025-12-09 13:31:35,071][solvers.base][INFO] - Iteration 20800: u_res=1.593734e-14, v_res=1.596822e-14
+[2025-12-09 13:31:35,080][solvers.base][INFO] - Iteration 20850: u_res=1.520167e-14, v_res=1.521099e-14
+[2025-12-09 13:31:35,089][solvers.base][INFO] - Iteration 20900: u_res=1.448487e-14, v_res=1.445181e-14
+[2025-12-09 13:31:35,098][solvers.base][INFO] - Iteration 20950: u_res=1.389272e-14, v_res=1.389098e-14
+[2025-12-09 13:31:35,108][solvers.base][INFO] - Iteration 21000: u_res=1.321455e-14, v_res=1.320282e-14
+[2025-12-09 13:31:35,117][solvers.base][INFO] - Iteration 21050: u_res=1.256993e-14, v_res=1.259006e-14
+[2025-12-09 13:31:35,126][solvers.base][INFO] - Iteration 21100: u_res=1.202411e-14, v_res=1.203496e-14
+[2025-12-09 13:31:35,135][solvers.base][INFO] - Iteration 21150: u_res=1.149362e-14, v_res=1.149913e-14
+[2025-12-09 13:31:35,144][solvers.base][INFO] - Iteration 21200: u_res=1.094334e-14, v_res=1.094711e-14
+[2025-12-09 13:31:35,153][solvers.base][INFO] - Iteration 21250: u_res=1.044465e-14, v_res=1.041209e-14
+[2025-12-09 13:31:35,161][solvers.base][INFO] - Iteration 21292: u_res=9.990743e-15, v_res=9.973779e-15
+[2025-12-09 13:31:35,162][solvers.base][INFO] - Converged at iteration 21292
+[2025-12-09 13:31:35,162][solvers.base][INFO] - Solver finished in 3.34 seconds (excl. 0.49s logging).

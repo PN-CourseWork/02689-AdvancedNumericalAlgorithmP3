@@ -1,0 +1,8 @@
+Re: 100
+tolerance: 1.0e-12
+max_iterations: 1000000
+'N': 8
+CFL: 0.2
+corner_treatment: smoothing
+corner_smoothing: 0.0
+output_dir: outputs
