@@ -26,11 +26,10 @@ defaults:
   - override /hydra/sweeper: optuna_corner
 
 # Experiment name (dynamically includes objective type)
-experiment_name: Optuna-CornerSmoothing-${optuna.objective}
-sweep_name: corner-smoothing-${optuna.objective}-Re${Re}
-
+experiment_name: Optuna-CornerSmoothing
+sweep_name: corner-smoothing-${optuna.objective}
 # Grid and physics
-N: 40
+N: 30
 Re: 1000
 
 # Solver settings (strict convergence)
@@ -51,7 +50,8 @@ optuna:
 hydra:
   sweeper:
     study_name: corner_smoothing_${optuna.objective}_Re${Re}_N${N}
-    n_trials: 20
+    n_trials: 15
     n_jobs: 5
     params:
-      solver.corner_smoothing: interval(0.02, 0.35)
+      N: 30, 40, 50
+      solver.corner_smoothing: interval(0.01, 0.10)
