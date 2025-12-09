@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 import mlflow
 import numpy as np
 import pandas as pd
@@ -389,6 +390,8 @@ def plot_ghia_comparison(
     axes[0].set_xlabel(r"$u$", fontsize=11)
     axes[0].set_ylabel(r"$y$", fontsize=11)
     axes[0].set_title(r"$u$-velocity (vertical centerline)", fontsize=11)
+    axes[0].set_xlim(-0.5, 1.1)
+    axes[0].set_ylim(-0.1, 1.1)
 
     # Right: v-velocity (horizontal centerline)
     sns.lineplot(
@@ -420,6 +423,62 @@ def plot_ghia_comparison(
     axes[1].set_xlabel(r"$x$", fontsize=11)
     axes[1].set_ylabel(r"$v$", fontsize=11)
     axes[1].set_title(r"$v$-velocity (horizontal centerline)", fontsize=11)
+    axes[1].set_xlim(-0.1, 1.1)
+    axes[1].set_ylim(-0.5, 0.5)
+
+    # Add zoomed inset for v-velocity (right plot) - focus on peak region
+    # Find interesting region: near the maximum v value
+    v_max_idx = ghia_v["v"].idxmax()
+    v_max_x = ghia_v.loc[v_max_idx, "x"]
+    v_max_val = ghia_v.loc[v_max_idx, "v"]
+
+    # Create inset axes for v-velocity zoom
+    # Place inset in lower-left area of subplot, avoiding data and axis overlap
+    # Size: ~42% of axes (5-10% smaller than 50%)
+    ax1 = axes[1]
+
+    # Position inset in lower-left corner with some padding
+    # [left, bottom, width, height] in axes fraction
+    axins_v = ax1.inset_axes([0.05, 0.05, 0.42, 0.42])
+
+    # Replot data in inset
+    sns.lineplot(
+        data=v_df,
+        x="x",
+        y="v",
+        hue="Method",
+        style="Method",
+        markers=True,
+        ax=axins_v,
+        sort=False,
+        linewidth=1.5,
+        markersize=5,
+        markevery=5,
+        legend=False,
+    )
+    sns.scatterplot(
+        data=ghia_v,
+        x="x",
+        y="v",
+        marker="o",
+        s=40,
+        facecolors="none",
+        edgecolors="#333333",
+        linewidths=1.0,
+        ax=axins_v,
+        legend=False,
+    )
+
+    # Set zoom region around maximum v (2.5x larger: 0.06*2.5=0.15, 0.03*2.5=0.075)
+    axins_v.set_xlim(v_max_x - 0.15, v_max_x + 0.15)
+    axins_v.set_ylim(v_max_val - 0.075, v_max_val + 0.075)
+    axins_v.set_xlabel("")
+    axins_v.set_ylabel("")
+    axins_v.set_xticks([])
+    axins_v.set_yticks([])
+
+    # Draw box and connecting lines
+    mark_inset(axes[1], axins_v, loc1=1, loc2=3, fc="none", ec="0.5", lw=0.8)
 
     # Overall title
     fig.suptitle(rf"Ghia Benchmark Comparison ($\mathrm{{Re}} = {int(Re)}$)", fontsize=13, y=1.00)
