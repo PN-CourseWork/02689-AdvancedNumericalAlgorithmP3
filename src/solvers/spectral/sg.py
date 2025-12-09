@@ -8,7 +8,7 @@ This is the base spectral solver using pseudospectral method without multigrid:
 
 Corner singularity treatment options:
 - "smoothing": Simple cosine smoothing of lid velocity near corners
-- "subtraction": Analytical singular solution subtraction (Botella & Peyret 1998)
+- "saad"/"polynomial": u = 16x²(1-x)² polynomial regularization (C∞ smooth)
 """
 
 import logging
@@ -93,30 +93,6 @@ class SGSolver(LidDrivenCavitySolver):
             smoothing_width=self.params.corner_smoothing,
         )
         log.info(f"Using corner treatment: {self.params.corner_treatment}")
-
-        # Cache singular velocity and derivatives if using subtraction method
-        self._uses_modified_convection = (
-            self.corner_treatment.uses_modified_convection()
-        )
-        if self._uses_modified_convection:
-            log.info("Subtraction method: caching singular velocity and derivatives")
-            # Get singular velocity u_s, v_s at all grid points
-            u_s_2d, v_s_2d = self.corner_treatment.get_singular_velocity(
-                self.x_full, self.y_full, self.params.Lx, self.params.Ly
-            )
-            self._u_s = u_s_2d.ravel()
-            self._v_s = v_s_2d.ravel()
-
-            # Get analytical derivatives (NOT spectral!)
-            dus_dx, dus_dy, dvs_dx, dvs_dy = (
-                self.corner_treatment.get_singular_velocity_derivatives(
-                    self.x_full, self.y_full, self.params.Lx, self.params.Ly
-                )
-            )
-            self._dus_dx = dus_dx.ravel()
-            self._dus_dy = dus_dy.ravel()
-            self._dvs_dx = dvs_dx.ravel()
-            self._dvs_dy = dvs_dy.ravel()
 
         # Initialize lid velocity with corner treatment
         self._initialize_lid_velocity()
@@ -303,20 +279,17 @@ class SGSolver(LidDrivenCavitySolver):
         """Compute RHS residuals for pseudo time-stepping.
 
         PN-PN-2 method:
-        - u, v on full (Nx+1) × (Ny+1) grid (these are u_c, v_c for subtraction method)
+        - u, v on full (Nx+1) × (Ny+1) grid
         - p on inner (Nx-1) × (Ny-1) grid
         - R_u, R_v on full grid
         - R_p on inner grid
-
-        For subtraction method (Zhang & Xi 2010):
-        Modified convection: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
 
         Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
 
         Parameters
         ----------
         u, v : np.ndarray
-            Current velocity fields on full grid (u_c, v_c for subtraction)
+            Current velocity fields on full grid
         p : np.ndarray
             Current pressure field on INNER grid
 
@@ -353,28 +326,9 @@ class SGSolver(LidDrivenCavitySolver):
         # Compute pressure gradient from inner grid p and interpolate to full grid
         self._interpolate_pressure_gradient()
 
-        # Compute convection terms
-        if self._uses_modified_convection:
-            # Subtraction method: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
-            # Term 1: u_c·∇u_c (standard convection of computational velocity)
-            conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
-            conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
-
-            # Term 2: u_s·∇u_c (singular velocity advecting computational gradient)
-            conv_u += self._u_s * self.arrays.du_dx + self._v_s * self.arrays.du_dy
-            conv_v += self._u_s * self.arrays.dv_dx + self._v_s * self.arrays.dv_dy
-
-            # Term 3: u_c·∇u_s (computational velocity advecting singular gradient)
-            conv_u += u * self._dus_dx + v * self._dus_dy
-            conv_v += u * self._dvs_dx + v * self._dvs_dy
-
-            # Term 4: u_s·∇u_s (singular velocity advecting singular gradient)
-            conv_u += self._u_s * self._dus_dx + self._v_s * self._dus_dy
-            conv_v += self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
-        else:
-            # Standard convection: (u·∇)u
-            conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
-            conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
+        # Compute convection terms: (u·∇)u
+        conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
+        conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
 
         nu = 1.0 / self.params.Re
 
@@ -392,8 +346,7 @@ class SGSolver(LidDrivenCavitySolver):
     def _enforce_boundary_conditions(self, u, v):
         """Enforce boundary conditions on all walls using corner treatment.
 
-        For smoothing method: No-slip on walls, smoothed lid velocity on top.
-        For subtraction method: u_c = -u_s on walls, u_c = V_lid - u_s on top.
+        No-slip on walls (u=v=0), corner-treated lid velocity on top.
 
         Parameters
         ----------

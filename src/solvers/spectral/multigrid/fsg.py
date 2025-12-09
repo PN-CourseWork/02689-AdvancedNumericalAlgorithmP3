@@ -8,7 +8,11 @@ Implements:
 - FMG (Full Multigrid): Coming in Phase 3
 
 Transfer operators (prolongation/restriction) are pluggable via Hydra config.
-Corner singularity treatment is also pluggable.
+
+Performance optimizations:
+- Numba JIT-compiled kernels for derivatives and residuals
+- Cached transposed matrices to avoid repeated transposition
+- Pre-computed boundary conditions
 """
 
 import logging
@@ -732,9 +736,7 @@ class MultigridSmoother:
         self.tau_v = None
         self.tau_p = None
 
-        # Use subtraction method on all levels with corner exclusion for stability
         self.corner_treatment = corner_treatment
-        self._uses_modified_convection = corner_treatment.uses_modified_convection()
 
         # ========== OPTIMIZATION: Cache boundary conditions ==========
         # Pre-compute and cache lid velocity (it never changes during solve)
@@ -744,7 +746,7 @@ class MultigridSmoother:
             x_lid, y_lid, lid_velocity=lid_velocity, Lx=Lx, Ly=Ly
         )
 
-        # Pre-compute wall velocities (zeros for smoothing method)
+        # Pre-compute wall velocities (zeros)
         # West boundary
         self._cached_u_west, self._cached_v_west = corner_treatment.get_wall_velocity(
             level.X[0, :], level.Y[0, :], Lx, Ly
@@ -758,59 +760,10 @@ class MultigridSmoother:
             level.X[:, 0], level.Y[:, 0], Lx, Ly
         )
 
-        # ========== OPTIMIZATION: Pre-allocate work arrays ==========
-        n_full = level.n_nodes_full
-        self._conv_u = np.zeros(n_full)
-        self._conv_v = np.zeros(n_full)
-
-        # Cache transposed differentiation matrices for faster matmul
+        # ========== OPTIMIZATION: Cache transposed matrices ==========
         self._Dy_1d_T = level.Dy_1d.T.copy()
         self._Dyy_1d_T = level.Dyy_1d.T.copy()
-
-        # Cache transposed interpolation matrix for pressure gradient
         self._Interp_y_T = level.Interp_y.T.copy()
-
-        if self._uses_modified_convection:
-            # Cache singular velocity and derivatives at this level's grid points
-            X_flat = level.X.ravel()
-            Y_flat = level.Y.ravel()
-
-            u_s, v_s = corner_treatment.get_singular_velocity(X_flat, Y_flat, Lx, Ly)
-            self._u_s = u_s.ravel()
-            self._v_s = v_s.ravel()
-
-            dus_dx, dus_dy, dvs_dx, dvs_dy = (
-                corner_treatment.get_singular_velocity_derivatives(
-                    X_flat, Y_flat, Lx, Ly
-                )
-            )
-
-            # Create corner exclusion mask: don't apply modified convection very close to corners
-            # The singular derivatives go like r^(λ-2) ≈ r^(-0.45) which blows up at corners
-            # Using a cutoff radius based on grid spacing ensures numerical stability
-            corner_radius = 2.5 * level.dx_min  # Exclude points within ~2.5 grid spacings
-
-            # Distance from each corner
-            r_left = np.sqrt(X_flat**2 + (Y_flat - Ly)**2)  # Distance from (0, Ly)
-            r_right = np.sqrt((X_flat - Lx)**2 + (Y_flat - Ly)**2)  # Distance from (Lx, Ly)
-
-            # Mask: 1.0 where we apply full terms, 0.0 near corners
-            corner_mask = np.ones_like(X_flat)
-            corner_mask = np.where(r_left < corner_radius, 0.0, corner_mask)
-            corner_mask = np.where(r_right < corner_radius, 0.0, corner_mask)
-            self._corner_mask = corner_mask.ravel()
-
-            # Apply mask to singular velocities and derivatives
-            self._u_s = self._u_s * self._corner_mask
-            self._v_s = self._v_s * self._corner_mask
-            self._dus_dx = dus_dx.ravel() * self._corner_mask
-            self._dus_dy = dus_dy.ravel() * self._corner_mask
-            self._dvs_dx = dvs_dx.ravel() * self._corner_mask
-            self._dvs_dy = dvs_dy.ravel() * self._corner_mask
-
-            # Precompute constant term: u_s·∇u_s (singular self-advection)
-            self._conv_us_us = self._u_s * self._dus_dx + self._v_s * self._dus_dy
-            self._conv_vs_vs = self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
 
     def _apply_lid_boundary(self, u_2d: np.ndarray, v_2d: np.ndarray):
         """Apply lid boundary condition using cached values."""
@@ -888,29 +841,16 @@ class MultigridSmoother:
         # Compute pressure gradient
         self._interpolate_pressure_gradient(p)
 
-        if self._uses_modified_convection:
-            # Subtraction method - use numpy (not JIT) for this less common path
-            conv_u = u * lvl.du_dx + v * lvl.du_dy
-            conv_v = u * lvl.dv_dx + v * lvl.dv_dy
-            conv_u += self._u_s * lvl.du_dx + self._v_s * lvl.du_dy
-            conv_v += self._u_s * lvl.dv_dx + self._v_s * lvl.dv_dy
-            conv_u += u * self._dus_dx + v * self._dus_dy
-            conv_v += u * self._dvs_dx + v * self._dvs_dy
-            conv_u += self._conv_us_us
-            conv_v += self._conv_vs_vs
-            lvl.R_u[:] = -conv_u - lvl.dp_dx + self.nu * lvl.lap_u
-            lvl.R_v[:] = -conv_v - lvl.dp_dy + self.nu * lvl.lap_v
-        else:
-            # JIT-compiled: Compute momentum residuals (common path)
-            _compute_momentum_residuals(
-                u, v,
-                lvl.du_dx, lvl.du_dy,
-                lvl.dv_dx, lvl.dv_dy,
-                lvl.lap_u, lvl.lap_v,
-                lvl.dp_dx, lvl.dp_dy,
-                self.nu,
-                lvl.R_u, lvl.R_v,
-            )
+        # JIT-compiled: Compute momentum residuals
+        _compute_momentum_residuals(
+            u, v,
+            lvl.du_dx, lvl.du_dy,
+            lvl.dv_dx, lvl.dv_dy,
+            lvl.lap_u, lvl.lap_v,
+            lvl.dp_dx, lvl.dp_dy,
+            self.nu,
+            lvl.R_u, lvl.R_v,
+        )
 
         # JIT-compiled: Continuity residual on inner grid
         _compute_continuity_residual(du_dx_2d, dv_dy_2d, self.beta_squared, lvl.R_p)
@@ -1085,10 +1025,6 @@ def solve_fsg(
 
     Per Zhang & Xi (2010): Uses the SAME tolerance on ALL levels.
 
-    For subtraction corner treatment: Uses smoothing on coarse levels (N<8) for
-    stability, then transitions to full subtraction on finer levels. This hybrid
-    approach avoids overflow from extreme singular derivatives on coarse grids.
-
     Parameters
     ----------
     levels : List[SpectralLevel]
@@ -1102,9 +1038,11 @@ def solve_fsg(
     transfer_ops : TransferOperators, optional
         Configured transfer operators. If None, uses default FFT operators.
     corner_treatment : CornerTreatment, optional
-        Corner singularity treatment handler. If None, uses default smoothing.
+        Corner treatment handler. If None, uses default smoothing.
     Lx, Ly : float
         Domain dimensions
+    coarse_tolerance_factor : float
+        Factor to loosen tolerance on coarser levels
 
     Returns
     -------
@@ -1121,14 +1059,6 @@ def solve_fsg(
     # Create default corner treatment if not provided
     if corner_treatment is None:
         corner_treatment = create_corner_treatment(method="smoothing")
-
-    # For subtraction method, also create smoothing treatment for coarse levels
-    # This avoids numerical instability from extreme singular derivatives on coarse grids
-    uses_subtraction = corner_treatment.uses_modified_convection()
-    if uses_subtraction:
-        smoothing_treatment = create_corner_treatment(method="smoothing")
-        # Minimum N for subtraction method (below this, use smoothing)
-        min_n_for_subtraction = 8
 
     total_iterations = 0
     n_levels = len(levels)
@@ -1156,14 +1086,6 @@ def solve_fsg(
             # Prolongate from previous (coarser) level
             prolongate_solution(levels[level_idx - 1], level, transfer_ops, lid_velocity)
 
-        # Select corner treatment for this level
-        # For subtraction: use smoothing on coarse levels for stability
-        if uses_subtraction and level.n < min_n_for_subtraction:
-            level_corner_treatment = smoothing_treatment
-            log.debug(f"  Level {level_idx} (N={level.n}): using smoothing (N < {min_n_for_subtraction})")
-        else:
-            level_corner_treatment = corner_treatment
-
         # Create smoother for this level
         smoother = MultigridSmoother(
             level=level,
@@ -1171,7 +1093,7 @@ def solve_fsg(
             beta_squared=beta_squared,
             lid_velocity=lid_velocity,
             CFL=CFL,
-            corner_treatment=level_corner_treatment,
+            corner_treatment=corner_treatment,
             Lx=Lx,
             Ly=Ly,
         )
