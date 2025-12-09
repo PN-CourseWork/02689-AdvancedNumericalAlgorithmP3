@@ -6,8 +6,12 @@ defaults:
   - override /solver: spectral/sg
 
 # MLflow experiment
-experiment_name: LDC-Validation
-sweep_name: ghia-HPC
+experiment_name: LDC-GHIA-PLOTS
+sweep_name: ghia-plots
+
+solver: 
+  corner_treatment: smoothing
+  corner_smoothing: 0.15   # smoothing width (fraction of domain) for smoothing method
 
 # Validation parameters
 
@@ -16,5 +20,5 @@ hydra:
     params:
       # Sweep over spectral solver types
       solver: spectral/fsg #,spectral/vmg #, spectral/vmg
-      Re: 400, 1000
-      N: 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 46, 50, 56, 60, 64, 68, 74, 82, 86, 90
+      Re: 1000
+      N: 16, 20, 32 

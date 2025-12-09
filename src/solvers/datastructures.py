@@ -75,6 +75,7 @@ class Metrics:
     psi_min: float = 0.0  # Minimum streamfunction value
     psi_min_x: float = 0.0  # x-coordinate of minimum
     psi_min_y: float = 0.0  # y-coordinate of minimum
+    omega_center: float = 0.0  # Vorticity at primary vortex center
 
     # Maximum vorticity
     omega_max: float = 0.0  # Maximum vorticity value
@@ -82,14 +83,17 @@ class Metrics:
     omega_max_y: float = 0.0  # y-coordinate of max vorticity
 
     # Secondary corner vortices (BR=bottom-right, BL=bottom-left, TL=top-left)
-    # Each stores the local extremum of psi and its location
+    # Each stores the local extremum of psi, vorticity at center, and location
     psi_BR: float = 0.0
+    omega_BR: float = 0.0
     psi_BR_x: float = 0.0
     psi_BR_y: float = 0.0
     psi_BL: float = 0.0
+    omega_BL: float = 0.0
     psi_BL_x: float = 0.0
     psi_BL_y: float = 0.0
     psi_TL: float = 0.0
+    omega_TL: float = 0.0
     psi_TL_x: float = 0.0
     psi_TL_y: float = 0.0
 
@@ -265,7 +269,7 @@ class SpectralParameters(Parameters):
     corner_smoothing: float = 0.15  # smoothing width for smoothing method
 
     # Multigrid settings
-    multigrid: str = "none"  # "none", "fsg", "vmg", "fmg"
+    multigrid: str = "none"  # "none", "fsg"
     n_levels: int = 3
     coarse_tolerance_factor: float = 10.0
 

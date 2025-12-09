@@ -1,13 +1,14 @@
 """
 Validation and Comparison Plots for LDC.
 
-Generates Ghia benchmark comparisons.
+Generates Ghia benchmark comparisons and L2 convergence plots.
 """
 
 import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import mlflow
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -21,6 +22,170 @@ from .mlflow_utils import download_mlflow_artifacts
 log = logging.getLogger(__name__)
 
 
+def plot_l2_convergence(
+    siblings: list[dict],
+    tracking_uri: str,
+    output_dir: Path,
+) -> list[Path]:
+    """Plot L2 error convergence (log-log) for parent runs.
+
+    Creates 4 separate PDF files:
+    - l2_convergence_u.pdf: u-velocity L2 error vs N
+    - l2_convergence_v.pdf: v-velocity L2 error vs N
+    - l2_convergence_u_regu.pdf: u-velocity L2 error (regularized ref) vs N
+    - l2_convergence_v_regu.pdf: v-velocity L2 error (regularized ref) vs N
+
+    Parameters
+    ----------
+    siblings : list[dict]
+        List of sibling run info dicts with run_id, N, Re, solver
+    tracking_uri : str
+        MLflow tracking URI
+    output_dir : Path
+        Output directory
+
+    Returns
+    -------
+    list[Path]
+        Paths to generated convergence plots
+    """
+    if not siblings:
+        return []
+
+    # Only use finished runs
+    finished_siblings = [
+        s for s in siblings if s.get("status", "FINISHED") == "FINISHED"
+    ]
+    if len(finished_siblings) < 2:
+        log.info(
+            f"Need at least 2 finished runs for convergence plot (have {len(finished_siblings)})"
+        )
+        return []
+
+    mlflow.set_tracking_uri(tracking_uri)
+    client = mlflow.tracking.MlflowClient()
+
+    # Collect L2 error metrics from all runs
+    records = []
+    for sibling in finished_siblings:
+        run_id = sibling["run_id"]
+        N = sibling["N"]
+        solver = sibling.get("solver", "unknown")
+        method = _build_method_label(sibling)
+
+        try:
+            run = client.get_run(run_id)
+            metrics = run.data.metrics
+
+            # Get L2 error metrics (may not all be present)
+            u_l2 = metrics.get("u_L2_error")
+            v_l2 = metrics.get("v_L2_error")
+            u_l2_regu = metrics.get("u_L2_error_regu")
+            v_l2_regu = metrics.get("v_L2_error_regu")
+
+            if u_l2 is not None or v_l2 is not None:
+                records.append(
+                    {
+                        "N": N,
+                        "Method": method,
+                        "Solver": solver,
+                        "u_L2_error": u_l2,
+                        "v_L2_error": v_l2,
+                        "u_L2_error_regu": u_l2_regu,
+                        "v_L2_error_regu": v_l2_regu,
+                    }
+                )
+        except Exception as e:
+            log.warning(f"Failed to load metrics for run {run_id}: {e}")
+            continue
+
+    if not records:
+        log.warning("No L2 error metrics found in sibling runs")
+        return []
+
+    df = pd.DataFrame(records)
+
+    # Define the 4 plots to create
+    plot_configs = [
+        ("u_L2_error", r"$u$ L2 Error", "l2_convergence_u.pdf"),
+        ("v_L2_error", r"$v$ L2 Error", "l2_convergence_v.pdf"),
+        ("u_L2_error_regu", r"$u$ L2 Error (regularized ref)", "l2_convergence_u_regu.pdf"),
+        ("v_L2_error_regu", r"$v$ L2 Error (regularized ref)", "l2_convergence_v_regu.pdf"),
+    ]
+
+    output_paths = []
+    for metric_col, ylabel, filename in plot_configs:
+        # Filter to rows with valid data for this metric
+        plot_df = df[df[metric_col].notna()].copy()
+        if plot_df.empty:
+            log.info(f"No data for {metric_col}, skipping")
+            continue
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+        # Seaborn lineplot with markers
+        sns.lineplot(
+            data=plot_df,
+            x="N",
+            y=metric_col,
+            hue="Method",
+            style="Method",
+            markers=True,
+            ax=ax,
+            linewidth=2,
+            markersize=8,
+        )
+
+        # Reference convergence lines (N^-2 and N^-4 for spectral)
+        N_vals = np.array(sorted(plot_df["N"].unique()))
+        if len(N_vals) >= 2:
+            # Get representative error for reference line placement
+            mid_N = N_vals[len(N_vals) // 2]
+            mid_err = plot_df[plot_df["N"] == mid_N][metric_col].mean()
+            if mid_err > 0:
+                # N^-2 reference
+                ref_n2 = mid_err * (mid_N / N_vals) ** 2
+                ax.plot(
+                    N_vals,
+                    ref_n2,
+                    "--",
+                    color="gray",
+                    alpha=0.6,
+                    linewidth=1.5,
+                    label=r"$\mathcal{O}(N^{-2})$",
+                )
+                # N^-4 reference (faster convergence)
+                ref_n4 = mid_err * (mid_N / N_vals) ** 4
+                ax.plot(
+                    N_vals,
+                    ref_n4,
+                    ":",
+                    color="gray",
+                    alpha=0.6,
+                    linewidth=1.5,
+                    label=r"$\mathcal{O}(N^{-4})$",
+                )
+
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel(r"$N$ (polynomial order)", fontsize=11)
+        ax.set_ylabel(ylabel, fontsize=11)
+        ax.set_title(f"L2 Error Convergence", fontsize=12)
+        ax.legend(loc="best", fontsize=9)
+        ax.grid(True, which="both", ls="-", alpha=0.3)
+
+        plt.tight_layout()
+
+        output_path = output_dir / filename
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        log.info(f"Saved L2 convergence plot: {output_path.name}")
+        output_paths.append(output_path)
+
+    return output_paths
+
+
 def _build_method_label(sibling: dict) -> str:
     """Build a unified method label from solver name.
 
@@ -28,16 +193,15 @@ def _build_method_label(sibling: dict) -> str:
     - 'fv' -> 'FV'
     - 'spectral' -> 'Spectral'
     - 'spectral_fsg' -> 'Spectral-FSG'
-    - 'spectral_vmg' -> 'Spectral-VMG'
+    - 'spectral_fmg' -> 'Spectral-FMG'
     """
     solver = sibling.get("solver", "unknown")
 
     # Format known solver names
     label_map = {
-        "fv": "FV",
+        "fv": "FV-TVD",
         "spectral": "Spectral",
         "spectral_fsg": "Spectral-FSG",
-        "spectral_vmg": "Spectral-VMG",
         "spectral_fmg": "Spectral-FMG",
     }
 
@@ -191,60 +355,64 @@ def plot_ghia_comparison(
     u_df = pd.DataFrame(u_records)
     v_df = pd.DataFrame(v_records)
 
+    # Set seaborn darkgrid style with transparent figure background
+    sns.set_style("darkgrid")
+    sns.set(rc={"figure.facecolor": (0, 0, 0, 0)})
+
     # Create subplots with publication-quality sizing
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Left: u-velocity (vertical centerline)
+    # Left: u-velocity (vertical centerline) - dashed lines, no markers
     sns.lineplot(
         data=u_df,
         x="u",
         y="y",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axes[0],
         sort=False,
-        linewidth=2,
-        markersize=7,
-        markevery=15,
+        linewidth=1,
     )
+    # Ghia reference with markers
     sns.scatterplot(
         data=ghia_u,
         x="u",
         y="y",
         marker="o",
-        s=50,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
-        linewidths=1.2,
+        linewidths=1.0,
         label="Ghia et al. (1982)",
         ax=axes[0],
         zorder=10,
     )
-    axes[0].set_xlabel(r"$u$", fontsize=11)
-    axes[0].set_ylabel(r"$y$", fontsize=11)
-    axes[0].set_title(r"$u$-velocity (vertical centerline)", fontsize=11)
+    axes[0].set_xlabel(r"$u$", fontsize=12)
+    axes[0].set_ylabel(r"$y$", fontsize=12)
+    #axes[0].set_title(r"$u$ at $x = 0.5$", fontsize=12)
 
-    # Right: v-velocity (horizontal centerline)
+    # Right: v-velocity (horizontal centerline) - dashed lines, no markers
     sns.lineplot(
         data=v_df,
         x="x",
         y="v",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axes[1],
         sort=False,
-        linewidth=2,
-        markersize=7,
-        markevery=15,
+        linewidth=1,
     )
+    # Ghia reference with markers
     sns.scatterplot(
         data=ghia_v,
         x="x",
         y="v",
         marker="o",
-        s=50,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
         linewidths=1.2,
@@ -252,18 +420,21 @@ def plot_ghia_comparison(
         ax=axes[1],
         zorder=10,
     )
-    axes[1].set_xlabel(r"$x$", fontsize=11)
-    axes[1].set_ylabel(r"$v$", fontsize=11)
-    axes[1].set_title(r"$v$-velocity (horizontal centerline)", fontsize=11)
+    axes[1].set_xlabel(r"$x$", fontsize=12)
+    axes[1].set_ylabel(r"$v$", fontsize=12)
+    #axes[1].set_title(r"$v$ at $y = 0.5$", fontsize=12)
 
-    # Overall title
-    fig.suptitle(rf"Ghia Benchmark Comparison ($\mathrm{{Re}} = {int(Re)}$)", fontsize=13, y=1.00)
+    # Overall title with LaTeX formatting
+    fig.suptitle(rf"Centerline Velocities - $\mathrm{{Re}} = {int(Re)}$", fontsize=15, y=1.00)
 
     # Tight layout for better spacing
     plt.tight_layout()
 
+    # Transparent figure, but keep darkgrid axes background
+    fig.patch.set_alpha(0.0)
+
     output_path = output_dir / "ghia_comparison.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor=(0, 0, 0, 0))
     plt.close(fig)
 
     log.info(f"Saved comparison plot: {output_path.name}")
