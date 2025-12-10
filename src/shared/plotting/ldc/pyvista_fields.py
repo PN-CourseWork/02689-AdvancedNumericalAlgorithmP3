@@ -57,6 +57,7 @@ import os
 import sys
 os.environ["PYVISTA_OFF_SCREEN"] = "true"
 
+import numpy as np
 import pyvista as pv
 pv.set_plot_theme("paraview")
 
@@ -109,7 +110,10 @@ streamlines = sampled.streamlines_evenly_spaced_2D(
     separating_distance=separating_distance,
     separating_distance_ratio=0.5,
     step_length=0.5,
-    max_steps=800,
+    max_steps=500,  # Reduced from 800 to prevent runaway
+    terminal_speed=1e-5,  # Stop integration when velocity gets very low
+    closed_loop_maximum_distance=1.0,  # Help detect closed loops earlier
+    loop_angle=30.0,  # More aggressive loop detection
 )
 
 if streamlines.n_points > 0:
@@ -138,20 +142,17 @@ def _generate_streamlines_safe(vts_path: Path, output_path: Path, timeout: int =
     vts_str = str(vts_path)
     out_str = str(output_path)
 
-    # Environment to suppress macOS crash reporter dialogs
-    env = os.environ.copy()
-    env["__XPC_CRASH_REPORTER_PRODUCT_ID"] = ""  # Suppress crash reporter
-    env["CRASH_REPORTER_SUPPORT_PATH"] = "/dev/null"
-
     # Try dense streamlines first (separating_distance=2.5)
     for sep_dist in [2.5, 4.0, 8.0]:
         try:
+            # Use start_new_session=True to detach subprocess from terminal,
+            # preventing macOS crash reporter dialogs from appearing
             result = subprocess.run(
                 [sys.executable, "-c", _STREAMLINES_SCRIPT, vts_str, out_str, str(sep_dist)],
                 timeout=timeout,
                 capture_output=True,
                 text=True,
-                env=env,
+                start_new_session=True,
             )
             if result.returncode == 0:
                 log.info(f"Streamlines generated with separating_distance={sep_dist}")
@@ -451,7 +452,7 @@ def plot_streamlines_evenly_spaced(
 
     _setup_camera(plotter)
 
-    output_path = output_dir / f"streamlines_evenly_spaced{suffix}.png"
+    output_path = output_dir / f"streamlines{suffix}.png"
     plotter.screenshot(output_path, transparent_background=True)
     plotter.close()
 
