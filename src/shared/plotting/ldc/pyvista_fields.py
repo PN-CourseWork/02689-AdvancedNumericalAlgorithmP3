@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 import pyvista as pv
 
 log = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ WINDOW_SIZE = [2400, 2400]
 SCALAR_BAR_ARGS = {
     "vertical": False,
     "position_x": 0.25,
-    "position_y": 0.02,  # Lower position for more padding
+    "position_y": 0.06,  # Closer to plot but with space for title
     "width": 0.5,
     "height": 0.04,
     "title_font_size": 44,  # Scaled up for higher resolution
@@ -52,6 +53,28 @@ def _setup_camera(plotter: pv.Plotter) -> None:
     plotter.reset_camera(bounds=plotter.bounds)
 
 
+def _crop_transparent_borders(image_path: Path, padding: int = 10) -> None:
+    """Crop transparent borders from a PNG image, keeping a small padding."""
+    img = Image.open(image_path)
+    if img.mode != "RGBA":
+        return  # Only process images with alpha channel
+
+    # Get bounding box of non-transparent pixels
+    bbox = img.getbbox()
+    if bbox is None:
+        return  # Fully transparent image
+
+    # Add padding
+    left = max(0, bbox[0] - padding)
+    top = max(0, bbox[1] - padding)
+    right = min(img.width, bbox[2] + padding)
+    bottom = min(img.height, bbox[3] + padding)
+
+    # Crop and save
+    cropped = img.crop((left, top, right, bottom))
+    cropped.save(image_path)
+
+
 _STREAMLINES_SCRIPT = '''
 import os
 import sys
@@ -69,7 +92,7 @@ WINDOW_SIZE = [2400, 2400]
 SCALAR_BAR_ARGS = {
     "vertical": False,
     "position_x": 0.25,
-    "position_y": 0.02,
+    "position_y": 0.06,
     "width": 0.5,
     "height": 0.04,
     "title_font_size": 44,
@@ -156,6 +179,7 @@ def _generate_streamlines_safe(vts_path: Path, output_path: Path, timeout: int =
             )
             if result.returncode == 0:
                 log.info(f"Streamlines generated with separating_distance={sep_dist}")
+                _crop_transparent_borders(output_path)
                 return True
             else:
                 log.warning(f"Streamlines failed with separating_distance={sep_dist}: {result.stderr[:200]}")
@@ -190,6 +214,7 @@ def plot_u_velocity(
     output_path = output_dir / f"u{suffix}.png"
     plotter.screenshot(output_path, transparent_background=True)
     plotter.close()
+    _crop_transparent_borders(output_path)
 
     log.info(f"Saved: {output_path}")
     return output_path
@@ -217,6 +242,7 @@ def plot_v_velocity(
     output_path = output_dir / f"v{suffix}.png"
     plotter.screenshot(output_path, transparent_background=True)
     plotter.close()
+    _crop_transparent_borders(output_path)
 
     log.info(f"Saved: {output_path}")
     return output_path
@@ -244,6 +270,7 @@ def plot_velocity_magnitude(
     output_path = output_dir / f"vel-mag{suffix}.png"
     plotter.screenshot(output_path, transparent_background=True)
     plotter.close()
+    _crop_transparent_borders(output_path)
 
     log.info(f"Saved: {output_path}")
     return output_path
@@ -271,6 +298,7 @@ def plot_pressure(
     output_path = output_dir / f"pressure{suffix}.png"
     plotter.screenshot(output_path, transparent_background=True)
     plotter.close()
+    _crop_transparent_borders(output_path)
 
     log.info(f"Saved: {output_path}")
     return output_path
