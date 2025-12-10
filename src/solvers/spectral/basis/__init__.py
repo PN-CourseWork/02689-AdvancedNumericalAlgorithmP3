@@ -12,7 +12,11 @@ from solvers.spectral.basis.spectral import (
     legendre_diff_matrix,
     legendre_mass_matrix,
 )
-from solvers.spectral.basis.polynomial import spectral_interpolate
+from solvers.spectral.basis.polynomial import (
+    spectral_interpolate,
+    spectral_interpolate_2d,
+    spectral_interpolate_line,
+)
 
 __all__ = [
     "LegendreLobattoBasis",
@@ -26,4 +30,6 @@ __all__ = [
     "fourier_diff_matrix_complex",
     "fourier_diff_matrix_on_interval",
     "spectral_interpolate",
+    "spectral_interpolate_2d",
+    "spectral_interpolate_line",
 ]

@@ -57,6 +57,28 @@ uv run mlflow ui
 # https://kni.dk/mlflow-ana-p3/
 ```
 
+## Hyperparameter Optimization
+
+Optimize `corner_smoothing` using [Optuna](https://optuna.org/) + Hydra:
+
+```bash
+# Minimize L2 error vs FV reference (default objective)
+uv run python main.py -m +experiment/optimization=corner_smoothing \
+    'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=30
+
+# Minimize vortex error vs Botella & Peyret reference
+uv run python main.py -m +experiment/optimization=corner_smoothing \
+    'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=30 \
+    optuna.objective=botella_vortex
+
+# Customize trials and parallelism
+uv run python main.py -m +experiment/optimization=corner_smoothing \
+    'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=30 \
+    hydra.sweeper.n_trials=20 hydra.sweeper.n_jobs=8
+```
+
+View results in MLflow under `Optuna-CornerSmoothing-{objective}`. See [docs/optuna_optimization.md](docs/optuna_optimization.md) for details.
+
 ## References
 
 - [High-Re solutions for incompressible flow (Ghia et al.)](https://www.sciencedirect.com/science/article/pii/0021999182900584)

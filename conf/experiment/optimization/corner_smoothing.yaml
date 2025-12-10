@@ -1,0 +1,57 @@
+# @package _global_
+#
+# Optuna optimization of corner_smoothing parameter
+#
+# Supported objectives (override with optuna.objective=...):
+#   - fv_l2_error: Minimize L2 error vs FV reference (default)
+#   - botella_vortex: Minimize vortex metric error vs Botella & Peyret
+#
+# Note: Multi-objective optimization is not supported by hydra-optuna-sweeper 1.x
+#
+# Usage:
+#   # FV L2 error (default)
+#   uv run python main.py -m +experiment/optimization=corner_smoothing \
+#       'solver.corner_smoothing=interval(0.02,0.35)'
+#
+#   # Botella vortex metrics
+#   uv run python main.py -m +experiment/optimization=corner_smoothing \
+#       'solver.corner_smoothing=interval(0.02,0.35)' optuna.objective=botella_vortex
+#
+#   # Custom Re/N
+#   uv run python main.py -m +experiment/optimization=corner_smoothing \
+#       'solver.corner_smoothing=interval(0.02,0.35)' Re=1000 N=32
+
+defaults:
+  - override /solver: spectral/fsg
+  - override /hydra/sweeper: optuna_corner
+
+# Experiment name (dynamically includes objective type)
+experiment_name: Optuna-CornerSmoothing
+sweep_name: corner-smoothing-${optuna.objective}
+# Grid and physics
+N: 30
+Re: 1000
+
+# Solver settings (strict convergence)
+# Note: Early NaN/Inf detection exits diverging runs quickly
+tolerance: 1.0e-6
+max_iterations: 500000
+
+# Validation against non-regularized FV (true LDC solution)
+validation:
+  reference_dir: data/validation/fv
+
+# Optimization settings
+# Override objective with: optuna.objective=botella_vortex
+optuna:
+  objective: fv_l2_error  # Options: fv_l2_error, botella_vortex
+
+# Optuna sweeper settings
+hydra:
+  sweeper:
+    study_name: corner_smoothing_${optuna.objective}_Re${Re}_N${N}
+    n_trials: 15
+    n_jobs: 5
+    params:
+      N: 30, 40, 50
+      solver.corner_smoothing: interval(0.01, 0.10)

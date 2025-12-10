@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from solvers.spectral.basis import spectral_interpolate
+from solvers.spectral.basis import spectral_interpolate_line
 from utilities.config.paths import get_repo_root
 
 from .data_loading import load_fields_from_zarr, restructure_fields
@@ -194,16 +194,15 @@ def _build_method_label(sibling: dict) -> str:
     - 'fv' -> 'FV'
     - 'spectral' -> 'Spectral'
     - 'spectral_fsg' -> 'Spectral-FSG'
-    - 'spectral_vmg' -> 'Spectral-VMG'
+    - 'spectral_fmg' -> 'Spectral-FMG'
     """
     solver = sibling.get("solver", "unknown")
 
     # Format known solver names
     label_map = {
-        "fv": "FV",
+        "fv": "FV-TVD",
         "spectral": "Spectral",
         "spectral_fsg": "Spectral-FSG",
-        "spectral_vmg": "Spectral-VMG",
         "spectral_fmg": "Spectral-FMG",
     }
 
@@ -300,27 +299,27 @@ def plot_ghia_comparison(
             y_line = np.linspace(y_unique.min(), y_unique.max(), n_points)
             x_line = np.linspace(x_unique.min(), x_unique.max(), n_points)
 
-            # Find physical center (x=0.5, y=0.5), not middle index!
-            # For non-uniform grids (Chebyshev), middle index != physical center
+            # Physical center coordinates
             x_center = 0.5 * (x_unique.min() + x_unique.max())
             y_center = 0.5 * (y_unique.min() + y_unique.max())
-            x_center_idx = np.argmin(np.abs(x_unique - x_center))
-            y_center_idx = np.argmin(np.abs(y_unique - y_center))
 
             # Use appropriate interpolation based on solver type
-            # FV uses uniform grids -> linear interpolation
-            # Spectral uses non-uniform grids -> spectral interpolation
+            # FV uses uniform grids -> linear interpolation at nearest slice
+            # Spectral uses non-uniform grids -> proper 2D spectral interpolation
             if solver_name.lower().startswith("fv"):
-                # Linear interpolation for FV solvers
+                # For FV: find nearest grid point and use linear interpolation
+                x_center_idx = np.argmin(np.abs(x_unique - x_center))
+                y_center_idx = np.argmin(np.abs(y_unique - y_center))
                 u_sim = np.interp(y_line, y_unique, U_2d[:, x_center_idx])
                 v_sim = np.interp(x_line, x_unique, V_2d[y_center_idx, :])
             else:
-                # Spectral interpolation for spectral solvers
-                u_sim = spectral_interpolate(
-                    y_unique, U_2d[:, x_center_idx], y_line, basis="legendre"
+                # For spectral: use proper 2D spectral interpolation to exact centerline
+                # This interpolates to the exact x=0.5 or y=0.5 line, not nearest grid slice
+                u_sim = spectral_interpolate_line(
+                    x_unique, y_unique, U_2d, x_center, "x", y_line, basis="legendre"
                 )
-                v_sim = spectral_interpolate(
-                    x_unique, V_2d[y_center_idx, :], x_line, basis="legendre"
+                v_sim = spectral_interpolate_line(
+                    x_unique, y_unique, V_2d, y_center, "y", x_line, basis="legendre"
                 )
 
             # Create combined method-N label with LaTeX formatting
@@ -357,60 +356,64 @@ def plot_ghia_comparison(
     u_df = pd.DataFrame(u_records)
     v_df = pd.DataFrame(v_records)
 
+    # Set seaborn darkgrid style with transparent figure background
+    sns.set_style("darkgrid")
+    sns.set(rc={"figure.facecolor": (0, 0, 0, 0)})
+
     # Create subplots with publication-quality sizing
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Left: u-velocity (vertical centerline)
+    # Left: u-velocity (vertical centerline) - dashed lines, no markers
     sns.lineplot(
         data=u_df,
         x="u",
         y="y",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axes[0],
         sort=False,
-        linewidth=2,
-        markersize=7,
-        markevery=15,
+        linewidth=1,
     )
+    # Ghia reference with markers
     sns.scatterplot(
         data=ghia_u,
         x="u",
         y="y",
         marker="o",
-        s=50,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
-        linewidths=1.2,
+        linewidths=1.0,
         label="Ghia et al. (1982)",
         ax=axes[0],
         zorder=10,
     )
-    axes[0].set_xlabel(r"$u$", fontsize=11)
-    axes[0].set_ylabel(r"$y$", fontsize=11)
-    axes[0].set_title(r"$u$-velocity (vertical centerline)", fontsize=11)
+    axes[0].set_xlabel(r"$u$", fontsize=12)
+    axes[0].set_ylabel(r"$y$", fontsize=12)
+    #axes[0].set_title(r"$u$ at $x = 0.5$", fontsize=12)
 
-    # Right: v-velocity (horizontal centerline)
+    # Right: v-velocity (horizontal centerline) - dashed lines, no markers
     sns.lineplot(
         data=v_df,
         x="x",
         y="v",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axes[1],
         sort=False,
-        linewidth=2,
-        markersize=7,
-        markevery=15,
+        linewidth=1,
     )
+    # Ghia reference with markers
     sns.scatterplot(
         data=ghia_v,
         x="x",
         y="v",
         marker="o",
-        s=50,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
         linewidths=1.2,
@@ -418,9 +421,9 @@ def plot_ghia_comparison(
         ax=axes[1],
         zorder=10,
     )
-    axes[1].set_xlabel(r"$x$", fontsize=11)
-    axes[1].set_ylabel(r"$v$", fontsize=11)
-    axes[1].set_title(r"$v$-velocity (horizontal centerline)", fontsize=11)
+    axes[1].set_xlabel(r"$x$", fontsize=12)
+    axes[1].set_ylabel(r"$v$", fontsize=12)
+    #axes[1].set_title(r"$v$ at $y = 0.5$", fontsize=12)
 
     # Add zoomed inset for v-velocity (right plot) - focus on peak region
     # Find interesting region: near the maximum v value
@@ -455,12 +458,11 @@ def plot_ghia_comparison(
         y="v",
         hue="Method",
         style="Method",
-        markers=True,
+        markers=False,
+        dashes=True,
         ax=axins_v,
         sort=False,
-        linewidth=1.5,
-        markersize=5,
-        markevery=5,
+        linewidth=1,
         legend=False,
     )
     sns.scatterplot(
@@ -468,7 +470,7 @@ def plot_ghia_comparison(
         x="x",
         y="v",
         marker="o",
-        s=40,
+        s=30,
         facecolors="none",
         edgecolors="#333333",
         linewidths=1.0,
@@ -514,14 +516,17 @@ def plot_ghia_comparison(
     # Draw box and connecting lines
     mark_inset(axes[1], axins_v, loc1=1, loc2=3, fc="none", ec="0.5", lw=0.8)
 
-    # Overall title
-    fig.suptitle(rf"Ghia Benchmark Comparison ($\mathrm{{Re}} = {int(Re)}$)", fontsize=13, y=1.00)
+    # Overall title with LaTeX formatting
+    fig.suptitle(rf"Centerline Velocities - $\mathrm{{Re}} = {int(Re)}$", fontsize=15, y=1.00)
 
     # Tight layout for better spacing
     plt.tight_layout()
 
+    # Transparent figure, but keep darkgrid axes background
+    fig.patch.set_alpha(0.0)
+
     output_path = output_dir / "ghia_comparison.pdf"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor=(0, 0, 0, 0))
     plt.close(fig)
 
     log.info(f"Saved comparison plot: {output_path.name}")

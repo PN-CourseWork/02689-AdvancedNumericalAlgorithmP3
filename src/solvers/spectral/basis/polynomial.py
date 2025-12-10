@@ -475,3 +475,141 @@ def spectral_interpolate(
 
     # Evaluate polynomial: f_interp = V_eval @ f_modal
     return V_eval @ f_modal
+
+
+def spectral_interpolate_2d(
+    x_nodes: np.ndarray,
+    y_nodes: np.ndarray,
+    f_2d: np.ndarray,
+    x_eval: np.ndarray,
+    y_eval: np.ndarray,
+    basis: str = "legendre",
+) -> np.ndarray:
+    """
+    Spectrally interpolate a 2D field at new points using tensor product.
+
+    Parameters
+    ----------
+    x_nodes : np.ndarray
+        Original x collocation nodes (1D array of length nx)
+    y_nodes : np.ndarray
+        Original y collocation nodes (1D array of length ny)
+    f_2d : np.ndarray
+        2D field values with shape (ny, nx)
+    x_eval : np.ndarray
+        x coordinates where to evaluate (1D array)
+    y_eval : np.ndarray
+        y coordinates where to evaluate (1D array, same length as x_eval)
+    basis : str, optional
+        Polynomial basis: "legendre" or "chebyshev". Default is "legendre".
+
+    Returns
+    -------
+    np.ndarray
+        Interpolated values at (x_eval, y_eval) points
+
+    Notes
+    -----
+    For tensor product grids, 2D interpolation can be done as:
+    1. First interpolate in x-direction for each row
+    2. Then interpolate in y-direction at each evaluation point
+
+    Or equivalently using the tensor product of 1D interpolation matrices.
+    """
+    n_eval = len(x_eval)
+    if len(y_eval) != n_eval:
+        raise ValueError("x_eval and y_eval must have the same length")
+
+    ny, nx = f_2d.shape
+
+    # Step 1: Interpolate in x-direction for each y-row
+    # This gives values at x_eval for each original y_node
+    f_x_interp = np.zeros((ny, n_eval))
+    for j in range(ny):
+        f_x_interp[j, :] = spectral_interpolate(x_nodes, f_2d[j, :], x_eval, basis=basis)
+
+    # Step 2: For each evaluation point, interpolate in y-direction
+    result = np.zeros(n_eval)
+    for i in range(n_eval):
+        # Get the column of x-interpolated values at x_eval[i]
+        f_column = f_x_interp[:, i]
+        # Interpolate this column at y_eval[i]
+        result[i] = spectral_interpolate(y_nodes, f_column, np.array([y_eval[i]]), basis=basis)[0]
+
+    return result
+
+
+def spectral_interpolate_line(
+    x_nodes: np.ndarray,
+    y_nodes: np.ndarray,
+    f_2d: np.ndarray,
+    line_coord: float,
+    line_axis: str,
+    eval_points: np.ndarray,
+    basis: str = "legendre",
+) -> np.ndarray:
+    """
+    Extract a line from a 2D spectral field at an exact coordinate.
+
+    This properly interpolates to the exact line position rather than
+    taking the nearest grid slice.
+
+    Parameters
+    ----------
+    x_nodes : np.ndarray
+        Original x collocation nodes (1D array of length nx)
+    y_nodes : np.ndarray
+        Original y collocation nodes (1D array of length ny)
+    f_2d : np.ndarray
+        2D field values with shape (ny, nx)
+    line_coord : float
+        The coordinate value for the line (e.g., x=0.5 for vertical centerline)
+    line_axis : str
+        Which axis the line_coord refers to: "x" for vertical line, "y" for horizontal
+    eval_points : np.ndarray
+        Points along the line where to evaluate (y values for vertical, x for horizontal)
+    basis : str, optional
+        Polynomial basis: "legendre" or "chebyshev". Default is "legendre".
+
+    Returns
+    -------
+    np.ndarray
+        Field values along the line at eval_points
+
+    Examples
+    --------
+    # Extract u-velocity along vertical centerline x=0.5
+    y_line = np.linspace(0, 1, 200)
+    u_centerline = spectral_interpolate_line(x, y, U, 0.5, "x", y_line)
+
+    # Extract v-velocity along horizontal centerline y=0.5
+    x_line = np.linspace(0, 1, 200)
+    v_centerline = spectral_interpolate_line(x, y, V, 0.5, "y", x_line)
+    """
+    ny, nx = f_2d.shape
+    n_eval = len(eval_points)
+
+    if line_axis.lower() == "x":
+        # Vertical line at x=line_coord, varying y
+        # First interpolate each row (y-slice) to the exact x position
+        f_at_x = np.zeros(ny)
+        for j in range(ny):
+            f_at_x[j] = spectral_interpolate(
+                x_nodes, f_2d[j, :], np.array([line_coord]), basis=basis
+            )[0]
+        # Now interpolate this column to the evaluation y-points
+        return spectral_interpolate(y_nodes, f_at_x, eval_points, basis=basis)
+
+    elif line_axis.lower() == "y":
+        # Horizontal line at y=line_coord, varying x
+        # First interpolate each column (x-slice) to the exact y position
+        f_at_y = np.zeros(nx)
+        for i in range(nx):
+            f_at_y[i] = spectral_interpolate(
+                y_nodes, f_2d[:, i], np.array([line_coord]), basis=basis
+            )[0]
+        # Now interpolate this row to the evaluation x-points
+        return spectral_interpolate(x_nodes, f_at_y, eval_points, basis=basis)
+
+    else:
+        raise ValueError(f"line_axis must be 'x' or 'y', got {line_axis}")

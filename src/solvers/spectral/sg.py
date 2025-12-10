@@ -8,7 +8,7 @@ This is the base spectral solver using pseudospectral method without multigrid:
 
 Corner singularity treatment options:
 - "smoothing": Simple cosine smoothing of lid velocity near corners
-- "subtraction": Analytical singular solution subtraction (Botella & Peyret 1998)
+- "saad"/"polynomial": u = 16x²(1-x)² polynomial regularization (C∞ smooth)
 """
 
 import logging
@@ -44,26 +44,8 @@ class SGSolver(LidDrivenCavitySolver):
 
     Parameters = SpectralParameters
 
-    def __init__(self, forcing_u=None, forcing_v=None, bc_func=None, **kwargs):
-        """Initialize single grid spectral solver.
-
-        Parameters
-        ----------
-        forcing_u, forcing_v : callable or np.ndarray, optional
-            Source terms f_u(x, y) and f_v(x, y) added to momentum equations.
-            If callable, called with (x_2d, y_2d) mesh arrays.
-            If array, must match full grid shape (Nx+1, Ny+1).
-        bc_func : callable, optional
-            Custom boundary condition function bc_func(x, y) -> (u, v).
-            If provided, overrides lid-driven cavity BCs on ALL boundaries.
-        **kwargs : dict
-            Additional arguments passed to base solver.
-        """
-        # Store MMS parameters before parent init (which calls _setup_grids)
-        self._forcing_u_input = forcing_u
-        self._forcing_v_input = forcing_v
-        self._bc_func = bc_func
-
+    def __init__(self, **kwargs):
+        """Initialize single grid spectral solver."""
         super().__init__(**kwargs)
 
         # Create spectral basis based on params
@@ -112,63 +94,11 @@ class SGSolver(LidDrivenCavitySolver):
         )
         log.info(f"Using corner treatment: {self.params.corner_treatment}")
 
-        # Cache singular velocity and derivatives if using subtraction method
-        self._uses_modified_convection = (
-            self.corner_treatment.uses_modified_convection()
-        )
-        if self._uses_modified_convection:
-            log.info("Subtraction method: caching singular velocity and derivatives")
-            # Get singular velocity u_s, v_s at all grid points
-            u_s_2d, v_s_2d = self.corner_treatment.get_singular_velocity(
-                self.x_full, self.y_full, self.params.Lx, self.params.Ly
-            )
-            self._u_s = u_s_2d.ravel()
-            self._v_s = v_s_2d.ravel()
-
-            # Get analytical derivatives (NOT spectral!)
-            dus_dx, dus_dy, dvs_dx, dvs_dy = (
-                self.corner_treatment.get_singular_velocity_derivatives(
-                    self.x_full, self.y_full, self.params.Lx, self.params.Ly
-                )
-            )
-            self._dus_dx = dus_dx.ravel()
-            self._dus_dy = dus_dy.ravel()
-            self._dvs_dx = dvs_dx.ravel()
-            self._dvs_dy = dvs_dy.ravel()
-
         # Initialize lid velocity with corner treatment
         self._initialize_lid_velocity()
 
         # Setup quadrature weights for proper integration (energy, enstrophy, etc.)
         self._setup_quadrature_weights()
-
-        # Process MMS forcing terms (after grids are set up)
-        self._setup_forcing_terms()
-
-    def _setup_forcing_terms(self):
-        """Setup forcing terms for MMS testing.
-
-        Converts callable forcing functions to arrays evaluated on the grid.
-        """
-        self._forcing_u = None
-        self._forcing_v = None
-
-        if self._forcing_u_input is not None:
-            if callable(self._forcing_u_input):
-                self._forcing_u = self._forcing_u_input(self.x_full, self.y_full).ravel()
-            else:
-                self._forcing_u = np.asarray(self._forcing_u_input).ravel()
-            log.info("MMS forcing term f_u enabled")
-
-        if self._forcing_v_input is not None:
-            if callable(self._forcing_v_input):
-                self._forcing_v = self._forcing_v_input(self.x_full, self.y_full).ravel()
-            else:
-                self._forcing_v = np.asarray(self._forcing_v_input).ravel()
-            log.info("MMS forcing term f_v enabled")
-
-        if self._bc_func is not None:
-            log.info("Custom boundary conditions enabled (overriding lid-driven cavity BCs)")
 
     def _setup_grids(self):
         """Setup full and reduced grids using Legendre-Gauss-Lobatto nodes."""
@@ -349,20 +279,19 @@ class SGSolver(LidDrivenCavitySolver):
         """Compute RHS residuals for pseudo time-stepping.
 
         PN-PN-2 method:
-        - u, v on full (Nx+1) × (Ny+1) grid (these are u_c, v_c for subtraction method)
+        - u, v on full (Nx+1) × (Ny+1) grid
         - p on inner (Nx-1) × (Ny-1) grid
         - R_u, R_v on full grid
         - R_p on inner grid
 
-        For subtraction method (Zhang & Xi 2010):
-        Modified convection: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
+        Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
 
         Uses O(N³) tensor product differentiation instead of O(N⁴) Kronecker form.
 
         Parameters
         ----------
         u, v : np.ndarray
-            Current velocity fields on full grid (u_c, v_c for subtraction)
+            Current velocity fields on full grid
         p : np.ndarray
             Current pressure field on INNER grid
 
@@ -399,39 +328,14 @@ class SGSolver(LidDrivenCavitySolver):
         # Compute pressure gradient from inner grid p and interpolate to full grid
         self._interpolate_pressure_gradient()
 
-        # Compute convection terms
-        if self._uses_modified_convection:
-            # Subtraction method: u_c·∇u_c + u_s·∇u_c + u_c·∇u_s + u_s·∇u_s
-            # Term 1: u_c·∇u_c (standard convection of computational velocity)
-            conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
-            conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
-
-            # Term 2: u_s·∇u_c (singular velocity advecting computational gradient)
-            conv_u += self._u_s * self.arrays.du_dx + self._v_s * self.arrays.du_dy
-            conv_v += self._u_s * self.arrays.dv_dx + self._v_s * self.arrays.dv_dy
-
-            # Term 3: u_c·∇u_s (computational velocity advecting singular gradient)
-            conv_u += u * self._dus_dx + v * self._dus_dy
-            conv_v += u * self._dvs_dx + v * self._dvs_dy
-
-            # Term 4: u_s·∇u_s (singular velocity advecting singular gradient)
-            conv_u += self._u_s * self._dus_dx + self._v_s * self._dus_dy
-            conv_v += self._u_s * self._dvs_dx + self._v_s * self._dvs_dy
-        else:
-            # Standard convection: (u·∇)u
-            conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
-            conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
+        # Compute convection terms: (u·∇)u
+        conv_u = u * self.arrays.du_dx + v * self.arrays.du_dy
+        conv_v = u * self.arrays.dv_dx + v * self.arrays.dv_dy
 
         nu = 1.0 / self.params.Re
 
         self.arrays.R_u[:] = -conv_u - self.arrays.dp_dx + nu * self.arrays.lap_u
         self.arrays.R_v[:] = -conv_v - self.arrays.dp_dy + nu * self.arrays.lap_v
-
-        # Add MMS forcing terms if present
-        if self._forcing_u is not None:
-            self.arrays.R_u[:] += self._forcing_u
-        if self._forcing_v is not None:
-            self.arrays.R_v[:] += self._forcing_v
 
         # Continuity residual on INNER grid: R_p = -β²(∂u/∂x + ∂v/∂y)
         # Use the already-computed 2D derivatives directly
@@ -444,9 +348,7 @@ class SGSolver(LidDrivenCavitySolver):
     def _enforce_boundary_conditions(self, u, v):
         """Enforce boundary conditions on all walls using corner treatment.
 
-        For smoothing method: No-slip on walls, smoothed lid velocity on top.
-        For subtraction method: u_c = -u_s on walls, u_c = V_lid - u_s on top.
-        For MMS testing: Custom bc_func(x, y) -> (u, v) on all boundaries.
+        No-slip on walls (u=v=0), corner-treated lid velocity on top.
 
         Parameters
         ----------
@@ -457,53 +359,30 @@ class SGSolver(LidDrivenCavitySolver):
         u_2d = u.reshape(self.shape_full)
         v_2d = v.reshape(self.shape_full)
 
-        if self._bc_func is not None:
-            # MMS mode: use custom boundary conditions on all boundaries
-            # West boundary
-            u_bc, v_bc = self._bc_func(self.x_full[0, :], self.y_full[0, :])
-            u_2d[0, :] = u_bc
-            v_2d[0, :] = v_bc
+        # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
+        # West boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.x_full[0, :], self.y_full[0, :], self.params.Lx, self.params.Ly
+        )
+        u_2d[0, :] = u_wall
+        v_2d[0, :] = v_wall
 
-            # East boundary
-            u_bc, v_bc = self._bc_func(self.x_full[-1, :], self.y_full[-1, :])
-            u_2d[-1, :] = u_bc
-            v_2d[-1, :] = v_bc
+        # East boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.x_full[-1, :], self.y_full[-1, :], self.params.Lx, self.params.Ly
+        )
+        u_2d[-1, :] = u_wall
+        v_2d[-1, :] = v_wall
 
-            # South boundary
-            u_bc, v_bc = self._bc_func(self.x_full[:, 0], self.y_full[:, 0])
-            u_2d[:, 0] = u_bc
-            v_2d[:, 0] = v_bc
+        # South boundary
+        u_wall, v_wall = self.corner_treatment.get_wall_velocity(
+            self.x_full[:, 0], self.y_full[:, 0], self.params.Lx, self.params.Ly
+        )
+        u_2d[:, 0] = u_wall
+        v_2d[:, 0] = v_wall
 
-            # North boundary
-            u_bc, v_bc = self._bc_func(self.x_full[:, -1], self.y_full[:, -1])
-            u_2d[:, -1] = u_bc
-            v_2d[:, -1] = v_bc
-        else:
-            # Standard lid-driven cavity BCs
-            # Get wall velocities from corner treatment (0 for smoothing, -u_s for subtraction)
-            # West boundary
-            u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-                self.x_full[0, :], self.y_full[0, :], self.params.Lx, self.params.Ly
-            )
-            u_2d[0, :] = u_wall
-            v_2d[0, :] = v_wall
-
-            # East boundary
-            u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-                self.x_full[-1, :], self.y_full[-1, :], self.params.Lx, self.params.Ly
-            )
-            u_2d[-1, :] = u_wall
-            v_2d[-1, :] = v_wall
-
-            # South boundary
-            u_wall, v_wall = self.corner_treatment.get_wall_velocity(
-                self.x_full[:, 0], self.y_full[:, 0], self.params.Lx, self.params.Ly
-            )
-            u_2d[:, 0] = u_wall
-            v_2d[:, 0] = v_wall
-
-            # North boundary (moving lid)
-            self._apply_lid_boundary(u_2d, v_2d)
+        # North boundary (moving lid)
+        self._apply_lid_boundary(u_2d, v_2d)
 
     def _compute_adaptive_timestep(self):
         """Compute adaptive pseudo-timestep based on CFL condition.
@@ -540,9 +419,9 @@ class SGSolver(LidDrivenCavitySolver):
         """
         a = self.arrays  # Shorthand
 
-        # Swap buffers at start (for residual calculation in solve())
-        a.u, a.u_prev = a.u_prev, a.u
-        a.v, a.v_prev = a.v_prev, a.v
+        # Save previous for convergence check (copy, don't swap!)
+        a.u_prev[:] = a.u
+        a.v_prev[:] = a.v
 
         # Compute adaptive timestep
         dt = self._compute_adaptive_timestep()
@@ -675,20 +554,21 @@ class SGSolver(LidDrivenCavitySolver):
     # =========================================================================
 
     def _compute_streamfunction(self) -> tuple:
-        """Compute streamfunction ψ by solving ∇²ψ = -ω using spectral Laplacian.
+        """Compute streamfunction ψ by solving ∇²ψ = -ω.
 
-        Uses the spectral Laplacian matrix with Dirichlet BC (ψ=0 on walls).
+        Uses spectral Laplacian with sparse linear solver for non-uniform
+        Chebyshev grids. Homogeneous Dirichlet BCs (ψ=0 on walls).
 
         Returns
         -------
         psi_2d : np.ndarray
-            Streamfunction on 2D grid (Nx+1, Ny+1)
+            Streamfunction on 2D grid (Nx, Ny)
         x_2d : np.ndarray
             X coordinates 2D grid
         y_2d : np.ndarray
             Y coordinates 2D grid
         """
-        from scipy.sparse import csr_matrix
+        from scipy.sparse import kron, eye, csr_matrix
         from scipy.sparse.linalg import spsolve
 
         # Get vorticity using spectral differentiation
@@ -697,33 +577,46 @@ class SGSolver(LidDrivenCavitySolver):
 
         Nx, Ny = self.shape_full
 
-        # Build modified Laplacian with Dirichlet BCs (ψ=0 on boundaries)
-        # For boundary nodes, we set row to identity (ψ_boundary = 0)
-        Lap = self.Laplacian.copy()
+        # Build 2D Laplacian using Kronecker products of spectral matrices
+        # L = Dxx ⊗ Iy + Ix ⊗ Dyy
+        Dxx_sparse = csr_matrix(self.Dxx_1d)
+        Dyy_sparse = csr_matrix(self.Dyy_1d)
+        Ix = eye(Nx, format='csr')
+        Iy = eye(Ny, format='csr')
 
-        # Create boundary mask (1D indices of boundary nodes)
-        boundary_mask = np.zeros(Nx * Ny, dtype=bool)
-        for i in range(Nx):
-            boundary_mask[i * Ny] = True  # Bottom: j=0
-            boundary_mask[i * Ny + Ny - 1] = True  # Top: j=Ny-1
-        for j in range(Ny):
-            boundary_mask[j] = True  # Left: i=0
-            boundary_mask[(Nx - 1) * Ny + j] = True  # Right: i=Nx-1
+        # Full 2D Laplacian (operates on flattened psi with 'C' order)
+        # For 'C' order: psi[i,j] -> psi_flat[i*Ny + j]
+        # Dxx acts on first index (x), Dyy acts on second index (y)
+        L = kron(Dxx_sparse, Iy) + kron(Ix, Dyy_sparse)
 
-        # Modify Laplacian for Dirichlet BCs
-        for idx in np.where(boundary_mask)[0]:
-            Lap[idx, :] = 0
-            Lap[idx, idx] = 1.0
+        # Right-hand side: -omega (flattened)
+        rhs = -omega_2d.ravel()
 
-        # RHS: -ω on interior, 0 on boundary
-        rhs = -omega.copy()
-        rhs[boundary_mask] = 0.0
+        # Apply homogeneous Dirichlet BCs: psi = 0 on all boundaries
+        # Identify boundary DOFs
+        n_dof = Nx * Ny
+        boundary_mask = np.zeros((Nx, Ny), dtype=bool)
+        boundary_mask[0, :] = True   # x = 0 (left)
+        boundary_mask[-1, :] = True  # x = Lx (right)
+        boundary_mask[:, 0] = True   # y = 0 (bottom)
+        boundary_mask[:, -1] = True  # y = Ly (top)
+        boundary_idx = np.where(boundary_mask.ravel())[0]
+        interior_idx = np.where(~boundary_mask.ravel())[0]
 
-        # Solve sparse system
-        Lap_sparse = csr_matrix(Lap)
-        psi = spsolve(Lap_sparse, rhs)
+        # Modify system to enforce Dirichlet BCs
+        # Set boundary rows to identity, rhs to 0
+        L_bc = L.tolil()
+        for idx in boundary_idx:
+            L_bc[idx, :] = 0
+            L_bc[idx, idx] = 1.0
+            rhs[idx] = 0.0
+        L_bc = L_bc.tocsr()
 
-        return psi.reshape(self.shape_full), self.x_full, self.y_full
+        # Solve the linear system
+        psi_flat = spsolve(L_bc, rhs)
+        psi_2d = psi_flat.reshape((Nx, Ny))
+
+        return psi_2d, self.x_full, self.y_full
 
     def _find_primary_vortex(self) -> dict:
         """Find the primary vortex (global minimum of streamfunction).
@@ -734,7 +627,6 @@ class SGSolver(LidDrivenCavitySolver):
             {'psi_min': float, 'x': float, 'y': float, 'omega_center': float}
         """
         psi_2d, x_2d, y_2d = self._compute_streamfunction()
-        omega_2d = self._compute_vorticity().reshape(self.shape_full)
 
         # Find global minimum
         min_idx = np.unravel_index(np.argmin(psi_2d), psi_2d.shape)
@@ -742,7 +634,8 @@ class SGSolver(LidDrivenCavitySolver):
         x_min = x_2d[min_idx]
         y_min = y_2d[min_idx]
 
-        # Get vorticity at the vortex center
+        # Get vorticity at the primary vortex center
+        omega_2d = self._compute_vorticity().reshape(self.shape_full)
         omega_center = omega_2d[min_idx]
 
         return {
@@ -762,7 +655,7 @@ class SGSolver(LidDrivenCavitySolver):
         Returns
         -------
         dict
-            {'BR': {'psi': float, 'x': float, 'y': float, 'omega': float}, ...}
+            {'BR': {'psi': float, 'omega': float, 'x': float, 'y': float}, ...}
         """
         psi_2d, x_2d, y_2d = self._compute_streamfunction()
         omega_2d = self._compute_vorticity().reshape(self.shape_full)
@@ -786,12 +679,12 @@ class SGSolver(LidDrivenCavitySolver):
             if psi_val > 0:
                 results[name] = {
                     "psi": float(psi_val),
+                    "omega": float(omega_2d[max_idx]),
                     "x": float(x_2d[max_idx]),
                     "y": float(y_2d[max_idx]),
-                    "omega": float(omega_2d[max_idx]),
                 }
             else:
-                results[name] = {"psi": 0.0, "x": 0.0, "y": 0.0, "omega": 0.0}
+                results[name] = {"psi": 0.0, "omega": 0.0, "x": 0.0, "y": 0.0}
 
         return results
 
@@ -836,15 +729,15 @@ class SGSolver(LidDrivenCavitySolver):
             "omega_max_x": max_omega["x"],
             "omega_max_y": max_omega["y"],
             "psi_BR": corners["BR"]["psi"],
+            "omega_BR": corners["BR"]["omega"],
             "psi_BR_x": corners["BR"]["x"],
             "psi_BR_y": corners["BR"]["y"],
-            "omega_BR": corners["BR"]["omega"],
             "psi_BL": corners["BL"]["psi"],
+            "omega_BL": corners["BL"]["omega"],
             "psi_BL_x": corners["BL"]["x"],
             "psi_BL_y": corners["BL"]["y"],
-            "omega_BL": corners["BL"]["omega"],
             "psi_TL": corners["TL"]["psi"],
+            "omega_TL": corners["TL"]["omega"],
             "psi_TL_x": corners["TL"]["x"],
             "psi_TL_y": corners["TL"]["y"],
-            "omega_TL": corners["TL"]["omega"],
         }

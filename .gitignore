@@ -15,6 +15,7 @@ outputs/
 TEMPLATE/
 mlruns/
 mlflow_ui.log
+multirun/
 
 # Uv stuff 
 uv.lock

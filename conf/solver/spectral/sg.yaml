@@ -23,7 +23,7 @@ beta_squared: 5.0        # artificial compressibility parameter
 # Corner singularity treatment
 # Options: "smoothing" or "saad"/"polynomial"
 corner_treatment: smoothing
-corner_smoothing: 0.15   # smoothing width (fraction of domain) for smoothing method
+corner_smoothing: 0.05   # smoothing width (fraction of domain) for smoothing method
 
 # No multigrid for single grid solver
 multigrid: none
